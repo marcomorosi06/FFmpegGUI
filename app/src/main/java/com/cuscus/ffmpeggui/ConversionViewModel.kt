@@ -123,6 +123,8 @@ class ConversionViewModel(application: Application) : AndroidViewModel(applicati
         it.copy(isManualMode = false, manualCommandOverride = "")
     }
 
+    // ── Text overlays ─────────────────────────────────────────────────────────
+
     fun addTextOverlay() = mutate { it.copy(textOverlays = it.textOverlays + TextOverlay()) }
 
     fun removeTextOverlay(id: String) = mutate {
@@ -143,14 +145,16 @@ class ConversionViewModel(application: Application) : AndroidViewModel(applicati
         })
     }
 
+    // ── External audio track ──────────────────────────────────────────────────
+
     fun setAudioTrack(uri: Uri?, name: String) {
         mutate {
             it.copy(
-                audioTrackUri = uri,
-                audioTrackName = name,
-                audioTrackTrimStart = "00:00:00",
-                audioTrackTrimEnd = "",
-                audioTrackDelay = "00:00:00",
+                audioTrackUri        = uri,
+                audioTrackName       = name,
+                audioTrackTrimStart  = "00:00:00",
+                audioTrackTrimEnd    = "",
+                audioTrackDelay      = "00:00:00",
                 audioTrackDurationMs = 0L,
             )
         }
@@ -170,6 +174,111 @@ class ConversionViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    // ── New: multi-clip concatenation ─────────────────────────────────────────
+
+    /**
+     * Appends a clip to the concat queue. The clip's duration is resolved
+     * asynchronously; call this after the user picks a file from the picker.
+     */
+    fun addClip(uri: Uri, fileName: String) {
+        val clip = ClipItem(uri = uri, fileName = fileName)
+        mutate { it.copy(extraClips = it.extraClips + clip) }
+        // Resolve duration in background
+        viewModelScope.launch(Dispatchers.IO) {
+            val retriever = android.media.MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(getApplication<Application>(), uri)
+                val dur = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                val durationMs = dur?.toLongOrNull() ?: 0L
+                mutate {
+                    it.copy(extraClips = it.extraClips.map { c ->
+                        if (c.id == clip.id) c.copy(durationMs = durationMs) else c
+                    })
+                }
+            } catch (_: Exception) { /* leave durationMs = 0 */ } finally {
+                retriever.release()
+            }
+        }
+    }
+
+    fun removeClip(id: String) = mutate {
+        it.copy(extraClips = it.extraClips.filter { c -> c.id != id })
+    }
+
+    /** Replace the entire clip list (e.g. after a drag-to-reorder). */
+    fun reorderClips(newOrder: List<ClipItem>) = mutate { it.copy(extraClips = newOrder) }
+
+    fun setClipTrim(id: String, trimStart: String, trimEnd: String) = mutate {
+        it.copy(extraClips = it.extraClips.map { c ->
+            if (c.id == id) c.copy(trimStart = trimStart, trimEnd = trimEnd) else c
+        })
+    }
+
+    // ── New: image overlays ───────────────────────────────────────────────────
+
+    fun addImageOverlay(uri: Uri, fileName: String) = mutate {
+        it.copy(imageOverlays = it.imageOverlays + ImageOverlay(uri = uri, fileName = fileName))
+    }
+
+    fun removeImageOverlay(id: String) = mutate {
+        it.copy(imageOverlays = it.imageOverlays.filter { o -> o.id != id })
+    }
+
+    fun updateImageOverlay(
+        id: String,
+        x: Float,
+        y: Float,
+        scaleW: Float,
+        opacity: Float,
+    ) = mutate {
+        it.copy(imageOverlays = it.imageOverlays.map { o ->
+            if (o.id == id) o.copy(x = x, y = y, scaleW = scaleW, opacity = opacity) else o
+        })
+    }
+
+    // ── New: subtitle burn-in ─────────────────────────────────────────────────
+
+    fun setSubtitle(uri: Uri?, name: String) = mutate {
+        it.copy(subtitleUri = uri, subtitleName = name)
+    }
+
+    // ── New: stream copy (fast remux) ─────────────────────────────────────────
+
+    fun setUseStreamCopy(v: Boolean) = mutate { it.copy(useStreamCopy = v) }
+
+    // ── New: frame extraction ─────────────────────────────────────────────────
+
+    fun setFrameExtractionMode(v: FrameExtractionMode) = mutate { it.copy(frameExtractionMode = v) }
+    fun setFrameExtractionRate(v: Float)               = mutate { it.copy(frameExtractionRate = v) }
+    fun setFrameExtractionTimecode(v: String)          = mutate { it.copy(frameExtractionTimecode = v) }
+
+    // ── New: stabilization ────────────────────────────────────────────────────
+    fun setStabilize(v: Boolean)         = mutate { it.copy(stabilize = v) }
+    fun setStabilizeShakiness(v: Int)    = mutate { it.copy(stabilizeShakiness = v.coerceIn(1, 10)) }
+    fun setStabilizeSmoothing(v: Int)    = mutate { it.copy(stabilizeSmoothing = v.coerceIn(1, 100)) }
+
+    // ── New: noise reduction ──────────────────────────────────────────────────
+    fun setDenoiseVideo(v: Float)        = mutate { it.copy(denoiseVideo = v.coerceIn(0f, 10f)) }
+    fun setDenoiseAudio(v: Float)        = mutate { it.copy(denoiseAudio = v.coerceIn(0f, 1f)) }
+
+    // ── New: additional visual filters (COLOR tab) ────────────────────────────
+    fun setSharpness(v: Float)           = mutate { it.copy(sharpness = v.coerceIn(-1f, 1f)) }
+    fun setGaussianBlur(v: Float)        = mutate { it.copy(gaussianBlur = v.coerceIn(0f, 20f)) }
+    fun setVignette(v: Boolean)          = mutate { it.copy(vignette = v) }
+    fun setFilmGrain(v: Float)           = mutate { it.copy(filmGrain = v.coerceIn(0f, 60f)) }
+
+    // ── New: split / segmenting ───────────────────────────────────────────────
+    fun setSplitMode(v: SplitMode)       = mutate { it.copy(splitMode = v) }
+    fun setSplitValue(v: Int)            = mutate { it.copy(splitValue = v.coerceAtLeast(1)) }
+
+    // ── New: metadata ─────────────────────────────────────────────────────────
+    fun setMetaTitle(v: String)          = mutate { it.copy(metaTitle = v) }
+    fun setMetaArtist(v: String)         = mutate { it.copy(metaArtist = v) }
+    fun setMetaAlbum(v: String)          = mutate { it.copy(metaAlbum = v) }
+    fun setMetaYear(v: String)           = mutate { it.copy(metaYear = v) }
+    fun setMetaComment(v: String)        = mutate { it.copy(metaComment = v) }
+    fun setMetaGenre(v: String)          = mutate { it.copy(metaGenre = v) }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Conversion lifecycle
     // ──────────────────────────────────────────────────────────────────────────
@@ -184,41 +293,156 @@ class ConversionViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun startConversion() {
-        val uri = _inputUri.value ?: return
+        val uri    = _inputUri.value    ?: return
         val format = _selectedFormat.value ?: return
         val context = getApplication<Application>()
 
         viewModelScope.launch(Dispatchers.IO) {
-            val config = buildConfig(uri, format)
-            val outputFile = createOutputFile(context, config)
-            val inputFile = copyInputToCache(context, uri)
+            val s = _settings.value
+            val tempFiles = mutableListOf<File>()   // all cache files to delete after conversion
 
+            // ── 1. Copy main input to cache ────────────────────────────────────
+            val inputFile = copyInputToCache(context, uri)
             if (inputFile == null) {
                 _conversionState.value = ConversionState.Error(
-                    "Impossibile leggere il file di input",
-                    emptyList(),
+                    "Impossibile leggere il file di input", emptyList()
                 )
                 return@launch
+            }
+            tempFiles += inputFile
+
+            // ── 2. Concat: copy extra clips and write the concat list ──────────
+            var concatListPath = ""
+            if (s.extraClips.isNotEmpty()) {
+                // Copy each extra clip to cache
+                val copiedClips = mutableListOf<Pair<File, ClipItem>>()
+                for (clip in s.extraClips) {
+                    val clipFile = copyUriToCache(context, clip.uri, clip.fileName)
+                    if (clipFile == null) {
+                        _conversionState.value = ConversionState.Error(
+                            "Impossibile leggere il file: ${clip.fileName}", emptyList()
+                        )
+                        tempFiles.forEach { it.delete() }
+                        return@launch
+                    }
+                    tempFiles += clipFile
+                    copiedClips += Pair(clipFile, clip)
+                }
+
+                // Write ffconcat list (with per-clip trim via inpoint/outpoint)
+                val concatFile = File(context.cacheDir, "concat_${System.currentTimeMillis()}.txt")
+                tempFiles += concatFile
+                val sb = StringBuilder("ffconcat version 1.0\n")
+                // Main input with its trim window
+                sb.append("file '${inputFile.absolutePath}'\n")
+                if (s.startTime != "00:00:00") {
+                    sb.append("inpoint ${CommandBuilder.timeToMs(s.startTime) / 1000.0}\n")
+                }
+                if (s.endTime.isNotBlank()) {
+                    sb.append("outpoint ${CommandBuilder.timeToMs(s.endTime) / 1000.0}\n")
+                }
+                // Extra clips
+                for ((clipFile, clip) in copiedClips) {
+                    sb.append("file '${clipFile.absolutePath}'\n")
+                    if (clip.trimStart != "00:00:00") {
+                        sb.append("inpoint ${CommandBuilder.timeToMs(clip.trimStart) / 1000.0}\n")
+                    }
+                    if (clip.trimEnd.isNotBlank()) {
+                        sb.append("outpoint ${CommandBuilder.timeToMs(clip.trimEnd) / 1000.0}\n")
+                    }
+                }
+                concatFile.writeText(sb.toString())
+                concatListPath = concatFile.absolutePath
+            }
+
+            // ── 3. Copy image overlays to cache ───────────────────────────────
+            val imageCachePaths = mutableMapOf<String, String>()
+            for (overlay in s.imageOverlays) {
+                if (overlay.uri != null) {
+                    val imgFile = copyUriToCache(context, overlay.uri, overlay.fileName)
+                    if (imgFile != null) {
+                        tempFiles += imgFile
+                        imageCachePaths[overlay.id] = imgFile.absolutePath
+                    }
+                }
+            }
+
+            // ── 4. Copy subtitle to cache ──────────────────────────────────────
+            var subtitleCachePath = ""
+            if (s.subtitleUri != null) {
+                val subFile = copyUriToCache(context, s.subtitleUri, s.subtitleName)
+                if (subFile != null) {
+                    tempFiles += subFile
+                    subtitleCachePath = subFile.absolutePath
+                }
+            }
+
+            // ── 4.5 Stabilize pass 1: vidstabdetect → transforms.trf ──────────
+            var stabilizeTransformsPath = ""
+            if (s.stabilize) {
+                val trfFile = File(context.cacheDir, "transforms_${System.currentTimeMillis()}.trf")
+                tempFiles += trfFile
+                stabilizeTransformsPath = trfFile.absolutePath
+                _conversionState.value = ConversionState.Processing(0f, listOf("Analisi stabilizzazione (pass 1/2)..."))
+                val detectArgs = arrayOf(
+                    "-y",
+                    "-i", inputFile.absolutePath,
+                    "-vf", "vidstabdetect=shakiness=${s.stabilizeShakiness}:accuracy=15:result=${trfFile.absolutePath}",
+                    "-f", "null", "-"
+                )
+                val detectSession = FFmpegKit.executeWithArguments(detectArgs)
+                if (!ReturnCode.isSuccess(detectSession.returnCode)) {
+                    _conversionState.value = ConversionState.Error(
+                        "Analisi stabilizzazione fallita", emptyList()
+                    )
+                    tempFiles.forEach { it.delete() }
+                    return@launch
+                }
+            }
+
+            // ── 5. Build config (all runtime paths now known) ──────────────────
+            val config = buildConfig(
+                uri             = uri,
+                format          = format,
+                concatListPath  = concatListPath,
+                imageCachePaths = imageCachePaths,
+                subtitleCachePath = subtitleCachePath,
+                stabilizeTransformsPath = stabilizeTransformsPath,
+            )
+
+            // ── 6. Create output file/directory ───────────────────────────────
+            val outputFile  = createOutputFile(context, config)
+            val displayPath = when {
+                config.frameExtractionMode == FrameExtractionMode.SEQUENCE ->
+                    outputFile.parentFile?.absolutePath ?: outputFile.absolutePath
+                config.splitMode != SplitMode.DISABLED ->
+                    outputFile.parentFile?.absolutePath ?: outputFile.absolutePath
+                else -> outputFile.absolutePath
             }
 
             val logs = mutableListOf<String>()
             _conversionState.value = ConversionState.Processing(0f, emptyList())
 
-            val args = CommandBuilder.build(config, outputFile.absolutePath)
+            // ── 7. Build and resolve the argument array ───────────────────────
+            val args      = CommandBuilder.build(config, outputFile.absolutePath)
             val audioSafPath = config.audioTrackUri?.let {
                 FFmpegKitConfig.getSafParameterForRead(context, it)
             }
             val resolvedArgs = args.map { arg ->
-                when (arg) {
-                    "input_placeholder" -> inputFile.absolutePath
-                    "audio_placeholder" -> audioSafPath ?: arg
+                when {
+                    arg == "input_placeholder" -> inputFile.absolutePath
+                    arg == "audio_placeholder" -> audioSafPath ?: arg
+                    arg.startsWith("overlay_") && arg.endsWith("_placeholder") -> {
+                        val idx = arg.removePrefix("overlay_").removeSuffix("_placeholder").toIntOrNull()
+                        val overlayId = idx?.let { config.imageOverlays.getOrNull(it)?.id }
+                        overlayId?.let { imageCachePaths[it] } ?: arg
+                    }
                     else -> arg
                 }
             }.toTypedArray()
 
-            // Use actual media duration for accurate progress, fall back to 300 s
-            val totalDurationMs = _mediaInfo.value?.durationMs?.takeIf { it > 0 }
-                ?: (300_000L)
+            // Use actual media duration for accurate progress; fall back to 5 min
+            val totalDurationMs = _mediaInfo.value?.durationMs?.takeIf { it > 0 } ?: 300_000L
 
             FFmpegKitConfig.enableLogCallback { log ->
                 logs.add(log.message)
@@ -232,14 +456,14 @@ class ConversionViewModel(application: Application) : AndroidViewModel(applicati
             }
 
             val session = FFmpegKit.executeWithArguments(resolvedArgs)
-            inputFile.delete()
+            // Clean up all temp files regardless of outcome
+            tempFiles.forEach { it.delete() }
 
             if (ReturnCode.isSuccess(session.returnCode)) {
-                _conversionState.value = ConversionState.Success(outputFile.absolutePath)
+                _conversionState.value = ConversionState.Success(displayPath)
             } else {
                 _conversionState.value = ConversionState.Error(
-                    "Conversione fallita. Controlla i log.",
-                    logs.toList(),
+                    "Conversione fallita. Controlla i log.", logs.toList()
                 )
             }
         }
@@ -256,73 +480,153 @@ class ConversionViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun updateCommandPreview() {
-        val uri = _inputUri.value ?: return
+        val uri    = _inputUri.value       ?: return
         val format = _selectedFormat.value ?: return
         _commandPreview.value = CommandBuilder.buildPreview(buildConfig(uri, format))
     }
 
-    private fun buildConfig(uri: Uri, format: OutputFormat): ConversionConfig {
-        val s = _settings.value
-        val videoTotalMs = _mediaInfo.value?.durationMs ?: 0L
-        val vStart = parseTimeToMs(s.startTime)
-        val vEnd = if (s.endTime.isNotBlank()) parseTimeToMs(s.endTime) else videoTotalMs
+    /**
+     * Builds a [ConversionConfig] snapshot from the current settings.
+     *
+     * The parameters [concatListPath], [imageCachePaths], and [subtitleCachePath]
+     * are only available at conversion time; they default to empty values when
+     * building the command preview.
+     */
+    private fun buildConfig(
+        uri: Uri,
+        format: OutputFormat,
+        concatListPath: String = "",
+        imageCachePaths: Map<String, String> = emptyMap(),
+        subtitleCachePath: String = "",
+        stabilizeTransformsPath: String = "",
+    ): ConversionConfig {
+        val s          = _settings.value
+        val info       = _mediaInfo.value
+        val videoTotalMs = info?.durationMs ?: 0L
+        val vStart     = parseTimeToMs(s.startTime)
+        val vEnd       = if (s.endTime.isNotBlank()) parseTimeToMs(s.endTime) else videoTotalMs
         val activeVidMs = (vEnd - vStart).coerceAtLeast(0L)
 
         return ConversionConfig(
-            inputUri = uri,
-            inputFileName = _inputFileName.value,
-            outputFormat = format,
-            startTime = s.startTime,
-            endTime = s.endTime,
-            resolution = s.resolution,
-            framerate = s.framerate,
-            qualityLevel = s.qualityLevel,
-            rotation = s.rotation,
+            inputUri       = uri,
+            inputFileName  = _inputFileName.value,
+            outputFormat   = format,
+            startTime      = s.startTime,
+            endTime        = s.endTime,
+            resolution     = s.resolution,
+            framerate      = s.framerate,
+            qualityLevel   = s.qualityLevel,
+            rotation       = s.rotation,
             flipHorizontal = s.flipHorizontal,
-            flipVertical = s.flipVertical,
-            projectRatio = s.projectRatio,
-            cropW = s.cropW,
-            cropH = s.cropH,
-            cropX = s.cropX,
-            cropY = s.cropY,
-            customCommand = s.customCommand,
-            isManualMode = s.isManualMode,
-            manualCommandOverride = s.manualCommandOverride,
-            removeAudio = s.removeAudio,
-            volumeLevel = s.volumeLevel,
+            flipVertical   = s.flipVertical,
+            projectRatio   = s.projectRatio,
+            cropW          = s.cropW,
+            cropH          = s.cropH,
+            cropX          = s.cropX,
+            cropY          = s.cropY,
+            customCommand          = s.customCommand,
+            isManualMode           = s.isManualMode,
+            manualCommandOverride  = s.manualCommandOverride,
+            inputHasAudio  = info?.hasAudio ?: true,
+            removeAudio    = s.removeAudio,
+            volumeLevel    = s.volumeLevel,
             normalizeAudio = s.normalizeAudio,
-            audioTrackUri = s.audioTrackUri,
-            audioTrackName = s.audioTrackName,
-            audioTrackTrimStart = s.audioTrackTrimStart,
-            audioTrackTrimEnd = s.audioTrackTrimEnd,
-            audioTrackDelay = s.audioTrackDelay,
-            audioTrackVolume = s.audioTrackVolume,
-            videoSpeed = s.videoSpeed,
+            audioTrackUri        = s.audioTrackUri,
+            audioTrackName       = s.audioTrackName,
+            audioTrackTrimStart  = s.audioTrackTrimStart,
+            audioTrackTrimEnd    = s.audioTrackTrimEnd,
+            audioTrackDelay      = s.audioTrackDelay,
+            audioTrackVolume     = s.audioTrackVolume,
+            videoSpeed            = s.videoSpeed,
             activeVideoDurationMs = activeVidMs,
             brightness = s.brightness,
-            contrast = s.contrast,
+            contrast   = s.contrast,
             saturation = s.saturation,
-            fadeInDuration = s.fadeInDuration,
+            fadeInDuration  = s.fadeInDuration,
             fadeOutDuration = s.fadeOutDuration,
-            isReversed = s.isReversed,
+            isReversed   = s.isReversed,
             textOverlays = s.textOverlays,
+            // New features
+            concatListPath  = concatListPath,
+            extraClips      = s.extraClips,
+            imageOverlays        = s.imageOverlays,
+            imageOverlayCachePaths = imageCachePaths,
+            subtitleCachePath = subtitleCachePath,
+            useStreamCopy    = s.useStreamCopy,
+            frameExtractionMode     = s.frameExtractionMode,
+            frameExtractionRate     = s.frameExtractionRate,
+            frameExtractionTimecode = s.frameExtractionTimecode,
+            // Video dimensions for pixel-accurate overlay placement
+            videoWidth  = info?.width  ?: 0,
+            videoHeight = info?.height ?: 0,
+            // Stabilization
+            stabilize               = s.stabilize,
+            stabilizeShakiness      = s.stabilizeShakiness,
+            stabilizeSmoothing      = s.stabilizeSmoothing,
+            stabilizeTransformsPath = stabilizeTransformsPath,
+            // Denoise
+            denoiseVideo = s.denoiseVideo,
+            denoiseAudio = s.denoiseAudio,
+            // Extra visual filters
+            sharpness    = s.sharpness,
+            gaussianBlur = s.gaussianBlur,
+            vignette     = s.vignette,
+            filmGrain    = s.filmGrain,
+            // Split
+            splitMode    = s.splitMode,
+            splitValue   = s.splitValue,
+            // Metadata
+            metaTitle    = s.metaTitle,
+            metaArtist   = s.metaArtist,
+            metaAlbum    = s.metaAlbum,
+            metaYear     = s.metaYear,
+            metaComment  = s.metaComment,
+            metaGenre    = s.metaGenre,
         )
     }
 
-    private fun copyInputToCache(context: Context, uri: Uri): File? = try {
-        val ext = _inputFileName.value.substringAfterLast(".", "mp4")
-        val cacheFile = File(context.cacheDir, "input_${System.currentTimeMillis()}.$ext")
+    /**
+     * Copies a content URI to a file in the app's cache directory.
+     * The filename is sanitised and timestamped to avoid collisions.
+     */
+    private fun copyUriToCache(context: Context, uri: Uri, preferredName: String? = null): File? = try {
+        val ext      = preferredName?.substringAfterLast(".", "tmp") ?: "tmp"
+        val baseName = (preferredName?.substringBeforeLast(".") ?: "file")
+            .filter { it.isLetterOrDigit() || it == '_' || it == '-' }
+            .take(40)
+            .ifEmpty { "file" }
+        val cacheFile = File(context.cacheDir, "${baseName}_${System.currentTimeMillis()}.$ext")
         context.contentResolver.openInputStream(uri)?.use { input ->
             cacheFile.outputStream().use { output -> input.copyTo(output) }
         }
         cacheFile
     } catch (_: Exception) { null }
 
+    private fun copyInputToCache(context: Context, uri: Uri): File? {
+        val ext = _inputFileName.value.substringAfterLast(".", "mp4")
+        return copyUriToCache(context, uri, "input.$ext")
+    }
+
     private fun createOutputFile(context: Context, config: ConversionConfig): File {
         val outputDir = File(context.getExternalFilesDir(null), "FFmpegGui").also { it.mkdirs() }
-        val baseName = config.inputFileName.substringBeforeLast(".")
+        val baseName  = config.inputFileName.substringBeforeLast(".")
         val timestamp = System.currentTimeMillis()
-        return File(outputDir, "${baseName}_$timestamp.${config.outputFormat.extension}")
+        return when {
+            config.frameExtractionMode == FrameExtractionMode.SINGLE ->
+                File(outputDir, "${baseName}_frame_$timestamp.png")
+            config.frameExtractionMode == FrameExtractionMode.SEQUENCE -> {
+                // Create a sub-directory; the path pattern handed to FFmpeg is {dir}/frame_%03d.png
+                val seqDir = File(outputDir, "${baseName}_frames_$timestamp").also { it.mkdirs() }
+                File(seqDir, "frame_%03d.png")
+            }
+            config.splitMode != SplitMode.DISABLED -> {
+                // Create a sub-directory for the segments and return a pattern path
+                val segDir = File(outputDir, "${baseName}_segments_$timestamp").also { it.mkdirs() }
+                File(segDir, "part_%03d.${config.outputFormat.extension}")
+            }
+            else ->
+                File(outputDir, "${baseName}_$timestamp.${config.outputFormat.extension}")
+        }
     }
 
     private fun getFileName(context: Context, uri: Uri): String {
@@ -335,13 +639,13 @@ class ConversionViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     /**
-     * Parses a `time=HH:MM:SS.ss` token from FFmpeg's stderr output and returns
+     * Parses a `time=HH:MM:SS.ss` token from FFmpeg's stderr and returns
      * progress in [0, 1] relative to the actual media duration.
      */
     private fun extractProgress(log: String, totalDurationMs: Long): Float? {
         val match = Regex("time=(\\d+):(\\d+):(\\d+\\.\\d+)").find(log) ?: return null
-        val h = match.groupValues[1].toLongOrNull() ?: return null
-        val m = match.groupValues[2].toLongOrNull() ?: return null
+        val h = match.groupValues[1].toLongOrNull()   ?: return null
+        val m = match.groupValues[2].toLongOrNull()   ?: return null
         val s = match.groupValues[3].toDoubleOrNull() ?: return null
         val elapsedMs = (h * 3600 + m * 60 + s) * 1000.0
         return (elapsedMs / totalDurationMs).toFloat().coerceIn(0f, 1f)

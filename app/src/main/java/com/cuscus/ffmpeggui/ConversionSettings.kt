@@ -62,4 +62,52 @@ data class ConversionSettings(
     val customCommand: String = "",
     val isManualMode: Boolean = false,
     val manualCommandOverride: String = "",
+
+    // ── New feature: multi-clip concatenation ─────────────────────────────────
+    /** Clips to append after the main input, in order. */
+    val extraClips: List<ClipItem> = emptyList(),
+
+    // ── New feature: image overlays (watermark / logo) ────────────────────────
+    val imageOverlays: List<ImageOverlay> = emptyList(),
+
+    // ── New feature: subtitle burn-in ─────────────────────────────────────────
+    val subtitleUri: Uri? = null,
+    val subtitleName: String = "",
+
+    // ── New feature: stream copy (fast remux without re-encoding) ─────────────
+    val useStreamCopy: Boolean = false,
+
+    // ── New feature: frame / thumbnail extraction ─────────────────────────────
+    val frameExtractionMode: FrameExtractionMode = FrameExtractionMode.DISABLED,
+    /** Frames per second for SEQUENCE mode (e.g. 0.2 = one frame every 5 s). */
+    val frameExtractionRate: Float = 1f,
+    /** Timecode for SINGLE mode ("HH:MM:SS" or "HH:MM:SS.ms"). */
+    val frameExtractionTimecode: String = "00:00:00",
+
+    // ── New feature: video stabilization (2-pass vidstab) ─────────────────────
+    val stabilize: Boolean = false,
+    val stabilizeShakiness: Int = 5,
+    val stabilizeSmoothing: Int = 10,
+
+    // ── New feature: noise reduction ──────────────────────────────────────────
+    val denoiseVideo: Float = 0f,
+    val denoiseAudio: Float = 0f,
+
+    // ── New feature: additional visual filters (COLOR tab) ────────────────────
+    val sharpness: Float = 0f,
+    val gaussianBlur: Float = 0f,
+    val vignette: Boolean = false,
+    val filmGrain: Float = 0f,
+
+    // ── New feature: video split / segmenting ────────────────────────────────
+    val splitMode: SplitMode = SplitMode.DISABLED,
+    val splitValue: Int = 10,
+
+    // ── New feature: metadata tags ────────────────────────────────────────────
+    val metaTitle: String = "",
+    val metaArtist: String = "",
+    val metaAlbum: String = "",
+    val metaYear: String = "",
+    val metaComment: String = "",
+    val metaGenre: String = "",
 )

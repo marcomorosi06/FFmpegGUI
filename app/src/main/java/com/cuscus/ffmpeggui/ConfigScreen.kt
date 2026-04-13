@@ -55,6 +55,7 @@ import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.outlined.Construction
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -78,7 +79,12 @@ enum class EditorTool(val label: String, val icon: ImageVector) {
     FORMAT("Formato", Icons.Rounded.CropOriginal),
     AUDIO("Audio", Icons.Rounded.GraphicEq),
     SPEED("Velocità", Icons.Rounded.Speed),
-    COMMAND("Comando", Icons.Rounded.Terminal)
+    COMMAND("Comando", Icons.Rounded.Terminal),
+    CONCAT("Unisci Clip", Icons.Rounded.VideoLibrary),
+    IMAGE("Immagine", Icons.Rounded.Image),
+    SUBTITLE("Sottotitoli", Icons.Rounded.ClosedCaption),
+    REMUX("Remux", Icons.Rounded.Sync),
+    EXTRACT("Estrai Frame", Icons.Rounded.PhotoCamera),
 }
 
 enum class TransformSubTool(val label: String, val icon: ImageVector) {
@@ -164,6 +170,32 @@ fun ConfigScreen(
     onAddTextOverlay: () -> Unit,
     onRemoveTextOverlay: (String) -> Unit,
     onUpdateTextOverlay: (String, String, Float, Float, Float, Long, Boolean) -> Unit,
+    // ── New features ──────────────────────────────────────────────────────────
+    // Concat
+    extraClips: List<ClipItem> = emptyList(),
+    onAddClip: (Uri, String) -> Unit = { _, _ -> },
+    onRemoveClip: (String) -> Unit = {},
+    onReorderClips: (List<ClipItem>) -> Unit = {},
+    onSetClipTrim: (String, String, String) -> Unit = { _, _, _ -> },
+    // Image overlays
+    imageOverlays: List<ImageOverlay> = emptyList(),
+    onAddImageOverlay: (Uri, String) -> Unit = { _, _ -> },
+    onRemoveImageOverlay: (String) -> Unit = {},
+    onUpdateImageOverlay: (String, Float, Float, Float, Float) -> Unit = { _, _, _, _, _ -> },
+    // Subtitle
+    subtitleUri: Uri? = null,
+    subtitleName: String = "",
+    onSetSubtitle: (Uri?, String) -> Unit = { _, _ -> },
+    // Stream copy
+    useStreamCopy: Boolean = false,
+    onUseStreamCopy: (Boolean) -> Unit = {},
+    // Frame extraction
+    frameExtractionMode: FrameExtractionMode = FrameExtractionMode.DISABLED,
+    frameExtractionRate: Float = 1f,
+    frameExtractionTimecode: String = "00:00:00",
+    onFrameExtractionMode: (FrameExtractionMode) -> Unit = {},
+    onFrameExtractionRate: (Float) -> Unit = {},
+    onFrameExtractionTimecode: (String) -> Unit = {},
 ) {
     var selectedTool by remember { mutableStateOf<EditorTool?>(null) }
     var showExportDialog by remember { mutableStateOf(false) }
@@ -301,6 +333,12 @@ fun ConfigScreen(
                 fadeOutDuration = fadeOutDuration,
                 isReversed = isReversed,
                 textOverlays = textOverlays,
+                imageOverlays = imageOverlays,
+                onUpdateImageOverlay = onUpdateImageOverlay,
+                subtitleName = subtitleName,
+                extraClips = extraClips,
+                useStreamCopy = useStreamCopy,
+                frameExtractionMode = frameExtractionMode,
                 selectedTool = selectedTool,
                 onUpdateTextOverlay = onUpdateTextOverlay,
                 onRatioChange = { videoRatio = it },
@@ -450,6 +488,35 @@ fun ConfigScreen(
                                     onManualCommandChange = onManualCommandChange,
                                     onResetManualMode = onResetManualMode
                                 )
+                                EditorTool.CONCAT -> ConcatSectionContent(
+                                    extraClips = extraClips,
+                                    onAddClip = onAddClip,
+                                    onRemoveClip = onRemoveClip,
+                                    onSetClipTrim = onSetClipTrim,
+                                )
+                                EditorTool.IMAGE -> ImageOverlaySectionContent(
+                                    imageOverlays = imageOverlays,
+                                    onAddImageOverlay = onAddImageOverlay,
+                                    onRemoveImageOverlay = onRemoveImageOverlay,
+                                    onUpdateImageOverlay = onUpdateImageOverlay,
+                                )
+                                EditorTool.SUBTITLE -> SubtitleSectionContent(
+                                    subtitleUri = subtitleUri,
+                                    subtitleName = subtitleName,
+                                    onSetSubtitle = onSetSubtitle,
+                                )
+                                EditorTool.REMUX -> RemuxSectionContent(
+                                    useStreamCopy = useStreamCopy,
+                                    onUseStreamCopy = onUseStreamCopy,
+                                )
+                                EditorTool.EXTRACT -> FrameExtractionSectionContent(
+                                    frameExtractionMode = frameExtractionMode,
+                                    frameExtractionRate = frameExtractionRate,
+                                    frameExtractionTimecode = frameExtractionTimecode,
+                                    onFrameExtractionMode = onFrameExtractionMode,
+                                    onFrameExtractionRate = onFrameExtractionRate,
+                                    onFrameExtractionTimecode = onFrameExtractionTimecode,
+                                )
                                 null -> {}
                             }
                         }
@@ -535,6 +602,12 @@ fun PreviewContainer(
     fadeOutDuration: Float,
     isReversed: Boolean,
     textOverlays: List<TextOverlay>,
+    imageOverlays: List<ImageOverlay> = emptyList(),
+    onUpdateImageOverlay: (String, Float, Float, Float, Float) -> Unit = { _, _, _, _, _ -> },
+    subtitleName: String = "",
+    extraClips: List<ClipItem> = emptyList(),
+    useStreamCopy: Boolean = false,
+    frameExtractionMode: FrameExtractionMode = FrameExtractionMode.DISABLED,
     onRatioChange: (Float) -> Unit,
     onCropRectChange: (Rect) -> Unit,
     selectedTool: EditorTool?,
@@ -573,7 +646,9 @@ fun PreviewContainer(
 
     val showWarning = (volumeLevel > 1f && !removeAudio) || normalizeAudio || videoSpeed != 1.0f ||
             brightness != 0f || contrast != 1f || saturation != 1f || isReversed ||
-            textOverlays.any { it.text.isNotBlank() } || fadeInDuration > 0f || fadeOutDuration > 0f
+            textOverlays.any { it.text.isNotBlank() } || fadeInDuration > 0f || fadeOutDuration > 0f ||
+            imageOverlays.isNotEmpty() || subtitleName.isNotBlank() || useStreamCopy ||
+            frameExtractionMode != FrameExtractionMode.DISABLED || extraClips.isNotEmpty()
 
     LaunchedEffect(inputUri, startMs, endMs) {
         if (inputUri != null) {
@@ -898,6 +973,79 @@ fun PreviewContainer(
                                     }
                                 }
                             }
+
+                            // ── Image overlays (crop mode) ─────────────────────────
+                            val isImageToolCrop = selectedTool == EditorTool.IMAGE
+                            imageOverlays.forEach { overlay ->
+                                if (overlay.uri != null) {
+                                    val currentOvr by rememberUpdatedState(overlay)
+                                    val bmp = remember(overlay.uri) {
+                                        try {
+                                            context.contentResolver.openInputStream(overlay.uri)?.use {
+                                                android.graphics.BitmapFactory.decodeStream(it)
+                                            }
+                                        } catch (e: Exception) { null }
+                                    }
+                                    if (bmp != null) {
+                                        val imgAspect = bmp.width.toFloat() / bmp.height.toFloat()
+                                        Box(
+                                            modifier = Modifier
+                                                .align(androidx.compose.ui.BiasAlignment(currentOvr.x * 2 - 1, currentOvr.y * 2 - 1))
+                                                .fillMaxWidth(currentOvr.scaleW.coerceIn(0.05f, 0.95f))
+                                                .aspectRatio(imgAspect)
+                                                .graphicsLayer(alpha = currentOvr.opacity)
+                                                .pointerInput(currentOvr.id, isImageToolCrop) {
+                                                    if (isImageToolCrop) {
+                                                        var dX = currentOvr.x; var dY = currentOvr.y
+                                                        val imgW = canvasW * currentOvr.scaleW
+                                                        val imgH = imgW / imgAspect
+                                                        detectDragGestures(
+                                                            onDragStart = { haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
+                                                            onDrag = { change, drag ->
+                                                                change.consume()
+                                                                val aW = (canvasW - imgW).coerceAtLeast(1f)
+                                                                val aH = (canvasH - imgH).coerceAtLeast(1f)
+                                                                dX = (dX + drag.x / aW).coerceIn(0f, 1f)
+                                                                dY = (dY + drag.y / aH).coerceIn(0f, 1f)
+                                                                onUpdateImageOverlay(currentOvr.id, dX, dY, currentOvr.scaleW, currentOvr.opacity)
+                                                            },
+                                                            onDragEnd = { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+                                                        )
+                                                    }
+                                                }
+                                        ) {
+                                            androidx.compose.foundation.Image(
+                                                bitmap = bmp.asImageBitmap(),
+                                                contentDescription = null,
+                                                modifier = Modifier.fillMaxSize()
+                                                    .then(if (isImageToolCrop) Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.7f), RoundedCornerShape(4.dp)) else Modifier)
+                                            )
+                                            if (isImageToolCrop) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomEnd)
+                                                        .offset(x = 6.dp, y = 6.dp)
+                                                        .size(16.dp)
+                                                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                                        .border(2.dp, Color.White, CircleShape)
+                                                        .pointerInput(currentOvr.id + "_rs", true) {
+                                                            var dragScale = currentOvr.scaleW
+                                                            detectDragGestures(
+                                                                onDragStart = { dragScale = currentOvr.scaleW },
+                                                                onDrag = { change, drag ->
+                                                                    change.consume()
+                                                                    val sc = (drag.x + drag.y) / (canvasW * 2f)
+                                                                    dragScale = (dragScale + sc).coerceIn(0.05f, 0.9f)
+                                                                    onUpdateImageOverlay(currentOvr.id, currentOvr.x, currentOvr.y, dragScale, currentOvr.opacity)
+                                                                }
+                                                            )
+                                                        }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     } else {
                         Box(
@@ -1035,6 +1183,79 @@ fun PreviewContainer(
                                         }
                                     }
                                 }
+
+                                // ── Image overlays (non-crop) ─────────────────────────
+                                val isImageTool = selectedTool == EditorTool.IMAGE
+                                imageOverlays.forEach { overlay ->
+                                    if (overlay.uri != null) {
+                                        val currentOvr by rememberUpdatedState(overlay)
+                                        val bmp = remember(overlay.uri) {
+                                            try {
+                                                context.contentResolver.openInputStream(overlay.uri)?.use {
+                                                    android.graphics.BitmapFactory.decodeStream(it)
+                                                }
+                                            } catch (e: Exception) { null }
+                                        }
+                                        if (bmp != null) {
+                                            val imgAspect = bmp.width.toFloat() / bmp.height.toFloat()
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(androidx.compose.ui.BiasAlignment(currentOvr.x * 2 - 1, currentOvr.y * 2 - 1))
+                                                    .fillMaxWidth(currentOvr.scaleW.coerceIn(0.05f, 0.95f))
+                                                    .aspectRatio(imgAspect)
+                                                    .graphicsLayer(alpha = currentOvr.opacity)
+                                                    .pointerInput(currentOvr.id, isImageTool) {
+                                                        if (isImageTool) {
+                                                            var dX = currentOvr.x; var dY = currentOvr.y
+                                                            val imgW = canvasW * currentOvr.scaleW
+                                                            val imgH = imgW / imgAspect
+                                                            detectDragGestures(
+                                                                onDragStart = { haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
+                                                                onDrag = { change, drag ->
+                                                                    change.consume()
+                                                                    val aW = (canvasW - imgW).coerceAtLeast(1f)
+                                                                    val aH = (canvasH - imgH).coerceAtLeast(1f)
+                                                                    dX = (dX + drag.x / aW).coerceIn(0f, 1f)
+                                                                    dY = (dY + drag.y / aH).coerceIn(0f, 1f)
+                                                                    onUpdateImageOverlay(currentOvr.id, dX, dY, currentOvr.scaleW, currentOvr.opacity)
+                                                                },
+                                                                onDragEnd = { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+                                                            )
+                                                        }
+                                                    }
+                                            ) {
+                                                androidx.compose.foundation.Image(
+                                                    bitmap = bmp.asImageBitmap(),
+                                                    contentDescription = null,
+                                                    modifier = Modifier.fillMaxSize()
+                                                        .then(if (isImageTool) Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.7f), RoundedCornerShape(4.dp)) else Modifier)
+                                                )
+                                                if (isImageTool) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .align(Alignment.BottomEnd)
+                                                            .offset(x = 6.dp, y = 6.dp)
+                                                            .size(16.dp)
+                                                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                                            .border(2.dp, Color.White, CircleShape)
+                                                            .pointerInput(currentOvr.id + "_rs", true) {
+                                                                var dragScale = currentOvr.scaleW
+                                                                detectDragGestures(
+                                                                    onDragStart = { dragScale = currentOvr.scaleW },
+                                                                    onDrag = { change, drag ->
+                                                                        change.consume()
+                                                                        val sc = (drag.x + drag.y) / (canvasW * 2f)
+                                                                        dragScale = (dragScale + sc).coerceIn(0.05f, 0.9f)
+                                                                        onUpdateImageOverlay(currentOvr.id, currentOvr.x, currentOvr.y, dragScale, currentOvr.opacity)
+                                                                    }
+                                                                )
+                                                            }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1068,6 +1289,66 @@ fun PreviewContainer(
                             text = "Filtri avanzati visibili all'esportazione",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+
+            // ── Top-left status badges (concat / remux / frame extraction) ──────
+            val statusBadges = buildList {
+                if (extraClips.isNotEmpty()) add(Icons.Rounded.VideoLibrary to "${extraClips.size + 1} clip")
+                if (useStreamCopy)          add(Icons.Rounded.Sync          to "Stream copy")
+                if (frameExtractionMode != FrameExtractionMode.DISABLED)
+                                            add(Icons.Rounded.PhotoCamera   to "Estrai frame")
+            }
+            if (statusBadges.isNotEmpty()) {
+                Column(
+                    modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    statusBadges.forEach { (icon, label) ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.88f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(icon, contentDescription = null, modifier = Modifier.size(12.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                                Text(label, style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Bottom-center subtitle preview badge ─────────────────────────────
+            if (subtitleName.isNotBlank()) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 8.dp)
+                        .widthIn(max = 280.dp),
+                    color = Color.Black.copy(alpha = 0.72f),
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Rounded.ClosedCaption, contentDescription = null,
+                            modifier = Modifier.size(14.dp), tint = Color.White)
+                        Text(
+                            text = subtitleName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -3140,3 +3421,677 @@ fun AudioTimelineTrimmer(
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NEW FEATURE SECTION COMPOSABLES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── 1. Concatenazione clip ────────────────────────────────────────────────────
+
+@Composable
+private fun ConcatSectionContent(
+    extraClips: List<ClipItem>,
+    onAddClip: (Uri, String) -> Unit,
+    onRemoveClip: (String) -> Unit,
+    onSetClipTrim: (String, String, String) -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+    val scrollState = rememberScrollState()
+
+    val clipPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val name = uri.lastPathSegment?.substringAfterLast("/") ?: "clip_${extraClips.size + 1}"
+            onAddClip(uri, name)
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 320.dp)
+            .verticalScroll(scrollState)
+            .padding(vertical = 4.dp, horizontal = 2.dp)
+            .padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Info card
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(18.dp).padding(top = 2.dp)
+                )
+                Text(
+                    text = "Il file principale è sempre il primo. Aggiungi altri clip da accodare nell'ordine in cui appaiono qui.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+        }
+
+        // Main clip (read-only row)
+        ClipRow(
+            label = "Principale",
+            fileName = "File selezionato",
+            durationMs = 0L,
+            isMain = true,
+            onRemove = null,
+        )
+
+        // Extra clips
+        extraClips.forEachIndexed { index, clip ->
+            ClipRow(
+                label = "Clip ${index + 1}",
+                fileName = clip.fileName,
+                durationMs = clip.durationMs,
+                isMain = false,
+                onRemove = {
+                    onRemoveClip(clip.id)
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                },
+            )
+        }
+
+        // Add button
+        OutlinedButton(
+            onClick = { clipPicker.launch("video/*") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Aggiungi clip")
+        }
+    }
+}
+
+@Composable
+private fun ClipRow(
+    label: String,
+    fileName: String,
+    durationMs: Long,
+    isMain: Boolean,
+    onRemove: (() -> Unit)?,
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = if (isMain)
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+        else
+            MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(
+                imageVector = if (isMain) Icons.Rounded.Videocam else Icons.Rounded.VideoFile,
+                contentDescription = null,
+                tint = if (isMain) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isMain) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = fileName.take(36).let { if (fileName.length > 36) "$it…" else it },
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1
+                )
+                if (durationMs > 0L) {
+                    Text(
+                        text = formatTimeMs(durationMs).substringBefore("."),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            if (onRemove != null) {
+                IconButton(onClick = onRemove, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Rounded.DeleteOutline,
+                        contentDescription = "Rimuovi",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── 2. Image overlay (filigrana / logo) ───────────────────────────────────────
+
+@Composable
+private fun ImageOverlaySectionContent(
+    imageOverlays: List<ImageOverlay>,
+    onAddImageOverlay: (Uri, String) -> Unit,
+    onRemoveImageOverlay: (String) -> Unit,
+    onUpdateImageOverlay: (String, Float, Float, Float, Float) -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+    val scrollState = rememberScrollState()
+
+    val imagePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val name = uri.lastPathSegment?.substringAfterLast("/") ?: "image_${imageOverlays.size + 1}.png"
+            onAddImageOverlay(uri, name)
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 340.dp)
+            .verticalScroll(scrollState)
+            .padding(vertical = 4.dp, horizontal = 2.dp)
+            .padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (imageOverlays.isEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Image,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Text(
+                        text = "Nessuna immagine overlay",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = "Aggiungi un logo, filigrana o immagine PNG/JPG da sovrapporre al video.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
+        imageOverlays.forEachIndexed { index, overlay ->
+            ImageOverlayCard(
+                index = index,
+                overlay = overlay,
+                onRemove = {
+                    onRemoveImageOverlay(overlay.id)
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                },
+                onUpdate = { x, y, scaleW, opacity ->
+                    onUpdateImageOverlay(overlay.id, x, y, scaleW, opacity)
+                }
+            )
+        }
+
+        OutlinedButton(
+            onClick = { imagePicker.launch("image/*") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Aggiungi immagine")
+        }
+    }
+}
+
+@Composable
+private fun ImageOverlayCard(
+    index: Int,
+    overlay: ImageOverlay,
+    onRemove: () -> Unit,
+    onUpdate: (x: Float, y: Float, scaleW: Float, opacity: Float) -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+    var expanded by remember { mutableStateOf(false) }
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            // Header row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { expanded = !expanded; haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.Image, null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(18.dp))
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Overlay ${index + 1}", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        overlay.fileName.take(30).let { if (overlay.fileName.length > 30) "$it…" else it },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                IconButton(onClick = onRemove, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                }
+            }
+
+            // Expanded controls
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier.padding(top = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                    LabeledSlider(
+                        label = "Dimensione",
+                        value = overlay.scaleW,
+                        onValueChange = { onUpdate(overlay.x, overlay.y, it, overlay.opacity) },
+                        onValueChangeFinished = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
+                        valueRange = 0.02f..1f,
+                        startLabel = "2%",
+                        endLabel = "100%",
+                        valueLabel = "${(overlay.scaleW * 100).toInt()}% larghezza"
+                    )
+                    LabeledSlider(
+                        label = "Posizione X",
+                        value = overlay.x,
+                        onValueChange = { onUpdate(it, overlay.y, overlay.scaleW, overlay.opacity) },
+                        onValueChangeFinished = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
+                        valueRange = 0f..1f,
+                        startLabel = "Sinistra",
+                        endLabel = "Destra",
+                        valueLabel = "${(overlay.x * 100).toInt()}%"
+                    )
+                    LabeledSlider(
+                        label = "Posizione Y",
+                        value = overlay.y,
+                        onValueChange = { onUpdate(overlay.x, it, overlay.scaleW, overlay.opacity) },
+                        onValueChangeFinished = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
+                        valueRange = 0f..1f,
+                        startLabel = "Alto",
+                        endLabel = "Basso",
+                        valueLabel = "${(overlay.y * 100).toInt()}%"
+                    )
+                    LabeledSlider(
+                        label = "Opacità",
+                        value = overlay.opacity,
+                        onValueChange = { onUpdate(overlay.x, overlay.y, overlay.scaleW, it) },
+                        onValueChangeFinished = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
+                        valueRange = 0f..1f,
+                        startLabel = "0%",
+                        endLabel = "100%",
+                        valueLabel = "${(overlay.opacity * 100).toInt()}%"
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── 3. Sottotitoli ────────────────────────────────────────────────────────────
+
+@Composable
+private fun SubtitleSectionContent(
+    subtitleUri: Uri?,
+    subtitleName: String,
+    onSetSubtitle: (Uri?, String) -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+
+    val subtitlePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val name = uri.lastPathSegment?.substringAfterLast("/") ?: "sottotitoli.srt"
+            onSetSubtitle(uri, name)
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Info
+            Text(
+                text = "Brucia i sottotitoli nel video (burn-in). Supporta .srt e .ass.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (subtitleUri != null) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.ClosedCaption,
+                        contentDescription = null,
+                        tint = if (subtitleUri != null)
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (subtitleUri != null) subtitleName else "Nessun file selezionato",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = if (subtitleUri != null)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = if (subtitleUri != null) "File caricato" else "Formati supportati: .srt, .ass",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (subtitleUri != null) {
+                    IconButton(onClick = {
+                        onSetSubtitle(null, "")
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }) {
+                        Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error)
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            subtitlePicker.launch(arrayOf("text/plain", "application/x-subrip", "*/*"))
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        },
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Scegli file")
+                    }
+                }
+            }
+
+            if (subtitleUri != null) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                        Text(
+                            text = "I sottotitoli verranno bruciati nel video durante la conversione.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── 4. Remux (stream copy) ────────────────────────────────────────────────────
+
+@Composable
+private fun RemuxSectionContent(
+    useStreamCopy: Boolean,
+    onUseStreamCopy: (Boolean) -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        onUseStreamCopy(!useStreamCopy)
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Sync,
+                    contentDescription = null,
+                    tint = if (useStreamCopy) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Remux (copia stream)", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = "Cambia contenitore senza ricodificare. Velocissimo, nessuna perdita di qualità.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = useStreamCopy,
+                    onCheckedChange = {
+                        onUseStreamCopy(it)
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
+                )
+            }
+
+            AnimatedVisibility(visible = useStreamCopy) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    // Warning card
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Outlined.Construction, null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(16.dp))
+                                Text("Come funziona", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                            }
+                            Text(
+                                text = "Il remux usa -c copy: tutti i filtri (colore, crop, velocità, testo…) vengono ignorati. Usa questa modalità solo per cambiare il contenitore (es. MKV → MP4) mantenendo codec e qualità originali.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── 5. Estrazione frame ───────────────────────────────────────────────────────
+
+@Composable
+private fun FrameExtractionSectionContent(
+    frameExtractionMode: FrameExtractionMode,
+    frameExtractionRate: Float,
+    frameExtractionTimecode: String,
+    onFrameExtractionMode: (FrameExtractionMode) -> Unit,
+    onFrameExtractionRate: (Float) -> Unit,
+    onFrameExtractionTimecode: (String) -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+
+            Text("Estrazione fotogrammi", style = MaterialTheme.typography.titleMedium)
+
+            // Mode selector
+            SegmentedSelector(
+                options = FrameExtractionMode.entries.map { it.label },
+                selected = frameExtractionMode.label,
+                onSelect = { label ->
+                    val mode = FrameExtractionMode.entries.first { it.label == label }
+                    onFrameExtractionMode(mode)
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            AnimatedContent(targetState = frameExtractionMode, label = "FrameExtractMode") { mode ->
+                when (mode) {
+                    FrameExtractionMode.DISABLED -> {
+                        Text(
+                            text = "L'estrazione frame è disabilitata. La conversione utilizzerà il formato selezionato normalmente.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    FrameExtractionMode.SINGLE -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(
+                                text = "Estrae un singolo fotogramma come immagine PNG al timecode specificato.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedTextField(
+                                value = frameExtractionTimecode,
+                                onValueChange = onFrameExtractionTimecode,
+                                label = { Text("Timecode (HH:MM:SS)") },
+                                placeholder = { Text("00:00:05") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.AccessTime, null, modifier = Modifier.size(18.dp))
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                        }
+                    }
+
+                    FrameExtractionMode.SEQUENCE -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Text(
+                                text = "Estrae fotogrammi a intervalli regolari. L'output sarà una cartella di PNG.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            val intervalLabel = when {
+                                frameExtractionRate >= 1f -> "${frameExtractionRate.toInt()} fps"
+                                else -> "1 ogni ${String.format(java.util.Locale.US, "%.1f", 1f / frameExtractionRate)}s"
+                            }
+
+                            LabeledSlider(
+                                label = "Frequenza estrazione",
+                                value = frameExtractionRate,
+                                onValueChange = onFrameExtractionRate,
+                                onValueChangeFinished = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
+                                valueRange = 0.1f..30f,
+                                startLabel = "1/10fps",
+                                endLabel = "30fps",
+                                valueLabel = intervalLabel
+                            )
+
+                            // Preset chips
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(
+                                    "1/5s" to 0.2f,
+                                    "1/s" to 1f,
+                                    "5fps" to 5f,
+                                    "15fps" to 15f,
+                                ).forEach { (label, rate) ->
+                                    FilterChip(
+                                        selected = kotlin.math.abs(frameExtractionRate - rate) < 0.01f,
+                                        onClick = {
+                                            onFrameExtractionRate(rate)
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        },
+                                        label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+                 

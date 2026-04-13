@@ -18,10 +18,14 @@ object MediaInfoExtractor {
                 .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull() ?: 0L
 
-            // METADATA_KEY_HAS_VIDEO returns the string "yes" when a video track
-            // is present, not a boolean — check explicitly.
+            // METADATA_KEY_HAS_VIDEO / HAS_AUDIO return "yes" when the respective
+            // track is present, not a boolean — check explicitly.
             val hasVideo = retriever
                 .extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO)
+                .equals("yes", ignoreCase = true)
+
+            val hasAudio = retriever
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO)
                 .equals("yes", ignoreCase = true)
 
             val width  = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
@@ -55,6 +59,7 @@ object MediaInfoExtractor {
                 height = height,
                 fileSizeBytes = fileSizeBytes,
                 fileSizeFormatted = fileSizeFormatted,
+                hasAudio = hasAudio,
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to extract media info: ${e.message}", e)

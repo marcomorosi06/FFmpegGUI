@@ -130,6 +130,15 @@ class MainActivity : ComponentActivity() {
                                 fadeOutDuration = s.fadeOutDuration,
                                 isReversed = s.isReversed,
                                 textOverlays = s.textOverlays,
+                                // ── New features ──────────────────────────────
+                                extraClips = s.extraClips,
+                                imageOverlays = s.imageOverlays,
+                                subtitleUri = s.subtitleUri,
+                                subtitleName = s.subtitleName,
+                                useStreamCopy = s.useStreamCopy,
+                                frameExtractionMode = s.frameExtractionMode,
+                                frameExtractionRate = s.frameExtractionRate,
+                                frameExtractionTimecode = s.frameExtractionTimecode,
                                 // Callbacks
                                 onAddTextOverlay = vm::addTextOverlay,
                                 onRemoveTextOverlay = vm::removeTextOverlay,
@@ -169,6 +178,18 @@ class MainActivity : ComponentActivity() {
                                     vm.startConversion()
                                     navController.navigate(Screen.Processing.route)
                                 },
+                                onAddClip = vm::addClip,
+                                onRemoveClip = vm::removeClip,
+                                onReorderClips = vm::reorderClips,
+                                onSetClipTrim = vm::setClipTrim,
+                                onAddImageOverlay = vm::addImageOverlay,
+                                onRemoveImageOverlay = vm::removeImageOverlay,
+                                onUpdateImageOverlay = vm::updateImageOverlay,
+                                onSetSubtitle = vm::setSubtitle,
+                                onUseStreamCopy = vm::setUseStreamCopy,
+                                onFrameExtractionMode = vm::setFrameExtractionMode,
+                                onFrameExtractionRate = vm::setFrameExtractionRate,
+                                onFrameExtractionTimecode = vm::setFrameExtractionTimecode,
                                 onBack = { navController.popBackStack() },
                             )
                         }
