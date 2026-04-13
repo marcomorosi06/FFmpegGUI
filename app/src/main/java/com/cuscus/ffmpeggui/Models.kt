@@ -9,7 +9,7 @@ data class MediaInfo(
     val width: Int,
     val height: Int,
     val fileSizeBytes: Long,
-    val fileSizeFormatted: String
+    val fileSizeFormatted: String,
 )
 
 enum class OutputFormat(
@@ -55,16 +55,13 @@ enum class Rotation(val label: String, val degrees: Int) {
     NONE("Nessuna", 0),
     DEG_90("90°", 90),
     DEG_180("180°", 180),
-    DEG_270("270°", 270)
+    DEG_270("270°", 270),
 }
 
-enum class WatermarkPosition(val label: String, val x: String, val y: String) {
-    TOP_LEFT("Alto-Sinistra", "10", "10"),
-    TOP_RIGHT("Alto-Destra", "w-tw-10", "10"),
-    BOTTOM_LEFT("Basso-Sinistra", "10", "h-th-10"),
-    BOTTOM_RIGHT("Basso-Destra", "w-tw-10", "h-th-10")
-}
-
+/**
+ * Full FFmpeg conversion parameters derived from [ConversionSettings].
+ * Built once per conversion start by the ViewModel, then passed to [CommandBuilder].
+ */
 data class ConversionConfig(
     val inputUri: Uri,
     val inputFileName: String,
@@ -102,7 +99,7 @@ data class ConversionConfig(
     val fadeInDuration: Float = 0f,
     val fadeOutDuration: Float = 0f,
     val isReversed: Boolean = false,
-    val textOverlays: List<TextOverlay> = emptyList()
+    val textOverlays: List<TextOverlay> = emptyList(),
 )
 
 sealed class ConversionState {
@@ -112,20 +109,6 @@ sealed class ConversionState {
     data class Error(val message: String, val logs: List<String>) : ConversionState()
 }
 
-enum class OverlayColor(val ffmpegValue: String, val hexArgb: Long) {
-    WHITE("white", 0xFFFFFFFF),
-    BLACK("black", 0xFF000000),
-    RED("red", 0xFFFF0000),
-    YELLOW("yellow", 0xFFFFFF00),
-    GREEN("green", 0xFF00FF00),
-    BLUE("blue", 0xFF0000FF)
-}
-
-enum class OverlayFont(val path: String, val label: String, val isBold: Boolean) {
-    REGULAR("/system/fonts/Roboto-Regular.ttf", "Normale", false),
-    BOLD("/system/fonts/Roboto-Bold.ttf", "Grassetto", true)
-}
-
 data class TextOverlay(
     val id: String = java.util.UUID.randomUUID().toString(),
     val text: String = "",
@@ -133,5 +116,5 @@ data class TextOverlay(
     val y: Float = 0.5f,
     val size: Float = 0.05f,
     val color: Long = 0xFFFFFFFF,
-    val isBold: Boolean = true
+    val isBold: Boolean = true,
 )

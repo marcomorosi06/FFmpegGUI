@@ -25,8 +25,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-
         enableEdgeToEdge()
+
         setContent {
             FFmpegGUITheme {
                 Surface(
@@ -34,53 +34,21 @@ class MainActivity : ComponentActivity() {
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background)
                         .statusBarsPadding()
-                        .navigationBarsPadding()
+                        .navigationBarsPadding(),
                 ) {
                     val navController = rememberNavController()
                     val vm: ConversionViewModel = viewModel()
 
-                    val projectRatio by vm.projectRatio.collectAsState()
-                    val flipHorizontal by vm.flipHorizontal.collectAsState()
-                    val flipVertical by vm.flipVertical.collectAsState()
+                    // ── Top-level state ────────────────────────────────────────
                     val inputUri by vm.inputUri.collectAsState()
                     val inputFileName by vm.inputFileName.collectAsState()
                     val mediaInfo by vm.mediaInfo.collectAsState()
                     val selectedFormat by vm.selectedFormat.collectAsState()
-                    val startTime by vm.startTime.collectAsState()
-                    val endTime by vm.endTime.collectAsState()
-                    val resolution by vm.resolution.collectAsState()
-                    val framerate by vm.framerate.collectAsState()
-                    val qualityLevel by vm.qualityLevel.collectAsState()
-                    val rotation by vm.rotation.collectAsState()
-                    val cropW by vm.cropW.collectAsState()
-                    val cropH by vm.cropH.collectAsState()
-                    val cropX by vm.cropX.collectAsState()
-                    val cropY by vm.cropY.collectAsState()
-                    val customCommand by vm.customCommand.collectAsState()
-                    val commandPreview by vm.commandPreview.collectAsState()
                     val conversionState by vm.conversionState.collectAsState()
-                    val isManualMode by vm.isManualMode.collectAsState()
-                    val manualCommand by vm.manualCommand.collectAsState()
-                    val removeAudio by vm.removeAudio.collectAsState()
-                    val volumeLevel by vm.volumeLevel.collectAsState()
-                    val normalizeAudio by vm.normalizeAudio.collectAsState()
-                    val audioTrackUri by vm.audioTrackUri.collectAsState()
-                    val audioTrackName by vm.audioTrackName.collectAsState()
-                    val audioTrackDurationMs by vm.audioTrackDurationMs.collectAsState()
-                    val audioTrackTrimStart by vm.audioTrackTrimStart.collectAsState()
-                    val audioTrackTrimEnd by vm.audioTrackTrimEnd.collectAsState()
-                    val audioTrackDelay by vm.audioTrackDelay.collectAsState()
-                    val audioTrackVolume by vm.audioTrackVolume.collectAsState()
-                    val videoSpeed by vm.videoSpeed.collectAsState()
+                    val commandPreview by vm.commandPreview.collectAsState()
 
-                    // Nuovi stati avanzati aggiunti
-                    val brightness by vm.brightness.collectAsState()
-                    val contrast by vm.contrast.collectAsState()
-                    val saturation by vm.saturation.collectAsState()
-                    val fadeInDuration by vm.fadeInDuration.collectAsState()
-                    val fadeOutDuration by vm.fadeOutDuration.collectAsState()
-                    val isReversed by vm.isReversed.collectAsState()
-                    val textOverlays by vm.textOverlays.collectAsState()
+                    // ── All editing settings in one flow ───────────────────────
+                    val s by vm.settings.collectAsState()
 
                     LaunchedEffect(Unit) {
                         intent?.data?.let { uri ->
@@ -126,41 +94,43 @@ class MainActivity : ComponentActivity() {
                                 format = format,
                                 fileName = inputFileName,
                                 mediaDurationFormatted = mediaInfo?.durationFormatted,
-                                startTime = startTime,
-                                endTime = endTime,
-                                resolution = resolution,
-                                framerate = framerate,
-                                qualityLevel = qualityLevel,
-                                rotation = rotation,
-                                flipHorizontal = flipHorizontal,
-                                flipVertical = flipVertical,
-                                projectRatio = projectRatio,
-                                cropW = cropW,
-                                cropH = cropH,
-                                cropX = cropX,
-                                cropY = cropY,
-                                customCommand = customCommand,
+                                // Settings — unpacked from the single flow
+                                startTime = s.startTime,
+                                endTime = s.endTime,
+                                resolution = s.resolution,
+                                framerate = s.framerate,
+                                qualityLevel = s.qualityLevel,
+                                rotation = s.rotation,
+                                flipHorizontal = s.flipHorizontal,
+                                flipVertical = s.flipVertical,
+                                projectRatio = s.projectRatio,
+                                cropW = s.cropW,
+                                cropH = s.cropH,
+                                cropX = s.cropX,
+                                cropY = s.cropY,
+                                customCommand = s.customCommand,
                                 commandPreview = commandPreview,
-                                isManualMode = isManualMode,
-                                manualCommand = manualCommand,
-                                removeAudio = removeAudio,
-                                volumeLevel = volumeLevel,
-                                normalizeAudio = normalizeAudio,
-                                audioTrackUri = audioTrackUri,
-                                audioTrackName = audioTrackName,
-                                audioTrackDurationMs = audioTrackDurationMs,
-                                audioTrackTrimStart = audioTrackTrimStart,
-                                audioTrackTrimEnd = audioTrackTrimEnd,
-                                audioTrackDelay = audioTrackDelay,
-                                audioTrackVolume = audioTrackVolume,
-                                videoSpeed = videoSpeed,
-                                brightness = brightness,
-                                contrast = contrast,
-                                saturation = saturation,
-                                fadeInDuration = fadeInDuration,
-                                fadeOutDuration = fadeOutDuration,
-                                isReversed = isReversed,
-                                textOverlays = textOverlays,
+                                isManualMode = s.isManualMode,
+                                manualCommand = s.manualCommandOverride,
+                                removeAudio = s.removeAudio,
+                                volumeLevel = s.volumeLevel,
+                                normalizeAudio = s.normalizeAudio,
+                                audioTrackUri = s.audioTrackUri,
+                                audioTrackName = s.audioTrackName,
+                                audioTrackDurationMs = s.audioTrackDurationMs,
+                                audioTrackTrimStart = s.audioTrackTrimStart,
+                                audioTrackTrimEnd = s.audioTrackTrimEnd,
+                                audioTrackDelay = s.audioTrackDelay,
+                                audioTrackVolume = s.audioTrackVolume,
+                                videoSpeed = s.videoSpeed,
+                                brightness = s.brightness,
+                                contrast = s.contrast,
+                                saturation = s.saturation,
+                                fadeInDuration = s.fadeInDuration,
+                                fadeOutDuration = s.fadeOutDuration,
+                                isReversed = s.isReversed,
+                                textOverlays = s.textOverlays,
+                                // Callbacks
                                 onAddTextOverlay = vm::addTextOverlay,
                                 onRemoveTextOverlay = vm::removeTextOverlay,
                                 onUpdateTextOverlay = vm::updateTextOverlay,

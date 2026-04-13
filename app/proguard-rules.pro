@@ -19,3 +19,20 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# ── FFmpegKit ──────────────────────────────────────────────────────────────────
+-keep class com.arthenica.ffmpegkit.** { *; }
+-keep class com.arthenica.smartexception.** { *; }
+
+# ── Media3 / ExoPlayer ────────────────────────────────────────────────────────
+-keep class androidx.media3.** { *; }
+-dontwarn androidx.media3.**
+
+# ── Kotlin coroutines ─────────────────────────────────────────────────────────
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+
+# ── Keep data classes used as StateFlow values ────────────────────────────────
+-keep class com.cuscus.ffmpeggui.ConversionSettings { *; }
+-keep class com.cuscus.ffmpeggui.ConversionConfig   { *; }
+-keep class com.cuscus.ffmpeggui.MediaInfo          { *; }
+-keep class com.cuscus.ffmpeggui.TextOverlay        { *; }
