@@ -1049,12 +1049,10 @@ and the release key stays on the maintainer's machine:
    default limits: 10 + 10 minutes of provisioning, 20 minutes of build), rebuild
    it from `.github/izzyondroid/`, and only if both are byte-identical puts it in
    a draft release whose notes give its SHA-256 (`unsigned-sha256:`).
-2. `scripts/sign-release.sh`, on the maintainer's machine, downloads that APK and
-   checks its SHA-256, signs it with `apksigner sign --alignment-preserved true
-   --v1-signing-enabled false` (the signed APK is the unsigned one plus the
-   signature), checks the signature as rbtlog does (`apksigcopier copy` onto the
-   unsigned APK must give the signed APK back, byte for byte), then replaces the
-   unsigned APK with `ffmpeg-gui-<tag>.apk` and publishes the release.
+2. The maintainer downloads that APK, signs it on their machine with `apksigner
+   sign --alignment-preserved true --v1-signing-enabled false` (the signed APK is
+   the unsigned one plus the signature), attaches it to the draft as
+   `ffmpeg-gui-<tag>.apk` in place of the unsigned APK and publishes the release.
 3. `.github/workflows/verify-release.yml` (release published) runs rbtlog on the
    recipe as it is: it downloads the published APK, rebuilds the tag and compares,
    as IzzyOnDroid's server will.

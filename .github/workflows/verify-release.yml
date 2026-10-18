@@ -1,6 +1,6 @@
 name: Verify published release
 
-# When a v* release is published (scripts/sign-release.sh does it), IzzyOnDroid's
+# When a v* release is published, IzzyOnDroid's
 # own builder (rbtlog) runs the recipe in .github/izzyondroid/ exactly as
 # IzzyOnDroid's verification server will: it downloads the signed APK from the
 # release, rebuilds the tag, copies the signature onto the rebuild and compares.

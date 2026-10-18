@@ -231,13 +231,15 @@ Once the AAR is in `media/libs`, the work folder can be deleted to free space (i
 Releases are reproducible: [IzzyOnDroid](https://izzyondroid.org/docs/reproducibleBuilds/)'s builder rebuilds the APK from the tag and compares it with the published one, byte for byte. The release key never leaves your machine.
 
 1. **Tag.** `git tag v1.0 && git push origin v1.0`. The *Reproducible APK* workflow builds the unsigned APK in IzzyOnDroid's environment (Debian bookworm, OpenJDK 17, the pinned FFmpeg runtime), has IzzyOnDroid's own builder ([rbtlog](https://codeberg.org/IzzyOnDroid/rbtlog)) rebuild it from `.github/izzyondroid/`, and only if both are byte-identical leaves the APK in a **draft** release of `v1.0` (a pre-release for tags such as `v1.0-beta1`). Otherwise there is a diffoscope report and no draft.
-2. **Sign and publish, on your machine:**
+2. **Sign and publish, on your machine.** Download `ffmpeg-gui-v1.0-unsigned.apk` from the draft (its SHA-256 is in the draft's notes) and sign it without re-aligning it, so the signed APK is that exact file plus the signature:
 
    ```bash
-   scripts/sign-release.sh v1.0 --ks ~/keystores/ffmpeggui-release.jks
+   apksigner sign --alignment-preserved true --v1-signing-enabled false \
+     --ks ~/keystores/ffmpeggui-release.jks \
+     --out ffmpeg-gui-v1.0.apk ffmpeg-gui-v1.0-unsigned.apk
    ```
 
-   It downloads the APK from the draft and checks it is the one the workflow verified, signs it without re-aligning it (`apksigner sign --alignment-preserved true`, which asks for the passwords), checks the signature exactly as IzzyOnDroid's builder will (copied onto the unsigned APK it must give back the signed one, byte for byte), and after you confirm publishes `ffmpeg-gui-v1.0.apk` in place of the unsigned APK. `--cert SHA256` (or `RELEASE_CERT_SHA256`) refuses a signature by another key. It needs [`gh`](https://cli.github.com/) (logged in), `apksigner` (Android SDK build-tools, found in `~/Android/Sdk`) and `apksigcopier` (`pipx install apksigcopier`).
+   Attach `ffmpeg-gui-v1.0.apk` to the draft (the IzzyOnDroid recipe looks for that name), delete the unsigned APK from it and publish the release. Signing any other way (Android Studio, or `apksigner` without `--alignment-preserved true`) gives an APK IzzyOnDroid cannot reproduce.
 3. **Check.** Publishing starts *Verify published release*: rbtlog downloads the published APK and repeats IzzyOnDroid's whole check.
 
 **The FFmpeg runtime follows by itself.** After a push to `master` that changes `scripts/ffmpeg-kit-next.lock`, `scripts/build-ffmpeg-kit-next.sh` or the Gradle verification file, the *FFmpeg runtime (AAR)* workflow builds the AAR twice (it takes hours), publishes it as a pre-release if both builds match, and commits the new pin to `scripts/ffmpeg-kit-next-aar.txt` (`git pull` afterwards). If `master` is protected, it cannot push: its summary gives the three lines to commit. A tag pushed before the pin is refused (the pinned AAR was built from other inputs): delete it, wait for the pin, and tag again.

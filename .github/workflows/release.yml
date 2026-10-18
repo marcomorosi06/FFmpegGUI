@@ -8,10 +8,10 @@ name: Reproducible APK
 #   3. compare: the two APKs must be byte-identical (diffoscope report otherwise);
 #   4. draft: only then the unsigned APK goes into a draft release of the tag.
 #
-# The release key never leaves your machine: scripts/sign-release.sh downloads
-# the APK from the draft, checks it is the one verified here, signs it without
-# re-aligning it, checks the signature carries over as IzzyOnDroid will check it,
-# and publishes the release. verify-release.yml then rebuilds the published
+# The release key never leaves your machine: download the APK from the draft,
+# sign it there without re-aligning it (apksigner --alignment-preserved true),
+# attach it as ffmpeg-gui-<tag>.apk in place of the unsigned one and publish the
+# release (README.md, "Releasing"). verify-release.yml then rebuilds the published
 # release once more, exactly as IzzyOnDroid will.
 
 on:
@@ -264,7 +264,7 @@ jobs:
         run: |
           apk="draft/$NAME"
           sha256sum -c <<< "$UNSIGNED_SHA256  $apk"
-          # scripts/sign-release.sh reads the "unsigned-sha256:" line.
+          # The SHA-256 of the APK verified here, to check the download against.
           {
             echo "unsigned-sha256: \`$UNSIGNED_SHA256\`"
             echo
@@ -288,9 +288,9 @@ jobs:
           {
             echo "### Draft release of \`$TAG\` ready"
             echo
-            echo "On your machine, in the repository:"
+            echo "Download \`$NAME\` (SHA-256 \`$UNSIGNED_SHA256\`) from the draft and sign it on your machine, without re-aligning it:"
             echo
-            echo "\`scripts/sign-release.sh $TAG --ks /path/to/ffmpeggui-release.jks\`"
+            echo "\`apksigner sign --alignment-preserved true --v1-signing-enabled false --ks /path/to/ffmpeggui-release.jks --out ffmpeg-gui-${TAG}.apk $NAME\`"
             echo
-            echo "It downloads \`$NAME\` (SHA-256 \`$UNSIGNED_SHA256\`), signs it without re-aligning it, checks it and publishes the release."
+            echo "Then attach \`ffmpeg-gui-${TAG}.apk\` to the draft, delete \`$NAME\` from it and publish the release."
           } >> "$GITHUB_STEP_SUMMARY"
