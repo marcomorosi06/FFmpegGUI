@@ -19,6 +19,10 @@
   <a href="https://ko-fi.com/marcomorosi"><img src="https://img.shields.io/badge/Ko--fi-Support%20the%20project-FF5E5B?logo=ko-fi&logoColor=white" alt="Support the project on Ko-fi"></a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/marcomorosi06/FFmpegGUI/releases"><img src="https://raw.githubusercontent.com/Kunzisoft/Github-badge/main/get-it-on-github.svg" alt="Get it on GitHub" height="80"></a>
+</p>
+
 ---
 
 <table>
