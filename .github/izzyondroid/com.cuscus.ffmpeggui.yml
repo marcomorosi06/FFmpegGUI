@@ -1,0 +1,40 @@
+---
+# Build recipe for IzzyOnDroid's reproducible builds (rbtlog), in its format:
+# https://izzyondroid.org/docs/reproducibleBuilds/PreparingRecipes/
+#
+# .github/workflows/release.yml runs IzzyOnDroid's own builder with this recipe
+# for every v* tag (@TAG@ is replaced with the tag) and checks that it builds the
+# very APK the workflow built. It is also what to send IzzyOnDroid for the app.
+#
+# The build takes the FFmpeg runtime pinned in scripts/ffmpeg-kit-next-aar.txt
+# (downloaded and checked by its SHA-256); everything else is built from source.
+repository: https://github.com/marcomorosi06/FFmpegGUI.git
+updates: releases
+versions:
+  - tag: '@TAG@'
+    apks:
+      - apk_pattern: ffmpeg-gui-v.*\.apk
+        apk_url: https://github.com/marcomorosi06/FFmpegGUI/releases/download/$$TAG$$/ffmpeg-gui-$$TAG$$.apk
+        build:
+          - bash scripts/fetch-ffmpeg-kit-next.sh
+          - ./gradlew clean assembleRelease --no-build-cache --no-configuration-cache --no-daemon
+          - mv app/build/outputs/apk/release/app-release-unsigned.apk /outputs/unsigned.apk
+        build_home_dir: /build
+        build_repo_dir: /build/repo
+        build_user: build
+        provisioning:
+          android_home: /opt/sdk
+          build_tools:
+          cmake:
+          cmdline_tools:
+            version: '12.0'
+            url: https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+            sha256: 2d2d50857e4eb553af5a6dc3ad507a17adf43d115264b1afc116f95c92e5e258
+          extra_packages: []
+          image: debian:bookworm-slim
+          jdk: openjdk-17-jdk-headless
+          ndk:
+          platform:
+          platform_tools:
+          tools:
+          verify_gradle_wrapper: true

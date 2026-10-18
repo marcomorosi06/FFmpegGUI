@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The teal icon in the dark, as the wallpaper one goes dark there (Android 12+). -->
+<resources>
+    <color name="icon_teal_bg">#00423C</color>
+    <color name="icon_teal_body">#CCE8E4</color>
+    <color name="icon_teal_tip">#4DB6AC</color>
+</resources>

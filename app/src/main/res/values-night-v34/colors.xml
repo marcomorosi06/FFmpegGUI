@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="splash_background">@android:color/system_background_dark</color>
+    <color name="splash_accent">@android:color/system_primary_dark</color>
+    <color name="splash_icon_bg">@android:color/system_primary_container_dark</color>
+</resources>

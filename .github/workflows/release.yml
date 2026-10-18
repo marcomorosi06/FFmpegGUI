@@ -1,0 +1,296 @@
+name: Reproducible APK
+
+# For every v* tag:
+#   1. build: the unsigned release APK, in the environment IzzyOnDroid's recipes
+#      provision;
+#   2. izzyondroid: IzzyOnDroid's own builder (rbtlog) rebuilds the tag from the
+#      recipe in .github/izzyondroid/;
+#   3. compare: the two APKs must be byte-identical (diffoscope report otherwise);
+#   4. draft: only then the unsigned APK goes into a draft release of the tag.
+#
+# The release key never leaves your machine: scripts/sign-release.sh downloads
+# the APK from the draft, checks it is the one verified here, signs it without
+# re-aligning it, checks the signature carries over as IzzyOnDroid will check it,
+# and publishes the release. verify-release.yml then rebuilds the published
+# release once more, exactly as IzzyOnDroid will.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing v* tag to build and check"
+        required: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  APP_ID: com.cuscus.ffmpeggui
+  # IzzyOnDroid's builder, the code its verification server runs. To move it:
+  # git ls-remote https://codeberg.org/IzzyOnDroid/rbtlog.git refs/heads/izzy/log
+  RBTLOG_REPOSITORY: https://codeberg.org/IzzyOnDroid/rbtlog.git
+  RBTLOG_COMMIT: 6c87365f322dd458fe79dd4870bf0e54696760b6
+  # Android command line tools as IzzyOnDroid's recipes provision them.
+  CMDLINE_TOOLS_VERSION: "12.0"
+  CMDLINE_TOOLS_URL: https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+  CMDLINE_TOOLS_SHA256: 2d2d50857e4eb553af5a6dc3ad507a17adf43d115264b1afc116f95c92e5e258
+
+jobs:
+  build:
+    name: Build unsigned release APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # The image and JDK of IzzyOnDroid's recipe (provisioning in the recipe).
+    container:
+      image: debian:bookworm-slim
+    env:
+      ANDROID_HOME: /opt/sdk
+      ANDROID_SDK_ROOT: /opt/sdk
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+    outputs:
+      name: ${{ steps.apk.outputs.name }}
+      sha256: ${{ steps.apk.outputs.sha256 }}
+      aar: ${{ steps.apk.outputs.aar }}
+    steps:
+      - name: Install build tools
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          mkdir -p /usr/share/man/man1
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git wget unzip openjdk-17-jdk-headless
+          java -version
+
+      - name: Check out the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+
+      - name: Check the pinned FFmpeg runtime is current
+        run: |
+          # A tag whose pinned AAR was built from other sources cannot be released:
+          # wait for the "FFmpeg runtime (AAR)" workflow to pin the new one, then tag again.
+          bash scripts/ffmpeg-kit-next-inputs.sh --check
+
+      - name: Validate the Gradle wrapper
+        uses: gradle/actions/wrapper-validation@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Install the Android command line tools
+        run: |
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          wget -q -O /tmp/tools.zip -- "$CMDLINE_TOOLS_URL"
+          sha256sum -c <<< "$CMDLINE_TOOLS_SHA256  /tmp/tools.zip"
+          unzip -q -d "$ANDROID_HOME/cmdline-tools" /tmp/tools.zip
+          mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/$CMDLINE_TOOLS_VERSION"
+          rm /tmp/tools.zip
+          ( yes || true ) | "$ANDROID_HOME/cmdline-tools/$CMDLINE_TOOLS_VERSION/bin/sdkmanager" --sdk_root="$ANDROID_HOME" --licenses > /dev/null
+
+      - name: Fetch the pinned FFmpeg runtime
+        run: bash scripts/fetch-ffmpeg-kit-next.sh
+
+      - name: Build the unsigned release APK
+        run: ./gradlew clean assembleRelease --no-build-cache --no-configuration-cache --no-daemon
+
+      - name: Name and hash the APK
+        id: apk
+        run: |
+          out=app/build/outputs/apk/release
+          name="ffmpeg-gui-${TAG}-unsigned.apk"
+          cp "$out/app-release-unsigned.apk" "$name"
+          sha=$(sha256sum "$name" | cut -d ' ' -f 1)
+          aar=$(sha256sum media/libs/ffmpeg-kit-next-*.aar | cut -d ' ' -f 1)
+          {
+            echo "name=$name"
+            echo "sha256=$sha"
+            echo "aar=$aar"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### $name"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| SHA-256 | \`$sha\` |"
+            echo "| Commit | \`$(git rev-parse HEAD)\` |"
+            echo "| Tag | \`$TAG\` |"
+            echo "| Image | \`debian:bookworm-slim\` |"
+            echo "| JDK | \`$(java -version 2>&1 | head -n 1)\` |"
+            echo "| FFmpeg runtime (AAR) | \`$aar\` |"
+            echo "| Command | \`./gradlew clean assembleRelease --no-build-cache --no-configuration-cache --no-daemon\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the unsigned APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          path: ${{ steps.apk.outputs.name }}
+          archive: false
+          if-no-files-found: error
+
+  izzyondroid:
+    name: Rebuild with IzzyOnDroid's builder
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    outputs:
+      sha256: ${{ steps.result.outputs.sha256 }}
+    steps:
+      - name: Check out the recipe
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+          sparse-checkout: .github/izzyondroid
+
+      - name: Get IzzyOnDroid's builder (rbtlog)
+        run: |
+          git clone --quiet --filter=blob:none --no-checkout "$RBTLOG_REPOSITORY" rbtlog
+          git -C rbtlog -c advice.detachedHead=false checkout --quiet "$RBTLOG_COMMIT"
+          git -C rbtlog log -1 --format='rbtlog %H %ci %s'
+          python3 -m venv venv
+          venv/bin/pip install --quiet -r rbtlog/requirements.txt
+
+      - name: Build the tag as IzzyOnDroid's verification server does
+        run: |
+          sed "s/@TAG@/${TAG}/" ".github/izzyondroid/${APP_ID}.yml" > "rbtlog/recipes/${APP_ID}.yml"
+          mkdir -p "$RUNNER_TEMP/apks"
+          cd rbtlog
+          # No signed APK yet (":none"): build only. Default timeouts, as on IzzyOnDroid's server.
+          ../venv/bin/python scripts/build.py --local --keep-apks "$RUNNER_TEMP/apks" -v docker \
+            "${APP_ID}:${TAG}::none" > "$RUNNER_TEMP/result.json"
+
+      - name: Read the result
+        id: result
+        run: |
+          # With ":none" build.py exits 0 even when the build fails: the JSON says.
+          sha=$(python3 - "$RUNNER_TEMP/result.json" <<'EOF'
+          import json, sys
+          [result] = json.load(open(sys.argv[1]))
+          if result["error"] or not result["built_unsigned_apk_sha256"]:
+              print(f"::error::IzzyOnDroid's builder failed: {result['error']}", file=sys.stderr)
+              sys.exit(1)
+          print(result["built_unsigned_apk_sha256"])
+          EOF
+          )
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+          echo "### IzzyOnDroid's builder: \`$sha\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the rebuilt APK
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: izzyondroid-rebuild
+          path: ${{ runner.temp }}/apks/
+          if-no-files-found: ignore
+
+  compare:
+    name: Compare
+    needs: [build, izzyondroid]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Compare
+        env:
+          FIRST: ${{ needs.build.outputs.sha256 }}
+          SECOND: ${{ needs.izzyondroid.outputs.sha256 }}
+        run: |
+          echo "this workflow:         $FIRST"
+          echo "IzzyOnDroid's builder: $SECOND"
+          if [ -z "$FIRST" ] || [ "$FIRST" != "$SECOND" ]; then
+            echo "::error::The two builds differ, so IzzyOnDroid would not be able to reproduce this APK. No draft release: see the diffoscope report."
+            exit 1
+          fi
+          echo "### Reproducible: IzzyOnDroid's builder made the very same APK (\`$FIRST\`)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Download both APKs
+        if: failure()
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: apks
+
+      - name: Explain the difference
+        if: failure()
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends diffoscope-minimal
+          first=$(find apks -name 'ffmpeg-gui-*-unsigned.apk' | head -n 1)
+          second=$(find apks -name "*-${APP_ID}-*.apk" | head -n 1)
+          if [ -z "$first" ] || [ -z "$second" ]; then
+            echo "Only one of the two APKs is there (a build failed): nothing to compare."
+            exit 0
+          fi
+          diffoscope --text diffoscope.txt "$first" "$second" || true
+          head -c 60000 diffoscope.txt >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload the diffoscope report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: diffoscope
+          path: diffoscope.txt
+          if-no-files-found: ignore
+
+  draft:
+    name: Draft the release
+    needs: [build, compare]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download the unsigned APK
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.build.outputs.name }}
+          path: draft
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: ${{ needs.build.outputs.name }}
+          UNSIGNED_SHA256: ${{ needs.build.outputs.sha256 }}
+          AAR_SHA256: ${{ needs.build.outputs.aar }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          apk="draft/$NAME"
+          sha256sum -c <<< "$UNSIGNED_SHA256  $apk"
+          # scripts/sign-release.sh reads the "unsigned-sha256:" line.
+          {
+            echo "unsigned-sha256: \`$UNSIGNED_SHA256\`"
+            echo
+            echo "FFmpeg runtime (AAR) SHA-256: \`$AAR_SHA256\`"
+            echo
+            echo "Built, and rebuilt identical by IzzyOnDroid's builder, in [this run]($RUN_URL)."
+          } > notes.md
+          if draft=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2> /dev/null); then
+            if [ "$draft" != true ]; then
+              echo "::error::The release of $TAG is already published: not touched."
+              exit 1
+            fi
+            gh release upload "$TAG" "$apk" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+          else
+            prerelease=()
+            if [[ "$TAG" == *-* ]]; then prerelease=(--prerelease); fi
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+              --title "$TAG" --notes-file notes.md "${prerelease[@]}" "$apk"
+          fi
+          {
+            echo "### Draft release of \`$TAG\` ready"
+            echo
+            echo "On your machine, in the repository:"
+            echo
+            echo "\`scripts/sign-release.sh $TAG --ks /path/to/ffmpeggui-release.jks\`"
+            echo
+            echo "It downloads \`$NAME\` (SHA-256 \`$UNSIGNED_SHA256\`), signs it without re-aligning it, checks it and publishes the release."
+          } >> "$GITHUB_STEP_SUMMARY"

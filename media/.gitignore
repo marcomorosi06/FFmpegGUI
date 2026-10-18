@@ -1,0 +1,3 @@
+/build
+# The FFmpeg runtime made by scripts/build-ffmpeg-kit-next.sh: built from source, not kept in git.
+/libs/

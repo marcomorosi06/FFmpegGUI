@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher icon colors when the wallpaper colours are off: the app's own teal, on every Android. -->
+<resources>
+    <color name="icon_teal_bg">#CCE8E4</color>
+    <color name="icon_teal_body">#00423C</color>
+    <color name="icon_teal_tip">#00897B</color>
+</resources>

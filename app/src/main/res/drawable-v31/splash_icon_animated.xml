@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+    <aapt:attr name="android:drawable">
+        <vector
+            android:name="root"
+            android:width="108dp"
+            android:height="108dp"
+            android:viewportWidth="108"
+            android:viewportHeight="108">
+            <group
+                android:name="shapeAGroup"
+                android:pivotX="45"
+                android:pivotY="63">
+                <path
+                    android:name="shapeA"
+                    android:pathData="M45.00,47.66C45.00,47.66 45.00,47.66 45.00,47.66L45.55,47.23C49.87,43.91 55.99,44.31 59.84,48.16L59.84,48.16C63.69,52.01 64.09,58.13 60.77,62.45L60.34,63.00C60.34,63.00 60.34,63.00 60.34,63.00L60.77,63.55C64.09,67.87 63.69,73.99 59.84,77.84L59.84,77.84C55.99,81.69 49.87,82.09 45.55,78.77L45.00,78.34C45.00,78.34 45.00,78.34 45.00,78.34L44.45,78.77C40.13,82.09 34.01,81.69 30.16,77.84L30.16,77.84C26.31,73.99 25.91,67.87 29.23,63.55L29.66,63.00C29.66,63.00 29.66,63.00 29.66,63.00L29.23,62.45C25.91,58.13 26.31,52.01 30.16,48.16L30.16,48.16C34.01,44.31 40.13,43.91 44.45,47.23Z"
+                    android:fillColor="@color/splash_icon_bg"/>
+            </group>
+            <group
+                android:name="shapeBGroup"
+                android:pivotX="64"
+                android:pivotY="45">
+                <path
+                    android:name="shapeB"
+                    android:pathData="M77.88,40.44C80.39,42.96 80.39,47.04 77.88,49.56L77.88,49.56C76.85,50.59 76.20,51.94 76.03,53.39L76.03,53.39C75.63,56.92 72.44,59.47 68.90,59.07L68.90,59.07C67.45,58.91 65.99,59.25 64.76,60.02L64.76,60.02C61.74,61.91 57.77,61.00 55.87,57.99L55.87,57.99C55.09,56.76 53.92,55.83 52.55,55.34L52.55,55.34C49.19,54.16 47.42,50.49 48.59,47.12L48.59,47.12C49.07,45.75 49.07,44.25 48.59,42.88L48.59,42.88C47.42,39.51 49.19,35.84 52.55,34.66L52.55,34.66C53.92,34.17 55.09,33.24 55.87,32.01L55.87,32.01C57.77,29.00 61.74,28.09 64.76,29.98L64.76,29.98C65.99,30.75 67.45,31.09 68.90,30.93L68.90,30.93C72.44,30.53 75.63,33.08 76.03,36.61L76.03,36.61C76.20,38.06 76.85,39.41 77.88,40.44Z"
+                    android:fillColor="@color/splash_accent"
+                    android:fillAlpha="0.35"/>
+            </group>
+            <group
+                android:name="logoGroup"
+                android:pivotX="54"
+                android:pivotY="54">
+                <group
+                    android:scaleX="0.09848"
+                    android:scaleY="0.09848"
+                    android:translateX="26.3271"
+                    android:translateY="28.7891">
+                    <path
+                        android:pathData="M162.00,142.00 L162.00,370.00 A18,18 0 0,0 188.83,385.69 L229.33,362.89 A18,18 0 0,0 237.97,351.55 L277.77,191.65 A18,18 0 0,0 269.14,171.62 L188.84,126.32 A18,18 0 0,0 162.00,142.00 Z"
+                        android:fillColor="@color/splash_accent"/>
+                    <path
+                        android:pathData="M291.65,327.67 L390.85,271.67 A18,18 0 0,0 390.85,240.33 L316.15,198.13 A18,18 0 0,0 289.84,209.44 L265.34,307.64 A18,18 0 0,0 291.65,327.67 Z"
+                        android:fillColor="@color/splash_accent"
+                        android:fillAlpha="0.55"/>
+                </group>
+            </group>
+        </vector>
+    </aapt:attr>
+
+    <target android:name="shapeAGroup">
+        <aapt:attr name="android:animation">
+            <set android:ordering="together">
+                <objectAnimator android:propertyName="scaleX" android:valueFrom="0.3" android:valueTo="1.0" android:startOffset="0" android:duration="480" android:interpolator="@interpolator/expressive_overshoot"/>
+                <objectAnimator android:propertyName="scaleY" android:valueFrom="0.3" android:valueTo="1.0" android:startOffset="0" android:duration="480" android:interpolator="@interpolator/expressive_overshoot"/>
+                <objectAnimator android:propertyName="rotation" android:valueFrom="0" android:valueTo="140" android:duration="1000" android:interpolator="@android:interpolator/linear"/>
+            </set>
+        </aapt:attr>
+    </target>
+
+    <target android:name="shapeBGroup">
+        <aapt:attr name="android:animation">
+            <set android:ordering="together">
+                <objectAnimator android:propertyName="scaleX" android:valueFrom="0.3" android:valueTo="1.0" android:startOffset="90" android:duration="480" android:interpolator="@interpolator/expressive_overshoot"/>
+                <objectAnimator android:propertyName="scaleY" android:valueFrom="0.3" android:valueTo="1.0" android:startOffset="90" android:duration="480" android:interpolator="@interpolator/expressive_overshoot"/>
+                <objectAnimator android:propertyName="rotation" android:valueFrom="0" android:valueTo="-140" android:duration="1000" android:interpolator="@android:interpolator/linear"/>
+            </set>
+        </aapt:attr>
+    </target>
+
+    <target android:name="logoGroup">
+        <aapt:attr name="android:animation">
+            <set android:ordering="together">
+                <objectAnimator android:propertyName="scaleX" android:valueFrom="0.4" android:valueTo="1.0" android:startOffset="180" android:duration="460" android:interpolator="@interpolator/expressive_overshoot"/>
+                <objectAnimator android:propertyName="scaleY" android:valueFrom="0.4" android:valueTo="1.0" android:startOffset="180" android:duration="460" android:interpolator="@interpolator/expressive_overshoot"/>
+                <objectAnimator android:propertyName="scaleX" android:valueFrom="1.0" android:valueTo="2.6" android:startOffset="700" android:duration="300" android:interpolator="@android:interpolator/accelerate_cubic"/>
+                <objectAnimator android:propertyName="scaleY" android:valueFrom="1.0" android:valueTo="2.6" android:startOffset="700" android:duration="300" android:interpolator="@android:interpolator/accelerate_cubic"/>
+            </set>
+        </aapt:attr>
+    </target>
+
+    <target android:name="shapeA">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="fillAlpha" android:valueFrom="1.0" android:valueTo="0.0" android:startOffset="620" android:duration="250" android:interpolator="@android:interpolator/accelerate_quad"/>
+        </aapt:attr>
+    </target>
+
+    <target android:name="shapeB">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="fillAlpha" android:valueFrom="0.35" android:valueTo="0.0" android:startOffset="620" android:duration="250" android:interpolator="@android:interpolator/accelerate_quad"/>
+        </aapt:attr>
+    </target>
+
+    <target android:name="root">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="alpha" android:valueFrom="1.0" android:valueTo="0.0" android:startOffset="780" android:duration="220" android:interpolator="@android:interpolator/accelerate_quad"/>
+        </aapt:attr>
+    </target>
+</animated-vector>

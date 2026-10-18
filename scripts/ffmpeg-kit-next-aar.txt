@@ -1,0 +1,17 @@
+# The FFmpeg runtime the app is built with: media/libs/ffmpeg-kit-next-6.1.1.aar.
+#
+# .github/workflows/ffmpeg-aar.yml writes this file: after a push to main that
+# changes what the AAR is built from (scripts/ffmpeg-kit-next-inputs.sh), it builds
+# the AAR twice, on two different runners, publishes it as a release asset only
+# when both builds are byte-identical, and commits the three lines below.
+#
+# scripts/fetch-ffmpeg-kit-next.sh downloads it and checks its SHA-256, and the
+# Gradle build takes no other AAR (verifyFfmpegKitNext in media/build.gradle.kts).
+# Anyone can build it again with scripts/build-ffmpeg-kit-next.sh
+# (FFMPEG_KIT_WORKDIR=/var/tmp/ffmpeg-kit-next): the script says whether its result
+# is this very file.
+#
+# "-" means it is not published yet.
+url    -
+sha256 -
+inputs -

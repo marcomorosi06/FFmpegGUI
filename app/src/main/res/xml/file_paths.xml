@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-cache-path name="camera_output" path="." />
+    <cache-path name="cache" path="." />
+    <external-files-path name="external_files" path="." />
+    <!-- Fallback output location when external storage is unavailable. -->
+    <files-path name="internal_files" path="FFmpegGui/" />
+    <!-- Recent projects: the files copied into them (see ProjectStore). Private to the app. -->
+    <files-path name="projects" path="projects/" />
+</paths>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="splash_background">#0E1513</color>
+    <color name="splash_accent">#82D5C7</color>
+    <color name="splash_icon_bg">#005048</color>
+    <color name="splash_teal_background">#0E1513</color>
+    <color name="splash_teal_accent">#82D5C7</color>
+    <color name="splash_teal_icon_bg">#005048</color>
+</resources>

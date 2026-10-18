@@ -1,0 +1,90 @@
+name: Verify published release
+
+# When a v* release is published (scripts/sign-release.sh does it), IzzyOnDroid's
+# own builder (rbtlog) runs the recipe in .github/izzyondroid/ exactly as
+# IzzyOnDroid's verification server will: it downloads the signed APK from the
+# release, rebuilds the tag, copies the signature onto the rebuild and compares.
+# A failure here means IzzyOnDroid will not mark the release reproducible.
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published v* release to verify"
+        required: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+  APP_ID: com.cuscus.ffmpeggui
+  # Keep these the same as in release.yml.
+  RBTLOG_REPOSITORY: https://codeberg.org/IzzyOnDroid/rbtlog.git
+  RBTLOG_COMMIT: 6c87365f322dd458fe79dd4870bf0e54696760b6
+
+jobs:
+  verify:
+    name: Verify as IzzyOnDroid will
+    if: startsWith(github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name, 'v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out the recipe
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+          sparse-checkout: .github/izzyondroid
+
+      - name: Get IzzyOnDroid's builder (rbtlog)
+        run: |
+          git clone --quiet --filter=blob:none --no-checkout "$RBTLOG_REPOSITORY" rbtlog
+          git -C rbtlog -c advice.detachedHead=false checkout --quiet "$RBTLOG_COMMIT"
+          git -C rbtlog log -1 --format='rbtlog %H %ci %s'
+          python3 -m venv venv
+          venv/bin/pip install --quiet -r rbtlog/requirements.txt
+
+      - name: Download, rebuild and compare
+        run: |
+          sed "s/@TAG@/${TAG}/" ".github/izzyondroid/${APP_ID}.yml" > "rbtlog/recipes/${APP_ID}.yml"
+          mkdir -p "$RUNNER_TEMP/apks"
+          cd rbtlog
+          # The recipe's apk_url: the signed APK of the published release.
+          ../venv/bin/python scripts/build.py --keep-apks "$RUNNER_TEMP/apks" -v docker \
+            "${APP_ID}:${TAG}" > "$RUNNER_TEMP/result.json" || true
+
+      - name: Read the result
+        run: |
+          python3 - "$RUNNER_TEMP/result.json" "$GITHUB_STEP_SUMMARY" <<'EOF'
+          import json, sys
+          try:
+              [result] = json.load(open(sys.argv[1]))
+          except ValueError:
+              print("::error::IzzyOnDroid's builder gave no result (see the step above).")
+              sys.exit(1)
+          with open(sys.argv[2], "a") as summary:
+              summary.write(f"### {result['appid']} {result['tag']}: reproducible **{result['reproducible']}**\n\n")
+              summary.write(f"- signed APK (release): `{result['upstream_signed_apk_sha256']}`\n")
+              summary.write(f"- rebuilt APK: `{result['built_unsigned_apk_sha256']}`\n")
+              summary.write(f"- rebuilt APK with the signature copied: `{result['signature_copied_apk_sha256']}`\n")
+          if result["error"] or result["reproducible"] is not True:
+              print(f"::error::IzzyOnDroid would not find this release reproducible: {result['error'] or 'the APKs differ'}")
+              sys.exit(1)
+          print("Reproducible, as IzzyOnDroid's server will find it.")
+          EOF
+
+      - name: Upload the APKs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: izzyondroid-verify
+          path: ${{ runner.temp }}/apks/
+          if-no-files-found: ignore

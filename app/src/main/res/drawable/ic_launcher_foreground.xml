@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon foreground: play shape split by one slanted cut. -->
+<!-- The 512 viewport maps to the full 108dp layer; the glyph sits in the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <!-- The glyph at 90 % of its first size, about the centre: a little smaller in the icon. -->
+    <group
+        android:pivotX="256"
+        android:pivotY="256"
+        android:scaleX="0.9"
+        android:scaleY="0.9">
+        <!-- Body -->
+        <path
+            android:pathData="M180,142 L180,370 L220.5,347.2 L260.3,187.3 Z"
+            android:fillColor="@color/icon_body"
+            android:strokeColor="@color/icon_body"
+            android:strokeWidth="36"
+            android:strokeLineJoin="round" />
+        <!-- Tip -->
+        <path
+            android:pathData="M282.8,312 L382,256 L307.3,213.8 Z"
+            android:fillColor="@color/icon_tip"
+            android:strokeColor="@color/icon_tip"
+            android:strokeWidth="36"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>

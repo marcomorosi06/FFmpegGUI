@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed icon layer (Android 13+): the system tints it with one colour and keeps its alpha, -->
+<!-- so the body (opaque) and the tip (translucent) show as two tones of that colour. -->
+<!-- Same glyph as ic_launcher_foreground, each part as one filled outline (its stroke with -->
+<!-- round joins worked out as edges and arcs), so a part's alpha never doubles where fill and -->
+<!-- stroke would overlap. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <group
+        android:pivotX="256"
+        android:pivotY="256"
+        android:scaleX="0.9"
+        android:scaleY="0.9">
+        <path
+            android:pathData="M162.00,142.00 L162.00,370.00 A18,18 0 0,0 188.83,385.69 L229.33,362.89 A18,18 0 0,0 237.97,351.55 L277.77,191.65 A18,18 0 0,0 269.14,171.62 L188.84,126.32 A18,18 0 0,0 162.00,142.00 Z"
+            android:fillColor="#FFFFFFFF" />
+        <path
+            android:pathData="M291.65,327.67 L390.85,271.67 A18,18 0 0,0 390.85,240.33 L316.15,198.13 A18,18 0 0,0 289.84,209.44 L265.34,307.64 A18,18 0 0,0 291.65,327.67 Z"
+            android:fillColor="#FFFFFFFF"
+            android:fillAlpha="0.55" />
+    </group>
+</vector>

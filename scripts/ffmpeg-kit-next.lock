@@ -1,0 +1,92 @@
+# Sources of the FFmpeg runtime, pinned to a commit.
+#
+# scripts/build-ffmpeg-kit-next.sh builds FFmpegKitNext (the official, source-only
+# continuation of FFmpegKit) from these sources and stops if any of them is not the
+# commit written here: a moved tag or a changed mirror fails the build before its
+# code is compiled.
+#
+# "kit" is FFmpegKitNext itself; each "lib" is a source its Android build may
+# download (scripts/source.sh of that FFmpegKitNext commit), with the tag the build
+# asks for and the commit that tag pointed to when this file was written. "-" as tag
+# means the build asks for the commit itself.
+#
+# Checked on 2026-10-18 against the upstream projects' own repositories, where they
+# are on GitHub: ffmpeg (FFmpeg/FFmpeg n6.1.6), libass, dav1d, freetype, harfbuzz,
+# fribidi, opus, libvorbis, libogg, zimg, libvidstab, expat, libpng, cpu-features
+# and x264 (mirror/x264) are the very same commits.
+#
+# To move to another FFmpegKitNext release: change the kit line, then regenerate
+# every lib line from that release's scripts/source.sh (scripts/build-ffmpeg-kit-next.sh
+# refuses a lock that disagrees with it) and check them again. Read that release's
+# flake.nix and nix.conf too: a nixConfig block (binary caches, other settings) is
+# not taken by the build (NIX_CONFIG="accept-flake-config = false"), but should be
+# understood. The build only gets the variables listed in KEEP_ENV (in the build
+# script): if a new release needs another one, add it there.
+#
+# "gradle" is the Gradle distribution FFmpegKitNext's Android project (android/)
+# packs the AAR with: its URL (it must be the one of that project's
+# gradle-wrapper.properties), its version and its SHA-256, from
+# https://gradle.org/release-checksums/ (Gradle 8.14.5, binary-only ZIP). The
+# project's gradle-wrapper.jar, pinned by the kit commit, is Gradle 8.13's official
+# one (SHA-256 81a82aaea5abcc8ff68b3dfcb58b3c3c429378efd98e7433460610fecd7ae45f).
+# The Gradle plugins and libraries it downloads are pinned by
+# scripts/ffmpeg-kit-next.verification-metadata.xml (see the build script). Its
+# unit tests do not run (an init script turns them off), so a test framework that
+# downloads by itself (Robolectric, from FFmpegKitNext releases after 6.1.1) does
+# not either; check that a new release still runs nothing else outside Gradle.
+#
+# kind  name  repository  tag  commit
+kit  ffmpeg-kit-next https://github.com/arthenica/ffmpeg-kit-next  v6.1.1                         6f22dae8ee2774a752427c391026e2d12df5438f
+gradle distribution  https://services.gradle.org/distributions/gradle-8.14.5-bin.zip 8.14.5                         6f74b601422d6d6fc4e1f9a1ab6522f642c2fdcbc15ae33ebd30ba3d7198e854
+lib  config        https://github.com/arthenica/gnu-config       v20210814                      805517123cbfe33d17c989a18e78c5789fab0437
+lib  chromaprint   https://github.com/arthenica/chromaprint      v1.5.1                         5c3be6803856f25b11d1d704bac56e733b4fc997
+lib  cpu-features  https://github.com/arthenica/cpu_features     v0.9.0                         ba4bffa86cbb5456bdb34426ad22b9551278e2c0
+lib  dav1d         https://github.com/arthenica/dav1d            1.4.2                          805d9e5a8ffce3ef78cebde4bfedf3642907b2d3
+lib  expat         https://github.com/arthenica/libexpat         R_2_5_0                        654d2de0da85662fcc7644a7acd7c2dd2cfb21f0
+lib  ffmpeg        https://github.com/arthenica/FFmpeg           n6.1.6                         f1e3a2bf7a2f2cde936d1ed97f09a26853d20125
+lib  fontconfig    https://github.com/arthenica/fontconfig       2.14.2                         7861a719616b4b132b9cac089c6c64f47832edb1
+lib  freetype      https://github.com/arthenica/freetype2        VER-2-13-0                     de8b92dd7ec634e9e2b25ef534c54a3537555c11
+lib  fribidi       https://github.com/arthenica/fribidi          v1.0.13                        b54871c339dabb7434718da3fed2fa63320997e5
+lib  giflib        https://github.com/arthenica/giflib           5.2.1                          52b62de83d5facbbbde042b85bf3f61182e3bebd
+lib  gmp           https://github.com/arthenica/gmp              v6.2.1                         66a538082b4a485bd2b34012db96e44a86a8e712
+lib  gnutls        https://github.com/arthenica/gnutls           3.7.9                          ca61668d7764fc29fb4cc2aa396cb035e176636d
+lib  harfbuzz      https://github.com/arthenica/harfbuzz         8.0.1                          d160d9389cb4c5b15ebea9b41eb74018c4358924
+lib  jpeg          https://github.com/arthenica/libjpeg-turbo    3.0.0                          6c87537f60941f3c265c339fe60d1e31d2a42ccf
+lib  kvazaar       https://github.com/arthenica/kvazaar          v2.2.0                         37a0404bc8ccdc39515a5aed706205dc53810019
+lib  lame          https://github.com/arthenica/lame             RELEASE__3_100                 b8f6b9e0fdbfb6fecfc106e8d24af240eac44b22
+lib  leptonica     https://github.com/arthenica/leptonica        1.83.1                         b667978e86c4bf74f7fdd75f833127d2de327550
+lib  libaom        https://github.com/arthenica/libaom           v3.6.1                         7ade96172b95adc91a5d85bf80c90989cd543ee8
+lib  libass        https://github.com/arthenica/libass           0.17.1                         e8ad72accd3a84268275a9385beb701c9284e5b3
+lib  libiconv      https://github.com/arthenica/libiconv         v1.17                          4b9c27bec873392533dd3ef309cd62962a644e18
+lib  libilbc       https://github.com/arthenica/libilbc          v3.0.4                         cd064edf2c6c104a4e1fd87b34fd24cfa6dbe401
+lib  libogg        https://github.com/arthenica/ogg              v1.3.5                         e1774cd77f471443541596e09078e78fdc342e4f
+lib  libpng        https://github.com/arthenica/libpng           v1.6.40                        f135775ad4e5d4408d2e12ffcc71bb36e6b48551
+lib  libsamplerate https://github.com/arthenica/libsamplerate    0.2.2                          c96f5e3de9c4488f4e6c97f59f5245f22fda22f7
+lib  libsndfile    https://github.com/arthenica/libsndfile       1.2.0                          2ed38b57c5838ba6b7c8e726a62855845bd42ec5
+lib  libtheora     https://github.com/arthenica/theora           v1.1.1                         7ffd8b2ecfc2d93ae5e16028e7528e609266bfbf
+lib  libuuid       https://github.com/arthenica/libuuid          libuuid-1.0.3                  16cb58d558844045f217d4ee416f931fc1b03794
+lib  libvidstab    https://github.com/arthenica/vid.stab         v1.1.1                         90c76aca2cb06c3ff6f7476a7cd6851b39436656
+lib  libvorbis     https://github.com/arthenica/vorbis           v1.3.7                         0657aee69dec8508a0011f47f3b69d7538e9d262
+lib  libvpx        https://github.com/arthenica/libvpx           v1.14.1                        12f3a2ac603e8f10742105519e0cd03c3b8f71dd
+lib  libwebp       https://github.com/arthenica/libwebp          v1.3.1                         fd7bb21c0cb56e8a82e9bfa376164b842f433f3b
+lib  libxml2       https://github.com/arthenica/libxml2          v2.11.4                        2e9f7860a9cb8be29eca90b7409ef0278d30ef10
+lib  nettle        https://github.com/arthenica/nettle           nettle_3.8.1_release_20220727  990abad16ceacd070747dcc76ed16a39c129321e
+lib  opencore-amr  https://github.com/arthenica/opencore-amr     v0.1.6                         7dba8c32238418ce0b316a852b2224df586ca896
+lib  openh264      https://github.com/arthenica/openh264         v2.3.1                         0a48f4d2e9be2abb4fb01b4c3be83cf44ce91a6e
+lib  openssl       https://github.com/arthenica/openssl          openssl-3.1.1                  2cf4e90eaaf7402bf038b158dbdacd0a15561fb7
+lib  opus          https://github.com/arthenica/opus             v1.4                           82ac57d9f1aaf575800cf17373348e45b7ce6c0d
+lib  rubberband    https://github.com/arthenica/rubberband       v1.8.2                         c67557181b4c4d8f4f8db65badef87c1ff9aa691
+lib  sdl           https://github.com/arthenica/SDL              release-2.0.8                  e9fc66a038304be0b892b83c16d6dcf5ee36f388
+lib  shine         https://github.com/arthenica/shine            3.1.1                          97f188efc3dc90315b79a2af1f477c0c18d85e82
+lib  snappy        https://github.com/arthenica/snappy           1.1.9                          2b63814b15a2aaae54b7943f0cd935892fae628f
+lib  soxr          https://github.com/arthenica/soxr             0.1.3                          945b592b70470e29f917f4de89b4281fbbd540c0
+lib  speex         https://github.com/arthenica/speex            Speex-1.2.1                    5dceaaf3e23ee7fd17c80cb5f02a838fd6c18e01
+lib  srt           https://github.com/arthenica/srt              v1.5.2                         9448e26fcd7602098b4bf9cd7fe535136e89e10b
+lib  tesseract     https://github.com/arthenica/tesseract        5.3.2                          489f101c7e2276c00490f3ab70e9e7926fc6b481
+lib  tiff          https://github.com/arthenica/libtiff          v4.1.0                         e0d707dc1524d8c0e20f03396f234e0f1b07b3f4
+lib  twolame       https://github.com/arthenica/twolame          0.4.0                          bec4069996479aa1aa9d9e7fa32c33135b3a2047
+lib  vo-amrwbenc   https://github.com/arthenica/vo-amrwbenc      v0.1.3                         080af7540562e4adfbd3312837fe5fc6771c4cd0
+lib  x264          https://github.com/arthenica/x264             -                              eaa68fad9e5d201d42fde51665f2d137ae96baf0
+lib  x265          https://github.com/arthenica/x265             3.6                            aa7f602f7592eddb9d87749be7466da005b556ee
+lib  xvidcore      https://github.com/arthenica/xvidcore         release-1_3_7                  d7eeb1a838fb403123711d63acc0430aa3d9edf9
+lib  zimg          https://github.com/arthenica/zimg             release-3.0.5                  e5b0de6bebbcbc66732ed5afaafef6b2c7dfef87

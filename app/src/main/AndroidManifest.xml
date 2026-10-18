@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+        No storage, media, camera or microphone permission. Files come from the system's
+        file picker, a share or "open with": each grants this app that one file only.
+        Exports are written in the app's own folders; the copies in Movies, Music and
+        Pictures are added through MediaStore, which needs no permission for the app's own
+        files. A video is recorded by the phone's camera app into a file of ours: the app
+        never opens the camera or the microphone itself. The ones below are stripped from
+        the merged manifest should a library ever declare them, and the Gradle task
+        verify<Variant>NoNetworkPermissions fails the build if one comes back.
+    -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" tools:node="remove" />
+    <uses-permission android:name="android.permission.CAMERA" tools:node="remove" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove" />
+    <!-- Audio effects on the app's own players (preview gain boost and equaliser). -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!--
+        The editor's preview keeps playing in the background with the media notification
+        (PreviewPlaybackService): a media playback foreground service, and the CPU kept
+        awake while it plays. Media notifications need no notification permission.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!--
+        Exports show their progress in a notification and keep running in the background
+        (ExportService, a media processing foreground service, data sync before Android 15).
+        On Android 16 the notification is a Live Update (POST_PROMOTED_NOTIFICATIONS, granted
+        at install; the user can still turn Live Updates off for the app).
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+
+    <!--
+        Offline by design. Media3 declares ACCESS_NETWORK_STATE in its own manifest; it is
+        stripped here so the installed app requests no network-related permission at all.
+        The Gradle task verify<Variant>NoNetworkPermissions fails the build if any
+        dependency ever brings one back.
+    -->
+    <uses-permission
+        android:name="android.permission.ACCESS_NETWORK_STATE"
+        tools:node="remove" />
+
+    <application
+        android:name=".FfmpegGuiApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.FFmpegGUI">
+        <!-- Turning the phone or resizing the window (split screen, a desktop window) does
+             not start the screen again: the layout follows the new size, and the preview
+             keeps playing. -->
+        <activity
+            android:name=".MainActivity"
+            android:theme="@style/Theme.FFmpegGUI.Splash"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Opened from a file manager or a gallery. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/ogg" />
+                <data android:mimeType="application/x-matroska" />
+                <data android:mimeType="application/mp4" />
+            </intent-filter>
+            <!-- Shared from any app: the file opens in the editor, the format is picked there. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/ogg" />
+                <data android:mimeType="application/x-matroska" />
+                <data android:mimeType="application/mp4" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            The launcher entry, in two looks: the wallpaper's colours (Android 12+) or the
+            app's teal. One of the two is enabled at a time, following the colours setting
+            (see AppIcon); both open MainActivity.
+        -->
+        <activity-alias
+            android:name=".LauncherDynamic"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".LauncherTeal"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_teal"
+            android:roundIcon="@mipmap/ic_launcher_teal_round"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!--
+            Exported so that the system UI, the lock screen and headphones can control the
+            preview, as with any media app; it only ever plays what the open editor shows.
+        -->
+        <service
+            android:name=".playback.PreviewPlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".export.ExportService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync|mediaProcessing" />
+
+        <!-- The same for subtitles being made, subjects cut out and models imported (work.WorkNotifier). -->
+        <service
+            android:name=".work.WorkService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync|mediaProcessing" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+    </application>
+
+</manifest>

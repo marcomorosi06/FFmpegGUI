@@ -1,0 +1,1532 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Every user-visible string of the app. Non-ASCII characters are written as
+    \uXXXX escapes. Entries marked translatable="false" are symbols, units or
+    technical names that stay the same in every language.
+-->
+<resources>
+    <string name="app_name" translatable="false">FFmpeg GUI</string>
+
+    <!-- Common actions -->
+    <string name="action_cancel">Cancel</string>
+    <string name="action_reset">Reset</string>
+    <string name="action_choose_file">Choose file</string>
+    <string name="action_convert">Convert</string>
+    <string name="action_back">Back</string>
+    <string name="action_close">Close</string>
+    <string name="action_play">Play</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_expand">Show more</string>
+    <string name="action_collapse">Show less</string>
+    <string name="subtitle_remove">Remove the subtitles</string>
+
+    <!-- Common value formats -->
+    <string name="value_dp" translatable="false">%1$d dp</string>
+    <string name="value_percent" translatable="false">%1$d%%</string>
+    <string name="value_seconds" translatable="false">%1$ds</string>
+    <string name="value_seconds_decimal" translatable="false">%1$ss</string>
+    <string name="value_multiplier" translatable="false">%1$sx</string>
+    <string name="value_time_of_total" translatable="false">%1$s / %2$s</string>
+
+    <!-- Home screen -->
+    <string name="home_title_ffmpeg" translatable="false">FFmpeg</string>
+    <string name="home_title_gui" translatable="false">GUI</string>
+    <string name="home_open_file">Open a file</string>
+    <string name="home_open_file_hint">Video, audio or a picture, in any format</string>
+    <string name="home_tagline">Convert, cut and edit video, sound and pictures on your phone. Nothing leaves it.</string>
+    <string name="home_open_video">Video</string>
+    <string name="home_open_audio">Audio</string>
+    <string name="home_open_picture">Picture</string>
+    <string name="home_record_camera">Record with the camera</string>
+    <string name="home_camera_unavailable">No camera app on this phone can record a video</string>
+
+    <!-- Format picker -->
+    <string name="format_picker_title">Choose a format</string>
+    <string name="format_picker_suggested">Best fit for this file</string>
+    <string name="format_category_video_hint">Picture and sound</string>
+    <string name="format_category_animation_hint">Loops, without sound</string>
+    <string name="format_category_audio_hint">Sound only</string>
+    <string name="format_category_image_hint">One frame or picture</string>
+    <string name="format_category_custom_hint">Any FFmpeg command</string>
+    <string name="format_desc_mp4">Plays everywhere</string>
+    <string name="format_desc_mkv">Keeps every track</string>
+    <string name="format_desc_avi">For older players</string>
+    <string name="format_desc_gif">A looping animation</string>
+    <string name="format_desc_mp3">Plays everywhere</string>
+    <string name="format_desc_m4a">Small and clear</string>
+    <string name="format_desc_ogg">Open Vorbis sound</string>
+    <string name="format_desc_opus">Best at small sizes</string>
+    <string name="format_desc_flac">Lossless, compressed</string>
+    <string name="format_desc_wav">Lossless, raw</string>
+    <string name="format_desc_jpg">Photos, small files</string>
+    <string name="format_desc_png">Sharp, keeps transparency</string>
+    <string name="format_desc_webp">Small, keeps transparency</string>
+    <string name="format_desc_bmp">Raw pixels</string>
+    <string name="format_desc_tiff">For print, keeps transparency</string>
+    <string name="format_desc_custom">Write the command</string>
+    <string name="media_info_duration">Duration</string>
+    <string name="media_info_resolution">Resolution</string>
+    <string name="media_info_size">Size</string>
+    <string name="media_info_resolution_value" translatable="false">%1$d\u00D7%2$d</string>
+    <string name="format_category_video">Video</string>
+    <string name="format_category_animation">Animation</string>
+    <string name="format_category_audio">Audio</string>
+    <string name="format_category_custom">Custom</string>
+    <string name="format_category_image">Image</string>
+    <string name="format_mp4" translatable="false">MP4</string>
+    <string name="format_mkv" translatable="false">MKV</string>
+    <string name="format_avi" translatable="false">AVI</string>
+    <string name="format_gif" translatable="false">GIF</string>
+    <string name="format_mp3" translatable="false">MP3</string>
+    <string name="format_flac" translatable="false">FLAC</string>
+    <string name="format_ogg" translatable="false">OGG</string>
+    <string name="format_m4a" translatable="false">M4A</string>
+    <string name="format_opus" translatable="false">OPUS</string>
+    <string name="format_wav" translatable="false">WAV</string>
+    <string name="format_jpg" translatable="false">JPG</string>
+    <string name="format_png" translatable="false">PNG</string>
+    <string name="format_webp" translatable="false">WEBP</string>
+    <string name="format_bmp" translatable="false">BMP</string>
+    <string name="format_tiff" translatable="false">TIFF</string>
+    <string name="format_custom">Custom</string>
+
+    <!-- Processing screen -->
+    <string name="processing_exporting_to">Exporting to %1$s</string>
+    <string name="processing_keep_open">You can switch apps: the export goes on, and its notification shows how far it is.</string>
+    <string name="processing_tile_elapsed">So far</string>
+    <string name="processing_tile_left">Time left</string>
+    <string name="processing_left_unknown">Working it out\u2026</string>
+    <string name="processing_log">Log</string>
+    <string name="processing_cancel">Cancel the export</string>
+    <string name="processing_show_log">Show log</string>
+    <string name="processing_hide_log">Hide log</string>
+    <string name="done_title">Done</string>
+    <string name="done_took">Made in %1$s</string>
+    <string name="done_share">Share or save</string>
+    <string name="done_open">Open</string>
+    <string name="done_edit_again">Edit again</string>
+    <string name="done_no_app">No app here can open this file</string>
+    <string name="done_zip">A zip with every part</string>
+    <string name="done_new_conversion">Open another file</string>
+    <string name="share_chooser_title">Share file</string>
+    <string name="error_title">The export failed</string>
+    <string name="error_back_to_editor">Back to the editor</string>
+    <string name="error_back_to_start">Start over</string>
+    <string name="log_copy">Copy log</string>
+    <string name="log_copied">Log copied</string>
+
+    <!-- Conversion status and errors -->
+    <string name="status_preparing">Preparing files\u2026</string>
+    <string name="status_analyzing">Analyzing stabilization (pass 1/2)\u2026</string>
+    <string name="status_encoding">Starting FFmpeg\u2026</string>
+    <string name="status_packing">Packing the files into a zip\u2026</string>
+    <string name="error_source_unreadable">Cannot read file: %1$s</string>
+    <string name="error_analysis_failed">Stabilization analysis failed</string>
+    <string name="error_encoding_failed">Conversion failed. Check the log.</string>
+    <string name="error_packing_failed">The files were made but could not be packed into a zip. Is the storage full?</string>
+    <string name="error_manual_empty">The command is empty</string>
+    <string name="error_manual_without_output">The command has no output file (e.g. output.mp4)</string>
+
+    <!-- Editor: frame -->
+    <string name="editor_output_format">Output: %1$s</string>
+    <string name="tool_transform">Transform</string>
+    <string name="tool_color">Color</string>
+    <string name="tool_text">Text</string>
+    <string name="tool_canvas">Canvas</string>
+    <string name="tool_audio">Audio</string>
+    <string name="tool_speed">Speed</string>
+    <string name="tool_fade">Fade</string>
+    <string name="tool_trim">Trim</string>
+    <string name="tool_split">Split</string>
+    <string name="tool_volume">Volume</string>
+    <string name="tool_duplicate">Duplicate</string>
+    <string name="tool_move_left">Move left</string>
+    <string name="tool_move_right">Move right</string>
+    <string name="tool_delete">Delete</string>
+    <string name="tool_back">Back</string>
+    <string name="editor_export">Export</string>
+    <string name="editor_undo">Undo</string>
+    <string name="editor_redo">Redo</string>
+    <string name="editor_add_clip">Add clip</string>
+    <string name="panel_done">Done</string>
+    <string name="lane_text">+ Text</string>
+    <string name="lane_image">+ Overlay</string>
+    <string name="lane_audio">+ Audio</string>
+    <string name="clip_trim_waiting">The length of this file is not known yet.</string>
+    <string name="clip_trim_length">Length: %1$s</string>
+    <string name="clip_trim_hint">Drag the handles to choose which part of the file this clip shows.</string>
+    <string name="still_duration">Duration</string>
+    <string name="still_hint">This clip shows a picture. Choose how long it stays on screen.</string>
+    <string name="tool_freeze">Freeze</string>
+    <string name="freeze_frame_name">Freeze frame</string>
+    <string name="tool_command">Command</string>
+    <string name="tool_image">Overlay</string>
+    <string name="tool_subtitle">Subtitles</string>
+    <string name="tool_remux">Remux</string>
+    <string name="tool_extract">Extract frames</string>
+    <string name="badge_clips">%1$d clips</string>
+    <string name="badge_stream_copy">Stream copy</string>
+    <string name="badge_extract_frames">Extract frames</string>
+
+    <!-- Editor: timeline -->
+    <string name="timeline_fallback_name" translatable="false">clip_%1$d</string>
+    <string name="timeline_clip_effects">Has its own effects</string>
+    <string name="timeline_trim_hint">Drag the handles to trim all the clips together, as one video. The clips themselves are left untouched.</string>
+    <string name="fade_in">Fade in</string>
+    <string name="fade_out">Fade out</string>
+    <string name="speed_fades">Fades from and to black</string>
+    <string name="scope_whole">Whole video</string>
+    <string name="scope_clip">Clip %1$d</string>
+    <string name="audio_clip_scope_note">Added sounds and loudness levelling apply to the whole video.</string>
+    <string name="trim_start">Start: %1$s</string>
+    <string name="trim_end">End: %1$s</string>
+
+    <!-- Editor: transform -->
+    <string name="transform_orientation">Orientation</string>
+    <string name="transform_aspect_ratio">Aspect ratio</string>
+    <string name="rotation_none">None</string>
+    <string name="rotation_90" translatable="false">90\u00B0</string>
+    <string name="rotation_180" translatable="false">180\u00B0</string>
+    <string name="rotation_270" translatable="false">270\u00B0</string>
+    <string name="flip_horizontal">Horizontal</string>
+    <string name="flip_vertical">Vertical</string>
+    <string name="crop_free">Free</string>
+    <string name="ratio_1_1" translatable="false">1:1</string>
+    <string name="ratio_16_9" translatable="false">16:9</string>
+    <string name="ratio_4_3" translatable="false">4:3</string>
+    <string name="ratio_9_16" translatable="false">9:16</string>
+
+    <!-- Editor: canvas -->
+    <string name="canvas_fit">Fit</string>
+    <string name="canvas_fit_hint">The canvas shrinks to match the crop exactly (no black borders).</string>
+    <string name="canvas_fixed_hint">The video gets this fixed aspect ratio. The crop is centered and padded with black bars to avoid distortion.</string>
+    <string name="placement_hint">Tap the video on the preview to pick it up: drag it to move it, pinch to resize or turn it. Captions and pictures can go past the edges too.</string>
+    <string name="placement_reset">Center the video</string>
+
+    <!-- Editor: color -->
+    <string name="color_brightness">Brightness</string>
+    <string name="color_contrast">Contrast</string>
+    <string name="color_saturation">Saturation</string>
+
+    <!-- Editor: text -->
+    <string name="text_content">Text content</string>
+    <string name="text_color">Color</string>
+    <string name="text_color_prefix" translatable="false">#</string>
+    <string name="text_bold_short">B</string>
+
+    <!-- Editor: audio -->
+    <string name="audio_original_track">Original track</string>
+    <string name="audio_sounds">Added sounds</string>
+    <string name="audio_use_original">Use original audio</string>
+    <string name="audio_original_excluded">Original audio excluded</string>
+    <string name="audio_original_kept">The video keeps its own audio</string>
+    <string name="audio_volume">Volume</string>
+    <string name="audio_normalize">Normalize levels</string>
+    <string name="audio_normalize_hint">Evens out loudness for a uniform sound</string>
+    <string name="sound_add">Add a sound</string>
+    <string name="sound_none">Music, a voice-over or the sound of a video: it is placed at the playhead and can overlap other sounds.</string>
+    <string name="sound_list_hint">Tap a sound to move, trim or fade it on the timeline.</string>
+    <string name="sound_when">%1$s to %2$s</string>
+    <string name="sound_start">Starts at</string>
+    <string name="sound_trim_hint">On the timeline, drag the sound to move it and its ends to trim it: they snap to cuts, the playhead and the other sounds.</string>
+    <string name="sound_volume_hint">The level of this sound in the mix, whatever the other sounds do.</string>
+    <string name="sound_fade_hint">The sound fades in at its start and out at its end, on its own.</string>
+    <string name="sound_fallback_name" translatable="false">sound_%1$d</string>
+    <string name="sound_mute">Mute</string>
+    <string name="sound_mute_hint">Silences this sound without losing it or its settings</string>
+    <string name="sound_level">Level loudness</string>
+    <string name="sound_level_hint">Brings this sound to a standard loudness, however loud or quiet the file is</string>
+    <string name="sound_level_measuring">Measuring the file\u2026</string>
+    <string name="sound_level_on">Levelled to a standard loudness; the volume above still applies</string>
+    <string name="sound_keep_pitch">Keep pitch</string>
+    <string name="sound_keep_pitch_on">Faster or slower, the sound keeps its pitch</string>
+    <string name="sound_keep_pitch_off">The pitch rises and falls with the speed, like a tape</string>
+    <string name="sound_lasts">At this speed the sound lasts %1$s.</string>
+    <string name="tool_voice">Voice</string>
+    <string name="tool_equalizer">Equalizer</string>
+    <string name="tool_repeat">Repeat</string>
+    <string name="tool_replace">Replace</string>
+    <string name="voice_normal">Normal</string>
+    <string name="voice_chipmunk">Chipmunk</string>
+    <string name="voice_high">Higher</string>
+    <string name="voice_low">Lower</string>
+    <string name="voice_deep">Deep</string>
+    <string name="voice_monster">Monster</string>
+    <string name="voice_pitch">Pitch</string>
+    <string name="voice_hint">Changes the pitch in semitones (12 = one octave) and keeps the speed.</string>
+    <string name="value_semitones" translatable="false">%1$s st</string>
+    <string name="eq_flat">Flat</string>
+    <string name="eq_bass_boost">Bass boost</string>
+    <string name="eq_vocal">Vocal</string>
+    <string name="eq_telephone">Telephone</string>
+    <string name="eq_bright">Bright</string>
+    <string name="eq_warm">Warm</string>
+    <string name="eq_band_bass">Bass</string>
+    <string name="eq_band_mid">Middle</string>
+    <string name="eq_band_treble">Treble</string>
+    <string name="eq_hint">Lows below 100 Hz, the middle around 1 kHz, highs above 4 kHz. The preview uses the phone\u2019s equalizer, so it can sound slightly different from the export.</string>
+    <string name="value_decibels" translatable="false">%1$s dB</string>
+    <string name="repeat_times">Plays</string>
+    <string name="value_times">%1$dx</string>
+    <string name="tool_text_edit">Edit</string>
+    <string name="tool_style">Style</string>
+    <string name="tool_position">Position</string>
+    <string name="tool_opacity">Opacity</string>
+    <string name="tool_timing">Timing</string>
+    <string name="text_placeholder">Your text</string>
+    <string name="text_edit_hint">The caption shows from where it starts on the timeline for as long as its block lasts.</string>
+    <string name="place_top_left">Top left</string>
+    <string name="place_top">Top</string>
+    <string name="place_top_right">Top right</string>
+    <string name="place_left">Left</string>
+    <string name="place_center">Centre</string>
+    <string name="place_right">Right</string>
+    <string name="place_bottom_left">Bottom left</string>
+    <string name="place_bottom">Bottom</string>
+    <string name="place_bottom_right">Bottom right</string>
+    <string name="overlay_layout_hint">You can also drag it on the preview and resize it by its corner.</string>
+    <string name="overlay_fade_hint">It appears and disappears gradually, on its own.</string>
+    <string name="tool_rotate">Rotate</string>
+    <string name="tool_adjust">Adjust</string>
+    <string name="tool_motion">Motion</string>
+    <string name="value_degrees" translatable="false">%1$d\u00B0</string>
+    <string name="overlay_turn_left">Turn left</string>
+    <string name="overlay_turn_right">Turn right</string>
+    <string name="overlay_angle">Angle</string>
+    <string name="overlay_rotate_hint">It turns around its center and keeps its size.</string>
+    <string name="overlay_mute_hint">The video plays without its sound.</string>
+    <string name="overlay_adjust_hint">Only this overlay changes, not the video under it.</string>
+    <string name="motion_none">None</string>
+    <string name="motion_zoom_in">Zoom in</string>
+    <string name="motion_zoom_out">Zoom out</string>
+    <string name="motion_pan_left">Pan left</string>
+    <string name="motion_pan_right">Pan right</string>
+    <string name="motion_pan_up">Pan up</string>
+    <string name="motion_pan_down">Pan down</string>
+    <string name="motion_amount">Zoom</string>
+    <string name="motion_hint">The camera moves slowly over the picture for the whole clip.</string>
+    <string name="timing_length">Lasts</string>
+    <string name="timing_hint">On the timeline, drag the block to move it and its ends to trim it: they snap to cuts, the playhead and the other items.</string>
+    <string name="repeat_hint">The trimmed part plays again and again, %1$s in all. A repeated sound cannot be split.</string>
+
+    <!-- Editor: speed -->
+    <string name="speed_title">Speed and direction</string>
+    <string name="speed_reverse">Play in reverse</string>
+    <string name="speed_reverse_hint">Reverses the video and the original audio</string>
+    <string name="speed_mode_constant">Constant</string>
+    <string name="speed_mode_curve">Curve</string>
+    <string name="speed_curve_hint">Drag a point to change the speed there, tap to add one, tap a point twice to take it away.</string>
+    <string name="speed_curve_average">On average %1$s</string>
+    <string name="speed_curve_description">Speed curve, %1$s on average</string>
+    <string name="speed_curve_on_clip">Select a clip to draw a speed curve along it.</string>
+    <string name="speed_pitch_follows">Pitch follows the speed</string>
+    <string name="speed_pitch_follows_on">Faster sounds higher and slower sounds lower, like a tape</string>
+    <string name="speed_pitch_follows_off">Faster or slower, the sound keeps its pitch</string>
+    <string name="speed_preset_montage">Montage</string>
+    <string name="speed_preset_hero">Hero</string>
+    <string name="speed_preset_bullet">Bullet</string>
+    <string name="speed_preset_jump_cut">Jump cut</string>
+    <string name="speed_preset_flash_in">Flash in</string>
+    <string name="speed_preset_flash_out">Flash out</string>
+    <string name="speed_preset_ramp_up">Speed up</string>
+    <string name="speed_preset_ramp_down">Slow down</string>
+    <string name="tool_easing">Motion curve</string>
+    <string name="easing_linear">Linear</string>
+    <string name="easing_smooth">Smooth</string>
+    <string name="easing_ease_in">Ease in</string>
+    <string name="easing_ease_out">Ease out</string>
+    <string name="easing_ease_in_out">Ease in and out</string>
+    <string name="easing_back">Overshoot</string>
+    <string name="easing_bounce">Bounce</string>
+    <string name="easing_elastic">Elastic</string>
+    <string name="easing_hold">Hold</string>
+    <string name="easing_custom">Custom</string>
+    <string name="easing_no_keyframe">Put the playhead on a keyframe to choose how it moves on to the next one.</string>
+    <string name="easing_hint">How the values go from this keyframe to the next one.</string>
+    <string name="easing_last_hint">This is the last keyframe: its curve is used once there is one after it.</string>
+    <string name="easing_curve_hint">Across: the time to the next keyframe. Up: the way to its values. Drag a point, tap to add one, tap a point twice to take it away.</string>
+    <string name="easing_from">This keyframe</string>
+    <string name="easing_to">Next keyframe</string>
+    <string name="easing_curve_description">Easing curve</string>
+
+    <!-- Editor: command -->
+    <string name="command_manual">Manual command</string>
+    <string name="command_preview">Command preview</string>
+    <string name="command_gui_disabled">GUI disabled - manual editing active</string>
+
+    <!-- Export dialog -->
+    <string name="export_title">Export</string>
+    <string name="export_subtitle">Your edit as a %1$s file</string>
+    <string name="export_convert_to">Convert to %1$s</string>
+    <string name="export_manual_banner">Your command decides how the file comes out: these settings wait until you go back to them.</string>
+    <string name="export_quality">Quality</string>
+    <string name="export_quality_small">Smaller file</string>
+    <string name="export_quality_best">Better picture</string>
+    <string name="export_resolution">Resolution</string>
+    <string name="export_framerate">Frame rate</string>
+    <string name="export_bitrate">Bitrate</string>
+    <string name="resolution_240p" translatable="false">240p</string>
+    <string name="resolution_480p" translatable="false">480p</string>
+    <string name="resolution_720p" translatable="false">720p</string>
+    <string name="resolution_1080p" translatable="false">1080p</string>
+    <string name="resolution_original">Original</string>
+    <string name="framerate_10" translatable="false">10</string>
+    <string name="framerate_15" translatable="false">15</string>
+    <string name="framerate_24" translatable="false">24</string>
+    <string name="framerate_30" translatable="false">30</string>
+    <string name="framerate_original">orig.</string>
+
+    <!-- Editor: image overlays -->
+    <string name="image_size">Size</string>
+    <string name="image_position_x">Position X</string>
+    <string name="image_position_y">Position Y</string>
+    <string name="image_left">Left</string>
+    <string name="image_right">Right</string>
+    <string name="image_top">Top</string>
+    <string name="image_bottom">Bottom</string>
+    <string name="image_opacity">Opacity</string>
+    <string name="image_fallback_name" translatable="false">overlay_%1$d</string>
+
+    <!-- Editor: subtitles -->
+    <string name="subtitle_hint">Burns the subtitles into the video. Supports .srt and .ass.</string>
+    <string name="subtitle_none">No file selected</string>
+    <string name="subtitle_loaded">File loaded</string>
+    <string name="subtitle_formats">Supported formats: .srt, .ass</string>
+    <string name="subtitle_will_burn">The subtitles will be burnt into the video during conversion.</string>
+    <string name="subtitle_fallback_name" translatable="false">subtitles.srt</string>
+
+    <!-- Editor: remux -->
+    <string name="remux_title">Remux (stream copy)</string>
+    <string name="remux_hint">Changes the container without re-encoding. Very fast, no quality loss.</string>
+    <string name="remux_how">How it works</string>
+    <string name="remux_explanation">Remux uses -c copy: every filter (color, crop, speed, text\u2026) is ignored. Use it only to change the container (e.g. MKV \u2192 MP4) while keeping the original codecs and quality.</string>
+
+    <!-- Editor: frame extraction -->
+    <string name="extract_mode_disabled">Disabled</string>
+    <string name="extract_mode_single">Single frame</string>
+    <string name="extract_mode_sequence">Sequence</string>
+    <string name="extract_disabled_hint">Frame extraction is off. The conversion uses the selected format as usual.</string>
+    <string name="extract_single_hint">Extracts one frame as a PNG image at the given timecode.</string>
+    <string name="extract_timecode_label">Timecode (HH:MM:SS)</string>
+    <string name="extract_timecode_placeholder" translatable="false">00:00:05</string>
+    <string name="extract_sequence_hint">Extracts frames at regular intervals. The output is a folder of PNG files.</string>
+    <string name="extract_rate">Extraction rate</string>
+    <string name="extract_rate_fps">%1$d fps</string>
+    <string name="extract_rate_interval">1 every %1$ss</string>
+    <string name="extract_rate_min" translatable="false">1/10fps</string>
+    <string name="extract_rate_max" translatable="false">30fps</string>
+    <string name="extract_preset_every_5s" translatable="false">1/5s</string>
+    <string name="extract_preset_every_second" translatable="false">1/s</string>
+    <string name="extract_preset_5fps" translatable="false">5fps</string>
+    <string name="extract_preset_15fps" translatable="false">15fps</string>
+    <!-- Audio file tools -->
+    <string name="tool_silence">Silence</string>
+    <string name="tool_pitch">Pitch</string>
+    <string name="tool_clean">Clean up</string>
+    <string name="tool_dynamics">Dynamics</string>
+    <string name="tool_space">Space</string>
+    <string name="tool_effects">Effects</string>
+    <string name="tool_stereo">Stereo</string>
+    <string name="tool_tags">Tags</string>
+    <string name="tool_parts">Parts</string>
+    <string name="value_hertz" translatable="false">%1$s Hz</string>
+    <string name="value_kilohertz" translatable="false">%1$s kHz</string>
+    <string name="value_milliseconds" translatable="false">%1$s ms</string>
+    <string name="value_ratio" translatable="false">%1$s:1</string>
+    <string name="value_bits">%1$d-bit</string>
+    <string name="audio_quality_lossy" translatable="false">%1$d kbps</string>
+    <string name="audio_untitled">Untitled</string>
+    <string name="audio_untitled_hint">Title and artist are set in Tags</string>
+    <string name="audio_off">Off</string>
+    <string name="audio_pitch_hint">The whole sound goes higher or lower; it keeps its tempo.</string>
+    <string name="eq_loudness">Loudness</string>
+    <string name="audio_eq_hint">Drag a dot up or down, or pick a band and use the slider.</string>
+    <string name="audio_frequency">Frequency</string>
+    <string name="audio_low_cut">Low cut</string>
+    <string name="audio_low_cut_hint">Takes away rumble, wind and hum below the frequency.</string>
+    <string name="audio_high_cut">High cut</string>
+    <string name="audio_high_cut_hint">Takes away hiss above the frequency.</string>
+    <string name="audio_gate">Noise gate</string>
+    <string name="audio_gate_hint">Turns the background down while nobody speaks.</string>
+    <string name="audio_threshold">Threshold</string>
+    <string name="audio_reduction">Reduction</string>
+    <string name="compressor_gentle">Gentle</string>
+    <string name="compressor_voice">Voice</string>
+    <string name="compressor_punchy">Punchy</string>
+    <string name="compressor_broadcast">Broadcast</string>
+    <string name="audio_ratio">Ratio</string>
+    <string name="audio_attack">Attack</string>
+    <string name="audio_release">Release</string>
+    <string name="audio_makeup">Make-up gain</string>
+    <string name="audio_limiter">Limiter</string>
+    <string name="audio_limiter_hint">Keeps the peaks under a ceiling, so nothing clips.</string>
+    <string name="audio_ceiling">Ceiling</string>
+    <string name="audio_dynamics_hint">A compressor brings loud and quiet parts closer together.</string>
+    <string name="audio_name_compressor">Compressor</string>
+    <string name="audio_name_levelled">Levelled</string>
+    <string name="audio_echo">Echo</string>
+    <string name="audio_echo_hint">The sound comes back after a moment, fainter each time.</string>
+    <string name="audio_delay">Delay</string>
+    <string name="audio_feedback">Repeats</string>
+    <string name="audio_no_reverb">No reverb</string>
+    <string name="reverb_room">Room</string>
+    <string name="reverb_hall">Hall</string>
+    <string name="reverb_cathedral">Cathedral</string>
+    <string name="audio_amount">Amount</string>
+    <string name="audio_space_hint">Echo and reverb ring on for a moment after the sound stops.</string>
+    <string name="modulation_chorus">Chorus</string>
+    <string name="modulation_flanger">Flanger</string>
+    <string name="modulation_phaser">Phaser</string>
+    <string name="modulation_tremolo">Tremolo</string>
+    <string name="modulation_vibrato">Vibrato</string>
+    <string name="audio_rate">Rate</string>
+    <string name="audio_depth">Depth</string>
+    <string name="audio_lofi">Lo-fi</string>
+    <string name="audio_lofi_hint">Fewer bits per sample: the gritty sound of old machines.</string>
+    <string name="audio_bits">Bits</string>
+    <string name="audio_width">Width</string>
+    <string name="audio_width_narrow">Narrow</string>
+    <string name="audio_width_wide">Wide</string>
+    <string name="audio_balance">Balance</string>
+    <string name="audio_balance_centre">Center</string>
+    <string name="audio_balance_left">Left %1$d%%</string>
+    <string name="audio_balance_right">Right %1$d%%</string>
+    <string name="audio_left">Left</string>
+    <string name="audio_right">Right</string>
+    <string name="audio_swap">Swap sides</string>
+    <string name="audio_swap_hint">Left goes right and right goes left.</string>
+    <string name="audio_mono">Mono</string>
+    <string name="audio_mono_hint">One channel: the same sound on both sides.</string>
+    <string name="tag_title">Title</string>
+    <string name="tag_artist">Artist</string>
+    <string name="tag_album">Album</string>
+    <string name="tag_year">Year</string>
+    <string name="tag_genre">Genre</string>
+    <string name="tag_comment">Comment</string>
+    <string name="audio_tags_hint">Written into the file; players show them.</string>
+    <string name="export_channel_name">Exports</string>
+    <string name="export_channel_description">Progress of the file being made</string>
+    <string name="export_result_channel_name">Finished exports</string>
+    <string name="export_result_channel_description">Whether a file made in the background is ready</string>
+    <string name="export_notification_title">Exporting %1$s</string>
+    <string name="export_stage_preparing">Preparing</string>
+    <string name="export_stage_analyzing">Analysing the shake</string>
+    <string name="export_stage_encoding">Encoding</string>
+    <string name="export_stage_packing">Packing into a zip</string>
+    <string name="export_eta_minutes">about %1$d min left</string>
+    <string name="export_eta_seconds">%1$d s left</string>
+    <string name="export_action_cancel">Cancel</string>
+    <string name="export_done_title">Export finished</string>
+    <string name="export_done_text">%1$s is ready</string>
+    <string name="export_failed_title">Export failed</string>
+    <string name="export_failed_text">%1$s could not be made: open the app to see why</string>
+    <string name="tool_add_sound">Add sound</string>
+    <string name="tool_key">Chroma key</string>
+    <string name="key_title">Cut out a colour</string>
+    <string name="key_subtitle">Green screen, blue screen or a flat background</string>
+    <string name="key_pick_hint">Touch or drag on the picture: the loupe shows the colour that goes. Hold the compare button to see the original.</string>
+    <string name="key_refresh_sample">Use the frame under the playhead</string>
+    <string name="key_compare">Hold to see the original</string>
+    <string name="key_color">Colour to cut</string>
+    <string name="key_auto">Detect</string>
+    <string name="key_auto_description">Find the background colour by itself</string>
+    <string name="key_presets">Quick colours</string>
+    <string name="key_preset_green">Green screen</string>
+    <string name="key_preset_blue">Blue screen</string>
+    <string name="key_preset_white">White</string>
+    <string name="key_preset_black">Black</string>
+    <string name="key_mode">How to cut</string>
+    <string name="key_mode_chroma">By hue</string>
+    <string name="key_mode_color">Exact colour</string>
+    <string name="key_mode_chroma_hint">Cuts the screen\'s hue whatever its light and shadows: best for green and blue screens.</string>
+    <string name="key_mode_color_hint">Cuts the colour itself: best for a flat background of one colour.</string>
+    <string name="key_precision">Edges</string>
+    <string name="key_similarity">Tolerance</string>
+    <string name="key_blend">Soft edge</string>
+    <string name="key_spill">Remove the spill</string>
+    <string name="key_spill_hint">Takes the screen\'s green or blue tint out of hair and edges.</string>
+    <string name="key_spill_unavailable">Removing the spill works on a green or blue screen cut by hue.</string>
+    <string name="key_background">Fill what is cut</string>
+    <string name="key_background_transparent">Transparent</string>
+    <string name="key_fill_opacity">Fill opacity</string>
+    <string name="key_transparent_hint">%1$s keeps transparency: transparent is the default, or a colour at any opacity.</string>
+    <string name="key_fill_opaque_hint">%1$s holds no transparency, so what is cut shows a colour. Choose PNG, WEBP or TIFF to keep it transparent.</string>
+    <string name="key_fill_video_hint">A video holds no transparency: what is cut shows this colour.</string>
+    <string name="key_overlay_hint">What is cut lets what lies below show through.</string>
+    <string name="tool_cover">Cover</string>
+    <string name="cover_set">Cover chosen</string>
+    <string name="cover_set_hint">Square, written into the file</string>
+    <string name="cover_none">No cover</string>
+    <string name="cover_none_hint">Any picture, cut square around its centre</string>
+    <string name="cover_remove">Remove the cover</string>
+    <string name="cover_description">Cover</string>
+    <string name="action_choose_picture">Choose picture</string>
+    <string name="cover_hint">Players, the lock screen and car displays show it. The cover the opened file already has is kept unless you change it.</string>
+    <string name="cover_not_held">%1$s files cannot hold a cover: choose MP3, M4A, FLAC, OGG or Opus to keep it.</string>
+    <string name="cover_not_in_parts">Files cut into parts get no cover in MP3, M4A and FLAC (OGG and Opus parts keep it).</string>
+    <string name="now_playing_artist">Editing in %1$s</string>
+    <string name="tag_copyright">Copyright</string>
+    <string name="picture_tags_hint">Written into the picture as EXIF, which holds plain letters only: accented letters become question marks.</string>
+    <string name="tags_from_source_hint">Read from the file you opened. A field left empty removes that tag.</string>
+    <string name="parts_none">One file</string>
+    <string name="parts_by_time">By length</string>
+    <string name="parts_equal">Equal parts</string>
+    <string name="parts_every">Length of each part</string>
+    <string name="parts_count">Parts</string>
+    <string name="parts_off_hint">The sound is saved as a single file.</string>
+    <string name="parts_zip_hint">Each part is a file of its own, cut at the dashed lines of the preview. They are saved together in one zip.</string>
+    <string name="parts_minutes">Minutes</string>
+    <string name="parts_seconds">Seconds</string>
+    <string name="parts_less">One part less</string>
+    <string name="parts_more">One part more</string>
+    <string name="parts_summary_one">One file, %1$s long</string>
+    <string name="parts_summary_unknown">The length is not known yet</string>
+    <string name="parts_summary_single">Shorter than one part: a single file</string>
+    <string name="parts_summary_equal">%1$s each</string>
+    <string name="parts_summary_last">%1$s each, the last %2$s</string>
+    <plurals name="parts_files">
+        <item quantity="one">file</item>
+        <item quantity="other">files</item>
+    </plurals>
+    <plurals name="parts_many">
+        <item quantity="one">%1$d file: quite a lot of them</item>
+        <item quantity="other">%1$d files: quite a lot of them</item>
+    </plurals>
+    <plurals name="parts_count_chip">
+        <item quantity="one">%1$d part</item>
+        <item quantity="other">%1$d parts</item>
+    </plurals>
+    <string name="unit_minutes" translatable="false">min</string>
+    <string name="unit_seconds" translatable="false">s</string>
+    <string name="value_seconds_short" translatable="false">%1$d s</string>
+    <string name="value_minutes_short" translatable="false">%1$d min</string>
+    <string name="value_hours_short" translatable="false">%1$d h</string>
+    <string name="silence_strict">Only true silence</string>
+    <string name="silence_loose">Quiet sounds too</string>
+    <string name="silence_cut_amount">Cut %1$s s of silence</string>
+    <string name="silence_none">No silence to cut</string>
+    <string name="tag_clear">Clear %1$s</string>
+    <string name="tag_year_error">Four digits, like 2024</string>
+    <string name="tags_preview_label">As players show it</string>
+    <string name="tags_preview_untitled">No title</string>
+    <string name="tags_preview_no_artist">Unknown artist</string>
+    <string name="tags_preview_description">As players show it: %1$s</string>
+    <string name="value_type">Type the value</string>
+    <string name="value_reset">Reset %1$s</string>
+    <string name="value_less">Lower %1$s</string>
+    <string name="value_more">Raise %1$s</string>
+    <string name="value_sign">Change the sign</string>
+    <string name="value_range">From %1$s to %2$s</string>
+    <string name="value_apply">Apply</string>
+    <string name="silence_threshold">Silent below</string>
+    <string name="silence_measuring">Measuring the sound\u2026</string>
+    <string name="silence_found">Silence: %1$ss at the start, %2$ss at the end</string>
+    <string name="silence_cut">Cut the silence</string>
+    <string name="silence_hint">Moves the start and the end of the whole sound in, past the silence.</string>
+    <string name="export_bit_depth">Bit depth</string>
+    <string name="export_sample_rate">Sample rate</string>
+    <!-- Picture editor (an image file as output) -->
+    <string name="image_tool_frame">Frame</string>
+    <string name="image_tool_crop">Crop</string>
+    <string name="image_tool_straighten">Straighten</string>
+    <string name="image_tool_filters">Filters</string>
+    <string name="image_tool_draw">Draw</string>
+    <string name="image_tool_border">Border</string>
+    <string name="image_tool_sticker">Sticker</string>
+    <string name="image_tool_details">Details</string>
+    <string name="image_tool_hdr">HDR</string>
+    <string name="export_keep_hdr">Keep HDR</string>
+    <string name="export_keep_hdr_on">The video stays HDR as it was filmed: brighter on HDR screens, as the phone shows it.</string>
+    <string name="export_keep_hdr_off">Converted to SDR: the same on every screen, its colours tone mapped.</string>
+    <string name="export_hdr_mixed">HDR and SDR clips together: the HDR ones are converted to SDR so that they match.</string>
+    <string name="export_hdr_to_sdr">This format holds no HDR: the HDR footage is converted to SDR, its colours tone mapped.</string>
+    <string name="hdr_title">HDR look</string>
+    <string name="hdr_subtitle">Ultra HDR: the light parts shine brighter on HDR screens; other screens show the picture as it is.</string>
+    <string name="hdr_jpg_only">Only a JPG holds the HDR look: as %1$s the picture is saved without it. Choose JPG as the format to keep it.</string>
+    <string name="hdr_screen_shows">This screen shows HDR: the picture looks as HDR screens will show it.</string>
+    <string name="hdr_screen_sdr">This screen cannot show HDR: the tinted zones are what will shine brighter on an HDR screen.</string>
+    <string name="hdr_headroom">The screen shows up to %1$s times brighter than white now.</string>
+    <string name="hdr_headroom_none">The screen gives no HDR now (%1$s): lower the brightness (at its maximum nothing is left above white), turn off power saving, or let the phone cool down.</string>
+    <string name="hdr_mode_original">From the photo</string>
+    <string name="hdr_mode_generated">Generated</string>
+    <string name="hdr_intensity">Intensity</string>
+    <string name="hdr_mode_original_hint">The photo\'s own HDR, as the camera made it: as shot in the middle, less to the left, more to the right. It follows the crop and the turn.</string>
+    <string name="hdr_mode_generated_hint">Worked out of the picture\'s light: the brightest parts, and those lighter than what is around them, shine the most; dark and middle tones stay as they are.</string>
+    <string name="hdr_where">Where</string>
+    <string name="hdr_area_everywhere">Everywhere</string>
+    <string name="hdr_area_subject">Subject</string>
+    <string name="hdr_area_background">Background</string>
+    <string name="hdr_area_brush">Brush</string>
+    <string name="hdr_area_frame_hint">On a frame of a video the look goes everywhere: the subject and the brush need a still picture.</string>
+    <string name="hdr_subject_hint">The cut-out model finds the subject: the look goes on it, or around it.</string>
+    <string name="hdr_subject_find">Find the subject</string>
+    <string name="hdr_subject_done">Subject found. Correct it with brushes if something is missing or too much.</string>
+    <string name="hdr_brush_hint">Paint where the look goes: with the precise brush, and with the magic one where the correcting model is set up.</string>
+    <string name="hdr_brush_done">Painted. Paint more, or start over.</string>
+    <string name="hdr_brush_failed">The picture cannot be read to paint on.</string>
+    <string name="hdr_brush_paint">Paint where</string>
+    <string name="hdr_brush_more">Paint more</string>
+    <string name="hdr_brush_title">Where the HDR look goes</string>
+    <string name="hdr_show_zones">Show the zones</string>
+    <string name="hdr_show_zones_hint">Tints what shines brighter: the more, the warmer.</string>
+    <string name="tool_hdr">HDR</string>
+    <string name="hdr_video_title">HDR video</string>
+    <string name="hdr_video_subtitle">The light parts shine brighter than white: the video is saved as HDR (HLG). Screens without HDR show it as a normal video.</string>
+    <string name="hdr_video_format_only">Only MP4 and MKV hold HDR video: as %1$s the video is saved without the look. Choose MP4 or MKV to keep it.</string>
+    <string name="hdr_video_kept">The footage is HDR already and stays as it was filmed, so the look is not added. Turn off \"Keep HDR\" in the export to add it to the footage made SDR.</string>
+    <string name="hdr_video_frame">This frame in HDR</string>
+    <string name="hdr_video_screen_shows">This screen shows HDR: the frame looks as HDR screens will show the video. Stop the playhead anywhere to see that frame.</string>
+    <string name="hdr_video_intensity_hint">Worked out of each pixel\'s light: the brightest parts shine the most, dark and middle tones stay as they are. Past the middle more of the light tones shine.</string>
+    <string name="hdr_video_zones_hint">Tints what shines brighter, live on the preview and on the frame: the more, the warmer.</string>
+    <string name="hdr_video_chip_hlg">HLG</string>
+    <string name="hdr_video_chip_bits">10 bit</string>
+    <string name="hdr_video_chip_hevc">HEVC</string>
+    <string name="hdr_video_encoding">Saved as HEVC (H.265) Main 10 with the software encoder: it takes longer than an SDR video, and the files play on recent phones, TVs and computers.</string>
+    <string name="frame_picker_title">Choose the frame</string>
+    <string name="frame_picker_frame_badge">Frame %1$d</string>
+    <string name="frame_picker_zoom">%1$sx</string>
+    <string name="frame_picker_frame_of">%1$d of %2$d</string>
+    <string name="frame_picker_fps">%1$s fps</string>
+    <string name="frame_picker_back_ten">Back 10 frames</string>
+    <string name="frame_picker_back_one">Previous frame</string>
+    <string name="frame_picker_next_one">Next frame</string>
+    <string name="frame_picker_next_ten">Forward 10 frames</string>
+    <string name="frame_picker_edit">Edit this frame as a photo</string>
+    <string name="frame_picker_all">Save every frame in a ZIP</string>
+    <string name="frame_picker_hint">Drag along the strip to get close, turn the wheel for one frame at a time, pinch the picture to check the detail.</string>
+    <string name="frames_export_title">Every frame</string>
+    <string name="frames_export_subtitle">The pictures of the video in a ZIP, as %1$s: as filmed, without edits.</string>
+    <string name="frames_export_rate">How many a second</string>
+    <string name="frames_export_every">Every frame (%1$s)</string>
+    <string name="frames_export_part">Part of the video</string>
+    <string name="frames_export_from_here">From here</string>
+    <string name="frames_export_to_here">To here</string>
+    <string name="frames_export_whole">All</string>
+    <string name="frames_export_count">pictures</string>
+    <string name="frames_export_many">That is a lot of pictures: the ZIP may be large and take a while.</string>
+    <string name="frames_export_hint">\"From here\" and \"To here\" use the frame chosen on the screen behind.</string>
+    <string name="frames_export_go">Save %1$d pictures</string>
+    <string name="image_whole">Picture</string>
+    <string name="image_sticker_name">Sticker</string>
+    <string name="image_compare">Hold to see the original</string>
+    <string name="image_unreadable">The picture could not be read.</string>
+    <string name="image_size_value">%1$d \u00D7 %2$d px</string>
+    <string name="image_frame_position">Frame at</string>
+    <string name="image_frame_previous">Previous frame</string>
+    <string name="image_frame_next">Next frame</string>
+    <string name="image_exposure">Exposure</string>
+    <string name="image_brightness">Brightness</string>
+    <string name="image_contrast">Contrast</string>
+    <string name="image_highlights">Highlights</string>
+    <string name="image_shadows">Shadows</string>
+    <string name="image_fade">Fade</string>
+    <string name="image_saturation">Saturation</string>
+    <string name="image_warmth">Warmth</string>
+    <string name="image_tint">Tint</string>
+    <string name="image_hue">Hue</string>
+    <string name="value_ev" translatable="false">%1$s EV</string>
+    <string name="value_degrees_decimal" translatable="false">%1$s\u00B0</string>
+    <string name="filter_none">Original</string>
+    <string name="filter_vivid">Vivid</string>
+    <string name="filter_warm">Warm</string>
+    <string name="filter_cool">Cool</string>
+    <string name="filter_vintage">Vintage</string>
+    <string name="filter_faded">Faded</string>
+    <string name="filter_drama">Drama</string>
+    <string name="filter_film">Film</string>
+    <string name="filter_mono">Mono</string>
+    <string name="filter_noir">Noir</string>
+    <string name="filter_sepia">Sepia</string>
+    <string name="filter_matte">Matte</string>
+    <string name="image_filter_amount">Intensity</string>
+    <string name="effect_none">None</string>
+    <string name="effect_blur">Blur</string>
+    <string name="effect_pixelate">Pixels</string>
+    <string name="effect_glitch">Glitch</string>
+    <string name="effect_posterize">Poster</string>
+    <string name="effect_invert">Invert</string>
+    <string name="effect_emboss">Emboss</string>
+    <string name="effect_sketch">Sketch</string>
+    <string name="effect_duotone">Duotone</string>
+    <string name="image_effect_amount">Strength</string>
+    <string name="image_duotone_dark">Shadows</string>
+    <string name="image_duotone_light">Highlights</string>
+    <string name="image_sharpen">Sharpen</string>
+    <string name="image_vignette">Vignette</string>
+    <string name="image_grain">Grain</string>
+    <string name="image_straighten_angle">Angle</string>
+    <string name="image_keystone_vertical">Vertical perspective</string>
+    <string name="image_keystone_horizontal">Horizontal perspective</string>
+    <string name="draw_brush">Brush</string>
+    <string name="draw_line">Line</string>
+    <string name="draw_arrow">Arrow</string>
+    <string name="draw_box">Box</string>
+    <string name="draw_oval">Oval</string>
+    <string name="draw_eraser">Eraser</string>
+    <string name="draw_size">Size</string>
+    <string name="draw_opacity">Opacity</string>
+    <string name="draw_undo">Undo stroke</string>
+    <string name="draw_clear">Clear all</string>
+    <string name="border_on">Frame around the picture</string>
+    <string name="border_width">Width</string>
+    <string name="image_export_size">Size</string>
+    <string name="image_size_original">Original</string>
+    <string name="image_size_side" translatable="false">%1$d</string>
+    <string name="image_size_hint">The longer side, in pixels. A picture is never made larger.</string>
+    <string name="image_export_quality">Quality</string>
+    <string name="image_quality_hint">Higher keeps more detail and makes a bigger file.</string>
+    <string name="image_lossless">Every pixel is kept: this format loses nothing.</string>
+    <string name="image_webp_note">WEBP is written by Android from the picture FFmpeg makes: the FFmpeg in the app has no WEBP encoder. At 100% it is lossless.</string>
+    <!-- GIF -->
+    <string name="tool_gif" translatable="false">GIF</string>
+    <string name="gif_width">Width</string>
+    <string name="gif_width_original">Video</string>
+    <string name="gif_fps">Frames per second</string>
+    <string name="gif_size_hint">A narrower picture and fewer frames make a lighter file.</string>
+    <string name="gif_colors">Colours</string>
+    <string name="gif_dither">Dithering</string>
+    <string name="gif_dither_soft">Soft</string>
+    <string name="gif_dither_fine">Fine</string>
+    <string name="gif_dither_pattern">Pattern</string>
+    <string name="gif_dither_none">None</string>
+    <string name="gif_dither_hint">With few colours, dithering mixes the ones there are into dots so that gradients stay smooth. Pattern changes least from frame to frame, so it makes the lightest files.</string>
+    <string name="gif_loops">Plays</string>
+    <string name="gif_loop_forever">Forever</string>
+    <string name="gif_loop_once">Once</string>
+    <string name="gif_smaller">Lighter file</string>
+    <string name="gif_smaller_hint">Colours chosen for what moves, and each frame stores only what changed.</string>
+    <string name="gif_no_sound">A GIF has no sound: the editor plays without it and leaves out the sound tools.</string>
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_on">On</string>
+    <string name="settings_off">Off</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_appearance_summary">%1$s theme, %2$s</string>
+    <string name="settings_colors_wallpaper">wallpaper colours</string>
+    <string name="settings_colors_teal">teal colours</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_palette_preview">Colours in use</string>
+    <string name="settings_dynamic">Wallpaper colours</string>
+    <string name="settings_dynamic_on">Colours from your wallpaper, on the launcher icon too. Some launchers take the icon off the home screen when this changes.</string>
+    <string name="settings_dynamic_off">The app\'s teal, on the launcher icon too. Some launchers take the icon off the home screen when this changes.</string>
+    <string name="settings_dynamic_unavailable">Needs Android 12: the app uses its icon\'s teal.</string>
+    <string name="settings_pure_black">Pure black</string>
+    <string name="settings_pure_black_summary">Black backgrounds in the dark theme, for OLED screens.</string>
+    <string name="settings_pure_black_light">Only for the dark theme.</string>
+    <string name="settings_vibration">Vibration</string>
+    <string name="settings_haptics">Touch feedback</string>
+    <string name="settings_haptics_summary">Light taps on buttons, sliders and the timeline.</string>
+    <string name="settings_haptics_try">Try them</string>
+    <string name="settings_haptics_tick">Tick</string>
+    <string name="settings_haptics_tap">Tap</string>
+    <string name="settings_haptics_confirm">Confirm</string>
+    <string name="settings_exports">Exports and storage</string>
+    <string name="settings_exports_summary_copies">A copy goes to your phone\'s folders</string>
+    <string name="settings_exports_summary_app">Kept in the app</string>
+    <string name="settings_save_copies">Copy to phone folders</string>
+    <string name="settings_save_copies_summary">Finished files also go to Movies, Music, Pictures or Download.</string>
+    <string name="settings_save_copies_unavailable">Needs Android 10. Use Share or save instead.</string>
+    <string name="settings_storage">Kept in the app</string>
+    <plurals name="settings_storage_files">
+        <item quantity="one">%1$d file, %2$s</item>
+        <item quantity="other">%1$d files, %2$s</item>
+    </plurals>
+    <string name="settings_storage_empty">Nothing kept</string>
+    <string name="settings_storage_hint">Every export is written here first.</string>
+    <string name="settings_storage_delete">Delete them</string>
+    <string name="settings_storage_delete_summary">Frees space. Copies in your phone\'s folders stay.</string>
+    <string name="settings_storage_busy">Not while an export is running.</string>
+    <string name="settings_storage_delete_title">Delete the exported files?</string>
+    <string name="settings_storage_delete_text">%1$s kept in the app goes for good. The copies in your phone\'s folders stay.</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_notifications_summary_live">Live Updates</string>
+    <string name="settings_notifications_summary_plain">Progress notification</string>
+    <string name="settings_live_updates">Live Updates</string>
+    <string name="settings_live_updates_summary">Progress in the status bar and on the lock screen.</string>
+    <string name="settings_live_updates_unavailable">Needs Android 16: a progress notification instead.</string>
+    <string name="settings_notification_system">Notification settings</string>
+    <string name="settings_notification_system_summary">Sound, lock screen and more, in Android\'s settings.</string>
+    <string name="settings_about">About</string>
+    <string name="settings_github">Source code</string>
+    <string name="settings_github_summary">github.com/marcomorosi06/FFmpegGUI</string>
+    <string name="settings_kofi">Support the project</string>
+    <string name="settings_kofi_summary">Buy me a coffee on Ko-fi</string>
+    <string name="settings_reset">Reset settings</string>
+    <string name="settings_reset_summary">Back to how the app came</string>
+    <string name="settings_reset_title">Reset every setting?</string>
+    <string name="settings_reset_text">Theme, colours, vibration, exports, notifications and recent projects go back to how they were at the start. Saved projects are not deleted.</string>
+    <string name="settings_link_failed">No app here can open this link</string>
+    <string name="action_delete">Delete</string>
+
+    <!-- About -->
+    <string name="about_version">Version %1$s</string>
+    <string name="about_motto">Why would a video editing app need internet permission?</string>
+    <string name="about_motto_text">It doesn\'t. FFmpeg GUI cuts, converts and saves everything on your phone, and nothing you open ever leaves it.</string>
+    <string name="about_project">The project</string>
+    <string name="about_author">Made by Marco Morosi</string>
+    <string name="about_author_summary">No ads, no trackers, no account.</string>
+    <string name="about_under_hood">Under the hood</string>
+    <string name="about_ffmpeg">FFmpeg %1$s</string>
+    <string name="about_ffmpeg_plain">FFmpeg</string>
+    <string name="about_ffmpeg_summary">The engine of every export, through FFmpegKitNext %1$s</string>
+    <string name="about_ffmpeg_summary_plain">The engine of every export, through FFmpegKitNext</string>
+    <string name="about_compose">Jetpack Compose</string>
+    <string name="about_compose_summary">With Material 3 Expressive</string>
+    <string name="about_licences">Licences</string>
+    <string name="about_licence_app">FFmpeg GUI</string>
+    <string name="about_licence_eupl">European Union Public Licence 1.2</string>
+    <string name="about_licence_ffmpeg">FFmpeg and FFmpegKitNext</string>
+    <string name="about_licence_gpl">GNU General Public License 3.0</string>
+    <string name="about_licence_font">Google Sans Flex</string>
+    <string name="about_licence_ofl">SIL Open Font License 1.1</string>
+    <string name="about_licence_androidx">AndroidX, Compose, Media3, Material</string>
+    <string name="about_licence_apache">Apache License 2.0</string>
+    <string name="about_close">Close</string>
+    <string name="done_copied">A copy is in %1$s</string>
+
+    <!-- Recent projects -->
+    <string name="projects_continue">Continue editing</string>
+    <plurals name="projects_clip_count">
+        <item quantity="one">%1$d clip</item>
+        <item quantity="other">%1$d clips</item>
+    </plurals>
+    <plurals name="projects_missing">
+        <item quantity="one">%1$d file missing</item>
+        <item quantity="other">%1$d files missing</item>
+    </plurals>
+    <plurals name="projects_missing_text">
+        <item quantity="one">%1$d file it uses can no longer be read: it was moved, renamed or deleted. The project still opens, without it.</item>
+        <item quantity="other">%1$d files it uses can no longer be read: they were moved, renamed or deleted. The project still opens, without them.</item>
+    </plurals>
+    <plurals name="projects_copied">
+        <item quantity="one">%1$d file copied in</item>
+        <item quantity="other">%1$d files copied in</item>
+    </plurals>
+    <string name="projects_stored">%1$s on this phone</string>
+    <string name="projects_edited">Edited %1$s</string>
+    <string name="projects_open">Continue editing</string>
+    <string name="projects_open_summary">Your files and edits, as you left them</string>
+    <string name="projects_duplicate">Duplicate</string>
+    <string name="projects_duplicate_summary">A separate copy to try something else</string>
+    <string name="projects_copy_name">%1$s (copy)</string>
+    <string name="projects_share">Share the last export</string>
+    <string name="projects_delete">Delete project</string>
+    <string name="projects_delete_summary">Your original files and your exports stay</string>
+    <string name="projects_delete_title">Delete this project?</string>
+    <string name="projects_delete_text">Its edits, its preview picture and the files copied into it (%1$s) go for good. Your original files and your exports stay.</string>
+    <string name="projects_open_failed">This project can no longer be read</string>
+    <string name="overlay_read_failed">This file cannot be read as a picture or a video</string>
+    <string name="projects_actions">Project actions</string>
+
+    <!-- Recent projects: settings -->
+    <string name="settings_projects">Recent projects</string>
+    <string name="settings_projects_summary_on">Kept on this phone, up to %1$d</string>
+    <string name="settings_projects_summary_off">Off: nothing is kept</string>
+    <string name="settings_projects_note">Kept in the app\'s private storage. Nothing is uploaded.</string>
+    <string name="settings_projects_privacy_what">What is kept: your edits as a readable text file (project.json), the list of files used and a small preview picture. Not your undo history.</string>
+    <string name="settings_projects_privacy_files">Files you picked are not copied: the app only keeps the permission to read them, and gives it back when you delete the project. Recordings, stills and files shared from other apps are copied in, or they could not open again.</string>
+    <string name="settings_projects_keep">Keep recent projects</string>
+    <string name="settings_projects_keep_on">Saved as you edit, to continue later from the home screen</string>
+    <string name="settings_projects_keep_off">Edits are lost when you open another file</string>
+    <string name="settings_projects_limit">How many to keep</string>
+    <string name="settings_projects_limit_hint">The oldest goes when a new one would be one too many.</string>
+    <string name="settings_projects_limit_title">Keep only the newest %1$d?</string>
+    <plurals name="settings_projects_limit_text">
+        <item quantity="one">The oldest project and the files copied into it (%2$s) go for good. Your original files and your exports stay.</item>
+        <item quantity="other">The %1$d oldest projects and the files copied into them (%2$s) go for good. Your original files and your exports stay.</item>
+    </plurals>
+    <string name="settings_projects_saved">Saved projects</string>
+    <string name="settings_projects_none">No projects kept</string>
+    <plurals name="settings_projects_count">
+        <item quantity="one">%1$d project, %2$s</item>
+        <item quantity="other">%1$d projects, %2$s</item>
+    </plurals>
+    <string name="settings_projects_row">%1$s \u00B7 edited %2$s</string>
+    <string name="settings_projects_delete_all">Delete all projects</string>
+    <string name="settings_projects_delete_all_summary">Gives back every file permission too</string>
+    <string name="settings_projects_delete_all_title">Delete every project?</string>
+    <string name="settings_projects_delete_all_text">All recent projects and the files copied into them (%1$s) go for good. Your original files and your exports stay.</string>
+    <string name="settings_projects_off_title">Turn off and delete projects?</string>
+    <string name="settings_projects_off_text">Nothing will be kept from now on, and the projects already kept (%1$s) are deleted. Your original files and your exports stay.</string>
+    <string name="action_turn_off">Turn off</string>
+    <!-- Audio encoding -->
+    <string name="value_kbps" translatable="false">%1$d kbps</string>
+    <string name="export_bitrate_voice">For voices and podcasts: the smallest file</string>
+    <string name="export_bitrate_fair">Fine for speech, a little dull for music</string>
+    <string name="export_bitrate_good">Good for music</string>
+    <string name="export_bitrate_great">Very good: hard to tell from the original</string>
+    <string name="export_bitrate_best">The best this format does: the biggest file</string>
+    <string name="export_depth_16">CD quality: right for listening</string>
+    <string name="export_depth_24">Studio quality: for editing it further, a bigger file</string>
+    <string name="export_rate_original">As the source: nothing is resampled</string>
+    <string name="export_rate_22">Half the detail: for voices only</string>
+    <string name="export_rate_44">CD and music</string>
+    <string name="export_rate_48">Video and most phones</string>
+    <string name="export_rate_96">Studio: for editing it further</string>
+    <string name="export_size_estimate">About %1$s</string>
+    <!-- Hardware video encoder -->
+    <string name="settings_hardware_video">Phone\'s video chip</string>
+    <string name="settings_hardware_video_on">MP4 and MKV are encoded by the chip that records your videos: many times faster. Files come out a little bigger at the same quality. If the chip cannot, the processor takes over by itself.</string>
+    <string name="settings_hardware_video_untested">Test it first, just below: it can be turned on once the test shows that the chip makes correct videos on this phone.</string>
+    <string name="settings_hardware_video_unusable">The test found no way for this phone\'s chip to make correct videos here, so the processor encodes them.</string>
+    <string name="calibration_title">Test the video chip</string>
+    <string name="calibration_hint">Makes a short test video in each way the chip allows and compares it with the original, until one comes out the same. Takes a minute or two.</string>
+    <string name="calibration_trying">Trying %1$s, %2$s, sizes in steps of %3$d</string>
+    <string name="calibration_step">Way %1$d of %2$d</string>
+    <string name="calibration_works">Works: %1$s, %2$s, sizes in steps of %3$d. The test video came back at %4$s dB, the same as the original to the eye.</string>
+    <plurals name="calibration_unusable">
+        <item quantity="one">The only way there is gave a damaged video: the processor encodes.</item>
+        <item quantity="other">None of the %1$d ways gave a correct video: the processor encodes.</item>
+    </plurals>
+    <string name="calibration_no_chip">This phone has no video chip FFmpeg can use: the processor encodes.</string>
+    <string name="calibration_start">Start the test</string>
+    <string name="calibration_again">Test again</string>
+    <string name="calibration_stop">Stop the test</string>
+    <string name="calibration_busy">Not while an export is running.</string>
+    <string name="settings_hardware_video_off">The processor encodes every video, at the speed chosen below: slower, but the same everywhere.</string>
+    <string name="processing_encoder_hardware">Phone\'s video chip</string>
+    <string name="processing_encoder_fallback">Processor: the video chip could not</string>
+    <string name="done_encoder_hardware">Encoded by the phone\'s video chip</string>
+    <string name="done_encoder_fallback">The video chip could not encode this file, so the processor did</string>
+    <!-- Processor speed (x264 preset) -->
+    <string name="settings_cpu_speed">Processor speed</string>
+    <string name="settings_cpu_speed_fallback">When the processor encodes a video: if the video chip cannot.</string>
+    <string name="settings_cpu_speed_always">The processor encodes every video, at this speed.</string>
+    <string name="cpu_speed_fastest">Fastest</string>
+    <string name="cpu_speed_fast">Fast</string>
+    <string name="cpu_speed_balanced">Balanced</string>
+    <string name="cpu_speed_smallest">Smallest</string>
+    <string name="cpu_speed_fastest_hint">The quickest there is: files about twice as big at the same quality.</string>
+    <string name="cpu_speed_fast_hint">About three times quicker than Balanced, files a little bigger. Good on a phone.</string>
+    <string name="cpu_speed_balanced_hint">x264\'s usual setting: slower, smaller files.</string>
+    <string name="cpu_speed_smallest_hint">The slowest: the smallest files at the same quality.</string>
+    <!-- Smart features: subtitles made from what is said -->
+    <string name="settings_smart">Smart features</string>
+    <string name="settings_smart_summary_ready">Subtitles from speech are ready</string>
+    <string name="settings_smart_summary_missing">Subtitles from speech and subject cut-out, with models you download once</string>
+    <string name="smart_intro_text">Models that run on this phone, each downloaded once with your browser.</string>
+    <string name="smart_model_missing">Not on this phone yet. Two steps:</string>
+    <string name="smart_model_importing">Unpacking and checking the model\u2026</string>
+    <string name="smart_model_checking">Checking every file again\u2026</string>
+    <string name="smart_model_ready">Ready, %1$s on this phone. Every file matches its checksum.</string>
+    <string name="smart_step_download">Download it with your browser</string>
+    <string name="smart_download">Open the download</string>
+    <string name="smart_step_import">Import it here</string>
+    <string name="smart_import">Import the model</string>
+    <string name="smart_space_needed">It takes %1$s on the phone. The downloaded file can be deleted afterwards.</string>
+    <string name="smart_import_keep_open">Keep the app open: this takes a minute or two.</string>
+    <string name="smart_stop">Stop</string>
+    <string name="smart_verify">Check again</string>
+    <string name="smart_delete">Delete</string>
+    <string name="smart_delete_title">Delete the speech model?</string>
+    <string name="smart_delete_text">%1$s are freed. Subtitles already made stay in your projects; to make new ones, import the model again.</string>
+    <string name="smart_busy">Not while the editor is making subtitles with the model.</string>
+    <string name="smart_in_memory">Loaded in memory now. It is let go of after %1$d minutes unused.</string>
+    <string name="smart_unload">Unload</string>
+    <plurals name="smart_checksums">
+        <item quantity="one">%1$d of %2$d file matches its SHA-256</item>
+        <item quantity="other">%1$d of %2$d files match their SHA-256</item>
+    </plurals>
+    <string name="smart_archive_matches">The downloaded archive matches its SHA-256 as well.</string>
+    <string name="smart_archive_differs">The archive itself differs from the known one, but every file in it matches.</string>
+    <string name="smart_file_missing">missing</string>
+    <string name="smart_expected">expected %1$s</string>
+    <string name="smart_problem_incomplete">Some files of the model are missing from what you picked.</string>
+    <string name="smart_problem_hash">Some files do not match their checksum: the download may be damaged. Download it again and import it.</string>
+    <string name="smart_problem_unreadable">The file could not be read to the end. Download it again and import it.</string>
+    <string name="smart_problem_space">There is not enough free space on the phone.</string>
+    <string name="smart_test_title">Speed test</string>
+    <string name="smart_test_hint">Loads the model and listens to the four recordings that come with it, to see how fast this phone is.</string>
+    <string name="smart_test_loading">Loading the model into memory\u2026</string>
+    <string name="smart_test_listening">Listening to %1$d recordings\u2026</string>
+    <string name="smart_test_done">Measured on this phone, on %1$d processor cores.</string>
+    <string name="smart_test_failed">The test could not run.</string>
+    <string name="smart_test_no_memory">Not enough free memory to load the model (%1$s free). Close other apps and try again.</string>
+    <string name="smart_test_no_samples">The recordings of the model are missing: import the archive to get them.</string>
+    <string name="smart_test_no_recordings">The test recordings come with the int8 archive: import the archive, or pick en.wav, de.wav, fr.wav and es.wav from it along with the model files.</string>
+    <string name="smart_test_start">Test the speed</string>
+    <string name="smart_test_again">Test again</string>
+    <string name="smart_figure_speed">faster than real time</string>
+    <string name="smart_figure_accuracy">words right</string>
+    <string name="smart_figure_load">to load</string>
+    <string name="smart_test_minute">A minute of video takes about %1$s.</string>
+    <string name="smart_about_model">About the model</string>
+    <string name="smart_model_summary">By %1$s. %2$d European languages, found by itself. Licence: %3$s.</string>
+    <string name="smart_credit_title">Inspired by anti-vocale</string>
+    <string name="smart_credit_summary">The open-source app that transcribes voice messages on the phone: the idea, the model and the way to run it come from there.</string>
+
+    <!-- The subtitles panel -->
+    <string name="subtitle_page_source">Subtitles</string>
+    <string name="subtitle_page_style">Style</string>
+    <string name="subtitle_page_lines">Lines</string>
+    <string name="speech_title">From what is said</string>
+    <string name="speech_hint">Listens to the video and writes what is said, word by word. The words appear on the preview as they are found.</string>
+    <string name="speech_needs_model">Needs the speech model, set up once in Smart features.</string>
+    <string name="speech_open_settings">Set up in Smart features</string>
+    <string name="speech_generate">Generate subtitles</string>
+    <string name="speech_try_again">Try again</string>
+    <string name="speech_stop">Stop</string>
+    <string name="speech_again">Listen again</string>
+    <string name="speech_remove">Remove</string>
+    <string name="speech_private">Made on this phone. Nothing leaves it.</string>
+    <string name="speech_step_sound">Taking the sound out\u2026</string>
+    <string name="speech_step_loading">Loading the speech model\u2026</string>
+    <string name="speech_step_listening">Listening and writing\u2026</string>
+    <string name="speech_step_listening_part">Listening and writing, part %1$d of %2$d\u2026</string>
+    <string name="speech_file_of">File %1$d of %2$d: %3$s</string>
+    <plurals name="speech_found_words">
+        <item quantity="one">%d word, in time with the video.</item>
+        <item quantity="other">%d words, in time with the video.</item>
+    </plurals>
+    <plurals name="speech_listen_new">
+        <item quantity="one">Listen to the new file</item>
+        <item quantity="other">Listen to the %d new files</item>
+    </plurals>
+    <string name="speech_problem_model">The speech model is missing or did not pass its check. Set it up in Smart features.</string>
+    <string name="speech_problem_memory">Not enough free memory for the speech model. Close other apps and try again.</string>
+    <string name="speech_problem_failed">Something went wrong while listening. Try again.</string>
+    <string name="subtitle_or_file">Or a subtitle file</string>
+    <string name="subtitle_loaded_styled">Drawn with the style of this panel</string>
+    <string name="subtitle_loaded_own_look">An .ass file: it keeps its own look</string>
+    <string name="subtitle_file_replaces">A file takes the place of the subtitles made from speech (Undo brings them back).</string>
+    <string name="subtitle_style_nothing">Generate subtitles or pick a .srt file: the style is for them.</string>
+    <string name="subtitle_style_own_look">This .ass file has a look of its own, which is kept. The style is for .srt files and for subtitles made from speech.</string>
+    <string name="subtitle_preset_classic">Classic</string>
+    <string name="subtitle_preset_pop">Pop</string>
+    <string name="subtitle_preset_boxed">Boxed</string>
+    <string name="subtitle_preset_karaoke">Karaoke</string>
+    <string name="subtitle_preset_minimal">Minimal</string>
+    <string name="subtitle_size">Size</string>
+    <string name="subtitle_place">Place</string>
+    <string name="subtitle_place_top">Top</string>
+    <string name="subtitle_place_middle">Middle</string>
+    <string name="subtitle_place_bottom">Bottom</string>
+    <string name="subtitle_place_hint">Or drag the text on the preview while this panel is open.</string>
+    <string name="subtitle_lines">At once</string>
+    <plurals name="subtitle_lines_count">
+        <item quantity="one">%d line</item>
+        <item quantity="other">%d lines</item>
+    </plurals>
+    <string name="subtitle_look">Around the letters</string>
+    <string name="subtitle_look_outline">Outline</string>
+    <string name="subtitle_look_box">Box</string>
+    <string name="subtitle_look_shadow">Shadow</string>
+    <string name="subtitle_text_color">Text colour</string>
+    <string name="subtitle_bold">Bold</string>
+    <string name="subtitle_uppercase">Capital letters</string>
+    <string name="subtitle_uppercase_hint">Every word in capitals, as in short videos</string>
+    <string name="subtitle_highlight">The word being said</string>
+    <string name="subtitle_highlight_none">Plain</string>
+    <string name="subtitle_highlight_word">Lit</string>
+    <string name="subtitle_highlight_spoken">Karaoke</string>
+    <string name="subtitle_highlight_color">Highlight colour</string>
+    <string name="subtitle_highlight_hint">Lit: the word being said takes the colour. Karaoke: every word said so far does.</string>
+    <string name="subtitle_highlight_file">A file does not say when each word is said: only subtitles made from speech can light it.</string>
+    <string name="subtitle_sample">Your subtitles here</string>
+    <string name="subtitle_lines_empty">No lines yet: generate the subtitles first.</string>
+    <string name="subtitle_lines_hint">Tap a line to correct it.</string>
+    <string name="subtitle_save_srt">Save .srt</string>
+    <plurals name="subtitle_file_lines">
+        <item quantity="one">%d line, from the file.</item>
+        <item quantity="other">%d lines, from the file.</item>
+    </plurals>
+    <plurals name="subtitle_more_lines">
+        <item quantity="one">Show %d more line</item>
+        <item quantity="other">Show %d more lines</item>
+    </plurals>
+    <string name="subtitle_edit_line">Correct this line</string>
+    <string name="subtitle_edit_title">Line at %1$s</string>
+    <string name="subtitle_edit_hint">The words share the time of the line. Leave it empty to remove the line.</string>
+    <string name="subtitle_edit_save">Save</string>
+    <string name="subtitle_edit_cancel">Cancel</string>
+
+    <!-- About: what runs the smart features, and their licences -->
+    <string name="about_sherpa">sherpa-onnx</string>
+    <string name="about_sherpa_summary">Runs the speech model on the phone, with ONNX Runtime</string>
+    <string name="about_licence_sherpa">sherpa-onnx</string>
+    <string name="about_licence_onnxruntime">ONNX Runtime</string>
+    <string name="about_licence_mit">MIT License</string>
+    <string name="about_licence_parakeet">Parakeet TDT 0.6B v3, by NVIDIA (the speech model, downloaded by you; its token list comes with the app)</string>
+    <string name="about_licence_cc_by">Creative Commons Attribution 4.0</string>
+    <string name="about_licence_anti_vocale">anti-vocale, by RisorseArtificiali</string>
+    <string name="about_licence_anti_vocale_summary">The smart subtitles take their idea from it (Apache License 2.0)</string>
+    <string name="tool_framing">Zoom</string>
+    <string name="framing_title">Zoom and position</string>
+    <string name="framing_zoom">Zoom</string>
+    <string name="framing_across">Across</string>
+    <string name="framing_down">Down</string>
+    <string name="framing_hint">Enlarges the clip and picks the part that shows. Put a keyframe (the diamond next to undo) at two moments for a zoom or a pan that moves.</string>
+    <string name="framing_keyed_hint">This clip has keyframes: these are its values at the playhead, and a change goes into the keyframe there.</string>
+    <string name="keyframe_add">Add a keyframe here</string>
+    <string name="keyframe_remove">Remove the keyframe here</string>
+    <string name="smart_privacy_note">The model is downloaded with your browser and imported here: FFmpeg GUI has no internet access, as its privacy by design requires.</string>
+    <string name="settings_smart_summary_both">Subtitles from speech and subject cut-out are ready</string>
+    <string name="settings_smart_summary_cutout">Subject cut-out is ready</string>
+    <string name="smart_section_speech">Subtitles from speech</string>
+    <string name="smart_speech_intro">Writes what is said in a video or an audio file, word by word and in time.</string>
+    <string name="smart_section_cutout">Subject cut-out</string>
+    <string name="cutout_intro">Finds the subject of a photo, a sticker or a picture laid over the video and cuts it out, whatever is behind it (the Key tool): no green screen needed.</string>
+    <string name="cutout_model_importing">Copying and checking the model\u2026</string>
+    <string name="cutout_step_download_text">%1$s, from the releases of the rembg project on GitHub. The link opens in your browser.</string>
+    <string name="cutout_step_import_text">Pick the downloaded file, %1$s. It is checked against its SHA-256.</string>
+    <string name="cutout_problem_not_model">That file is not the cut-out model. Pick the downloaded %1$s.</string>
+    <string name="cutout_busy">Not while a picture is being cut out with the model.</string>
+    <string name="cutout_delete_title">Delete the cut-out model?</string>
+    <string name="cutout_delete_text">%1$s are freed. Pictures already cut out stay so in your projects; to cut out new ones, import the model again.</string>
+    <string name="cutout_test_hint">Loads the model and cuts out a test picture, to see how long a picture takes on this phone.</string>
+    <string name="cutout_test_running">Cutting out a test picture\u2026</string>
+    <string name="cutout_figure_picture">per picture</string>
+    <string name="cutout_model_summary">By %1$s. Any subject, on any background. Licence: %2$s.</string>
+
+    <!-- Long work in the notifications (subtitles, cut-out, models) -->
+    <string name="work_channel_name">Work in progress</string>
+    <string name="work_channel_description">Subtitles being made, subjects being cut out and models being imported, while they run.</string>
+    <string name="work_result_channel_name">Finished work</string>
+    <string name="work_result_channel_description">How long work ended, when it ended with the app in the background.</string>
+    <string name="work_action_stop">Stop</string>
+    <string name="work_part">Part %1$d of %2$d</string>
+    <string name="work_file">File %1$d of %2$d</string>
+    <string name="work_open_to_see">Open FFmpeg GUI to see it.</string>
+    <string name="work_open_to_see_why">Open FFmpeg GUI to see why.</string>
+    <string name="work_speech_title">Listening to %1$s</string>
+    <string name="work_speech_extracting">Taking the sound out</string>
+    <string name="work_speech_loading">Loading the speech model</string>
+    <string name="work_speech_listening">Writing down what is said</string>
+    <string name="work_speech_done_title">The words are written down</string>
+    <string name="work_speech_failed_title">The words could not be written down</string>
+    <string name="work_cutout_title">Cutting out the subject</string>
+    <string name="work_cutout_text">Looking for the subject of the picture</string>
+    <string name="work_cutout_done_title">Subject cut out</string>
+    <string name="work_cutout_failed_title">The subject could not be cut out</string>
+    <string name="work_model_speech_title">Speech model, %1$s</string>
+    <string name="work_model_cutout_title">Cut-out model, %1$s</string>
+    <string name="work_model_reading">Unpacking and checking every file</string>
+    <string name="work_model_checking">Checking every file again</string>
+    <string name="work_model_ready_title">Model ready</string>
+    <string name="work_model_ready_text">%1$s: installed and checked.</string>
+    <string name="work_model_failed_title">The model was not imported</string>
+
+    <!-- Smart features: choosing between two models -->
+    <string name="smart_variant_best">Best quality</string>
+    <string name="smart_variant_simple">Lighter</string>
+    <string name="smart_variant_installed">On this phone</string>
+    <string name="smart_variant_missing">Not installed</string>
+    <string name="smart_variant_importing">Importing\u2026</string>
+    <string name="smart_variant_problem">Did not pass its check</string>
+    <string name="smart_variant_hint">Both can be on the phone: the chosen one is used, and the card below is about it.</string>
+    <string name="smart_model_title_of">Speech model, %1$s</string>
+    <string name="refine_section">Correct a cut-out</string>
+    <string name="refine_intro">Tap or paint green on what should stay and red on what should go: the model finds the whole thing, edges included. A precise brush and zoom do the fine parts. Optional, about 40 MB.</string>
+    <string name="refine_model_title">Correcting model, %1$s</string>
+    <string name="refine_problem_not_model">Those files are not the correcting model. Pick the downloaded files together: %1$s.</string>
+    <string name="refine_delete_title">Delete the correcting model?</string>
+    <string name="refine_delete_text">%1$s are freed. Cut-outs already corrected stay so in your projects; to correct new ones, import the model again.</string>
+    <string name="refine_model_summary">%1$s, a light Segment Anything that finds what a stroke points at. %2$s</string>
+    <string name="refine_open">Correct with brushes</string>
+    <string name="refine_setup">Set up correcting with brushes</string>
+    <string name="refine_title">Correct the cut-out</string>
+    <string name="refine_apply">Apply the correction</string>
+    <string name="refine_studying">Looking at the picture\u2026</string>
+    <string name="refine_saving">Saving the corrected cut-out\u2026</string>
+    <string name="refine_working">Finding what you pointed at\u2026</string>
+    <string name="refine_hint_magic_keep">Tap what should stay, or paint roughly over it: the model takes the whole of it, edges included. Two fingers zoom and move the picture.</string>
+    <string name="refine_hint_magic_remove">Tap what should go, or paint roughly over it: the model takes the whole of it away. Two fingers zoom and move the picture.</string>
+    <string name="refine_hint_precise_keep">Paint what should stay: only what the brush covers changes. Zoom in with two fingers for the fine parts.</string>
+    <string name="refine_hint_precise_remove">Paint what should go: only what the brush covers changes. Zoom in with two fingers for the fine parts.</string>
+    <string name="refine_tool_magic">Magic</string>
+    <string name="refine_tool_precise">Precise</string>
+    <string name="refine_brush_size">Size</string>
+    <string name="refine_fit">Whole picture</string>
+    <string name="refine_nothing_found">Nothing clear there. Tap in the middle of it, or use the precise brush.</string>
+    <string name="refine_brush_keep">Keep</string>
+    <string name="refine_brush_remove">Remove</string>
+    <string name="refine_reset">Start over</string>
+    <string name="refine_failed">The correction did not work. Try another stroke, or close and try again.</string>
+    <string name="refine_view_overlay">Show what goes over the whole picture</string>
+    <string name="refine_view_cut">Show the cut-out</string>
+    <string name="refine_compare">Hold to see the picture as it was</string>
+    <string name="light_brush_add">Add HDR</string>
+    <string name="light_brush_remove">Take it away</string>
+    <string name="light_hint_magic_add">Tap something, or paint roughly over it: all of it gets the HDR look, edges included. Two fingers zoom and move the picture.</string>
+    <string name="light_hint_magic_remove">Tap something, or paint roughly over it: the HDR look leaves all of it. Two fingers zoom and move the picture.</string>
+    <string name="light_hint_precise_add">Paint where the HDR look goes: only what the brush covers changes. Zoom in with two fingers for the fine parts.</string>
+    <string name="light_hint_precise_remove">Paint where the HDR look should not go: only what the brush covers changes. Zoom in with two fingers for the fine parts.</string>
+    <string name="refine_needs_model">The correcting model is not set up: import it in Settings, Smart features.</string>
+    <string name="cutout_model_title_of">Cut-out model, %1$s</string>
+    <string name="speech_variant_int8">int8</string>
+    <string name="speech_variant_int8_text">sherpa-onnx\'s build, %1$s. Lighter; understands a little less.</string>
+    <string name="speech_variant_smoothquant">SmoothQuant</string>
+    <string name="speech_variant_smoothquant_text">Quantised with SmoothQuant, about %1$s. Understands speech better; a little heavier.</string>
+    <string name="cutout_variant_fast">Fast</string>
+    <string name="cutout_variant_fast_text">%1$s, %2$s. Several times quicker and light on memory; rougher edges around hair and fine details.</string>
+    <string name="cutout_variant_precise">Precise</string>
+    <string name="cutout_variant_precise_text">%1$s, %2$s. Clean edges and fine details; slower, and it needs about a gigabyte of memory while it works.</string>
+    <string name="smart_step_download_files_text">%1$d files, about %2$s in all, from Hugging Face. Each link opens in your browser.</string>
+    <string name="smart_step_download_archive">Or the whole archive from sherpa-onnx on GitHub, %1$s: slower to import (it has to be unpacked, which takes minutes), but it also holds the recordings for the speed test.</string>
+    <string name="smart_download_archive">Download the archive instead</string>
+    <string name="smart_step_import_files_or_archive">Pick the downloaded files together: %1$s (or the archive alone). Every file is checked against its SHA-256.</string>
+    <string name="smart_step_import_files_text">Pick the downloaded files together: %1$s. Every file is checked against its SHA-256.</string>
+    <string name="smart_problem_not_model_files">Those files are not this speech model. Pick the downloaded files of the build chosen above.</string>
+    <string name="smart_smoothquant_summary">The SmoothQuant build of Parakeet, by pantinor on Hugging Face. Licence: %1$s.</string>
+    <string name="cutout_credit_title">Converted by rembg</string>
+    <string name="cutout_credit_summary">The open-source background remover: the model\'s ONNX file and the way to run it come from there.</string>
+    <string name="cutout_problem_model">The cut-out model is missing or did not pass its check. Set it up in Smart features.</string>
+    <string name="cutout_problem_memory">Not enough free memory for the cut-out model. Close other apps and try again.</string>
+    <string name="cutout_problem_unreadable">The picture could not be read.</string>
+    <string name="cutout_problem_failed">Something went wrong while looking for the subject. Try again.</string>
+    <string name="key_subject_title">Cut out the subject</string>
+    <string name="key_subject_hint">The cut-out model finds the subject of the picture, whatever is behind it: no green screen needed.</string>
+    <string name="key_subject_working">Looking for the subject\u2026</string>
+    <string name="key_subject_done">Subject cut out: the rest of the picture is gone.</string>
+    <string name="key_subject_cut">Cut out the subject</string>
+    <string name="key_subject_use_color">Cut a colour instead</string>
+    <string name="key_subject_needs_model">Needs the cut-out model, set up once in Smart features.</string>
+    <string name="key_subject_setup">Set up in Smart features</string>
+    <string name="key_subject_missing">The cut-out of this picture is gone: cut it out again.</string>
+    <string name="key_subject_private">Found on this phone. Nothing leaves it.</string>
+    <string name="about_licence_isnet">IS-Net, by Xuebin Qin et al. (the precise cut-out model, downloaded by you)</string>
+    <string name="about_licence_u2net">U2-NetP, by Xuebin Qin et al. (the fast cut-out model, downloaded by you)</string>
+    <string name="about_licence_rembg">rembg, by Daniel Gatis (the cut-out model\'s ONNX file)</string>
+    <string name="speech_to_texts">Make them texts</string>
+    <string name="speech_to_texts_hint">Every line becomes an ordinary text on the timeline, to move, resize and edit on its own. The word highlight and the outline stay with subtitles only.</string>
+    <string name="font_sans">Sans</string>
+    <string name="font_serif">Serif</string>
+    <string name="font_mono">Mono</string>
+    <string name="font_typewriter">Typewriter</string>
+    <string name="font_handwriting">Handwriting</string>
+    <string name="font_casual">Casual</string>
+    <string name="font_small_caps">Small caps</string>
+    <string name="format_txt">Text (transcript)</string>
+    <string name="format_category_text">Text</string>
+    <string name="format_category_text_hint">What is said, written down by the speech model and checked beside the player</string>
+    <string name="format_desc_txt">Transcript, with times</string>
+    <string name="format_txt_needs_model">Needs the speech model (Smart features)</string>
+    <string name="format_srt">Subtitles (SubRip)</string>
+    <string name="format_desc_srt">Timed lines, read by players and editors</string>
+    <string name="transcript_title">Transcript</string>
+    <string name="transcript_play">Play</string>
+    <string name="transcript_pause">Pause</string>
+    <string name="transcript_listening">Listening to the file\u2026 lines appear as they are found</string>
+    <string name="transcript_hint">Tap a word to play from there. Tap the pencil to correct a line.</string>
+    <string name="transcript_empty">Nothing was said in this file.</string>
+    <string name="transcript_stopped">Stopped before the end.</string>
+    <string name="transcript_listen">Listen again</string>
+    <string name="transcript_save_srt">Save as .srt</string>
+    <string name="transcript_save_txt">Save as .txt</string>
+    <string name="transcript_back_5">Back 5 seconds</string>
+    <string name="transcript_forward_5">Forward 5 seconds</string>
+    <string name="transcript_show_picture">Show the picture</string>
+    <string name="transcript_hide_picture">Hide the picture, more room for the lines</string>
+    <string name="transcript_play_from">play from %1$s</string>
+    <string name="error_transcript_failed">The transcript could not be made.</string>
+    <string name="status_transcript_listening">Listening to %1$s</string>
+    <!-- The welcome (first launch, and again from the settings) -->
+    <string name="settings_welcome">Welcome tour</string>
+    <string name="settings_welcome_summary">See the welcome again, and set things up from there</string>
+    <string name="welcome_step">Step %1$d of %2$d</string>
+    <string name="welcome_skip">Skip</string>
+    <string name="welcome_back">Previous page</string>
+    <string name="welcome_next">Next</string>
+    <string name="welcome_start">Let\'s go</string>
+    <string name="welcome_finish">Start creating</string>
+    <string name="welcome_status_ready">Ready</string>
+    <string name="welcome_status_later">Not set up yet</string>
+
+    <string name="welcome_hello_title">Every file, made just right.</string>
+    <string name="welcome_hello_text">The power of FFmpeg, made simple and fun: convert, cut, edit and export video, sound and pictures, right here on your phone.</string>
+
+    <string name="welcome_formats_kicker">Formats</string>
+    <string name="welcome_formats_title">Any file in, the right one out</string>
+    <string name="welcome_formats_text">Videos, sounds, pictures, GIFs, even text from what is said, or your very own FFmpeg command. Tap a format to see what it is good for.</string>
+
+    <string name="welcome_editor_kicker">Editor</string>
+    <string name="welcome_editor_title">A real editor, in your pocket</string>
+    <string name="welcome_editor_text">Line up clips, trim and split them, add texts, pictures, sounds and subtitles, and bring anything to life with keyframes. Every change shows in the preview at once.</string>
+    <string name="welcome_editor_sticker">Hello!</string>
+    <string name="welcome_feature_trim">Trim and split</string>
+    <string name="welcome_feature_texts">Texts and stickers</string>
+    <string name="welcome_feature_keyframes">Keyframes</string>
+    <string name="welcome_feature_colours">Colours and framing</string>
+    <string name="welcome_feature_speed">Speed and reverse</string>
+    <string name="welcome_feature_sound">Sounds and voice</string>
+    <string name="welcome_feature_subtitles">Subtitles</string>
+    <string name="welcome_feature_undo">Undo, redo</string>
+
+    <string name="welcome_smart_kicker">Smart features</string>
+    <string name="welcome_smart_title">Smart, and still offline</string>
+    <string name="welcome_smart_text">Two small AI models can work right on the phone. You download them with your browser and import them; the app checks every file before using it.</string>
+    <string name="welcome_smart_words">Every word you say, written right on time</string>
+    <string name="welcome_smart_speech_title">Subtitles from speech</string>
+    <string name="welcome_smart_speech_text">Captions word by word, styled as you like, or a transcript as .srt or .txt that you can read and correct while it plays.</string>
+    <string name="welcome_smart_cutout_title">Cut out the subject</string>
+    <string name="welcome_smart_cutout_text">The background of a photo goes away in a tap: clean stickers, overlays and keys.</string>
+    <string name="welcome_smart_later_title">Set them up when I finish</string>
+    <string name="welcome_smart_later_text">The smart features page opens at the end of the tour. It is always in the settings too.</string>
+
+    <string name="welcome_private_kicker">Privacy</string>
+    <string name="welcome_private_title">Yours, and only yours</string>
+    <string name="welcome_private_text">FFmpeg GUI has no internet permission at all: it could not go online even if it wanted to.</string>
+    <string name="welcome_private_here">Everything happens here</string>
+    <string name="welcome_private_here_text">Files are read, edited and written on the phone. Nothing is ever uploaded.</string>
+    <string name="welcome_private_storage">Private storage</string>
+    <string name="welcome_private_storage_text">Projects and smart models stay in the app\'s own space, out of other apps\' reach.</string>
+    <string name="welcome_private_nothing">No accounts, no ads, no tracking</string>
+    <string name="welcome_private_nothing_text">Nothing to sign up for, nothing that watches what you do.</string>
+    <string name="welcome_private_open">Open source</string>
+    <string name="welcome_private_open_text">Every line of the app can be read on GitHub.</string>
+
+    <string name="welcome_look_kicker">Look</string>
+    <string name="welcome_look_title">Make it yours</string>
+    <string name="welcome_look_text">Pick a theme and its colours. Everything changes as you tap, this page too.</string>
+    <string name="welcome_look_dynamic">Colours from your wallpaper. Off, the app\'s own teal, on its home screen icon too.</string>
+
+    <string name="welcome_feel_kicker">Feel</string>
+    <string name="welcome_feel_title">Feel every touch</string>
+    <string name="welcome_feel_text">Light taps under buttons, sliders and the timeline make the app feel solid in your hand. Try them.</string>
+    <string name="welcome_feel_pad">Touch the shapes</string>
+    <string name="welcome_feel_slide">Slide: every step ticks.</string>
+
+    <string name="welcome_exports_kicker">Exports</string>
+    <string name="welcome_exports_title">Exports, your way</string>
+    <string name="welcome_exports_text">Where the finished files go, and how hard the phone works on them. All of it stays in the settings to change later.</string>
+    <string name="welcome_exports_speed">How the processor encodes a video, when the video chip does not.</string>
+    <string name="welcome_exports_chip">The test makes a few short videos with the phone\'s video chip to see if they come out right. It goes on in the background: carry on meanwhile.</string>
+
+    <string name="welcome_projects_kicker">Projects</string>
+    <string name="welcome_projects_title">Pick up where you left off</string>
+    <string name="welcome_projects_text">Your edits are kept as recent projects while you work, so you can close the app and carry on later, right from the home screen.</string>
+    <string name="welcome_projects_private">Kept only on this phone, in the app\'s private storage.</string>
+
+    <string name="welcome_notify_kicker">Notifications</string>
+    <string name="welcome_notify_title">Know when it\'s done</string>
+    <string name="welcome_notify_text">Exports go on while you use other apps. A notification shows how far they are and tells you when the file is ready.</string>
+    <string name="welcome_notify_mock_title">Exporting holiday.mp4</string>
+    <string name="welcome_notify_mock_done">holiday.mp4 is ready</string>
+    <string name="welcome_notify_ask">Allow notifications</string>
+    <string name="welcome_notify_ask_text">Android asks you once. Only exports use them.</string>
+    <string name="welcome_notify_allowed">Notifications on</string>
+    <string name="welcome_notify_allowed_text">You will see every export\'s progress, even with the app closed.</string>
+    <string name="welcome_notify_refused_text">They are off. Exports still work: turn them on in Android\'s settings whenever you like.</string>
+    <string name="welcome_notify_allow">Allow</string>
+    <string name="welcome_notify_open_settings">Open notification settings</string>
+
+    <string name="welcome_ready_kicker">All set</string>
+    <string name="welcome_ready_title">Ready when you are</string>
+    <string name="welcome_ready_text">This is how the app is set up. Anything can change later in the settings. Now, open a file and make something great.</string>
+    <string name="welcome_ready_tap">Tap a choice to change it.</string>
+    <string name="welcome_ready_theme_system">Theme as the system</string>
+    <string name="welcome_ready_theme_light">Light theme</string>
+    <string name="welcome_ready_theme_dark">Dark theme</string>
+    <string name="welcome_ready_colors_wallpaper">Wallpaper colours</string>
+    <string name="welcome_ready_colors_teal">Teal colours</string>
+    <string name="welcome_ready_haptics_on">Touch feedback on</string>
+    <string name="welcome_ready_haptics_off">Touch feedback off</string>
+    <string name="welcome_ready_copies_on">Copies in your folders</string>
+    <string name="welcome_ready_copies_off">Files kept in the app</string>
+    <string name="welcome_ready_speed">Processor: %1$s</string>
+    <string name="welcome_ready_chip_on">Video chip on</string>
+    <string name="welcome_ready_chip_off">Video chip off</string>
+    <string name="welcome_ready_projects">Keeps %1$d projects</string>
+    <string name="welcome_ready_projects_off">Projects not kept</string>
+    <string name="welcome_ready_notify_on">Notifications on</string>
+    <string name="welcome_ready_notify_off">Notifications off</string>
+    <string name="welcome_ready_smart_ready">Smart features ready</string>
+    <string name="welcome_ready_smart_next">Smart features next</string>
+    <string name="welcome_ready_smart_later">Smart features later</string>
+    <!-- Overlay look: crop, shape, outline, shadow, blur, arrange, quick animations -->
+    <string name="tool_overlay_crop">Crop</string>
+    <string name="tool_border">Outline</string>
+    <string name="tool_shadow">Shadow</string>
+    <string name="tool_animate">Animate</string>
+    <string name="overlay_off">Off</string>
+    <string name="overlay_crop_reset">Show all of it</string>
+    <string name="overlay_crop_hint">Drag the corners to choose the part that shows; with a fixed ratio, pinch and move the frame. Size and place are those of the part that shows.</string>
+    <string name="overlay_shape">Shape</string>
+    <string name="overlay_shape_rectangle">As it is</string>
+    <string name="overlay_shape_rounded">Rounded</string>
+    <string name="overlay_shape_ellipse">Circle</string>
+    <string name="overlay_corner_radius">Corner roundness</string>
+    <string name="overlay_border_width">Outline width</string>
+    <string name="overlay_border_hint">The outline follows what shows of the picture: around a cut-out subject, it hugs its shape like a sticker.</string>
+    <string name="overlay_shadow_soft">Soft</string>
+    <string name="overlay_shadow_hard">Hard</string>
+    <string name="overlay_shadow_long">Long</string>
+    <string name="overlay_shadow_glow">Glow</string>
+    <string name="overlay_shadow_opacity">Shadow</string>
+    <string name="overlay_shadow_blur">Softness</string>
+    <string name="overlay_shadow_x">Across</string>
+    <string name="overlay_shadow_y">Down</string>
+    <string name="overlay_shadow_hint">The shadow falls under the picture and its outline, and turns with it.</string>
+    <string name="overlay_blur">Blur</string>
+    <string name="overlay_fit_title">Fit to the frame</string>
+    <string name="overlay_fit">Fit</string>
+    <string name="overlay_fill">Fill</string>
+    <string name="overlay_full_width">Full width</string>
+    <string name="overlay_center">Centre</string>
+    <string name="overlay_layers">Layers</string>
+    <string name="overlay_layer_front">Top</string>
+    <string name="overlay_layer_forward">Up</string>
+    <string name="overlay_layer_backward">Down</string>
+    <string name="overlay_layer_back">Bottom</string>
+    <string name="anim_in">In</string>
+    <string name="anim_out">Out</string>
+    <string name="anim_from_left">From left</string>
+    <string name="anim_from_right">From right</string>
+    <string name="anim_from_top">From top</string>
+    <string name="anim_from_bottom">From bottom</string>
+    <string name="anim_to_left">To left</string>
+    <string name="anim_to_right">To right</string>
+    <string name="anim_to_top">To top</string>
+    <string name="anim_to_bottom">To bottom</string>
+    <string name="anim_zoom">Zoom</string>
+    <string name="anim_pop">Pop</string>
+    <string name="anim_spin">Spin</string>
+    <string name="anim_bounce">Bounce</string>
+    <string name="anim_duration">Duration</string>
+    <string name="anim_clear">Remove the movements</string>
+    <string name="anim_hint">Movements are keyframes: they show as diamonds on the timeline and can be changed there, one by one.</string>
+    <!-- Transitions between clips -->
+    <string name="tool_transition">Transition</string>
+    <string name="transition_hint">How this clip gives way to the next one. Both play at once while it runs, so the video gets that much shorter.</string>
+    <string name="transition_last_clip">The last clip has no clip after it. Pick another clip, or tap the join between two clips on the timeline.</string>
+    <string name="transition_family_dissolve">Dissolve</string>
+    <string name="transition_family_slide">Slide</string>
+    <string name="transition_family_wipe">Wipe</string>
+    <string name="transition_family_shape">Shape</string>
+    <string name="transition_none">None</string>
+    <string name="transition_fade">Fade</string>
+    <string name="transition_fade_black">Dip to black</string>
+    <string name="transition_fade_white">Dip to white</string>
+    <string name="transition_wipe_left">Wipe left</string>
+    <string name="transition_wipe_right">Wipe right</string>
+    <string name="transition_wipe_up">Wipe up</string>
+    <string name="transition_wipe_down">Wipe down</string>
+    <string name="transition_slide_left">Slide left</string>
+    <string name="transition_slide_right">Slide right</string>
+    <string name="transition_slide_up">Slide up</string>
+    <string name="transition_slide_down">Slide down</string>
+    <string name="transition_cover_left">Cover left</string>
+    <string name="transition_cover_right">Cover right</string>
+    <string name="transition_reveal_left">Reveal left</string>
+    <string name="transition_reveal_right">Reveal right</string>
+    <string name="transition_smooth_left">Soft wipe left</string>
+    <string name="transition_smooth_right">Soft wipe right</string>
+    <string name="transition_circle_open">Circle open</string>
+    <string name="transition_circle_close">Circle close</string>
+    <string name="transition_circle_crop">Iris</string>
+    <string name="transition_rect_crop">Box</string>
+    <string name="transition_vert_open">Doors</string>
+    <string name="transition_horz_open">Shutter</string>
+    <string name="transition_radial">Clock</string>
+    <string name="transition_zoom_in">Zoom in</string>
+    <string name="transition_duration">Duration</string>
+    <string name="transition_shortened">Shortened to %1$s s: a transition takes at most half of each clip.</string>
+    <string name="transition_too_short">These clips are too short for a transition.</string>
+    <string name="transition_apply_all">Apply to all clips</string>
+    <string name="transition_none_to_all">Remove from all clips</string>
+    <string name="preview_fullscreen">Full screen</string>
+    <string name="preview_fullscreen_exit">Leave full screen</string>
+</resources>

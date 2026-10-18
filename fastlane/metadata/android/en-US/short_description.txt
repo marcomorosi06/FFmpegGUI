@@ -1,0 +1,1 @@
+Edit and convert video, audio and pictures with FFmpeg, fully offline.

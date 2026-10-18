@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher icon colors: static teal fallback (API < 31). -->
+<resources>
+    <color name="icon_bg">#CCE8E4</color>
+    <color name="icon_body">#00423C</color>
+    <color name="icon_tip">#00897B</color>
+</resources>

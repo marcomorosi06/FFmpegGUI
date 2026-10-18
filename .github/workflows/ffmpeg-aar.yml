@@ -1,0 +1,277 @@
+name: FFmpeg runtime (AAR)
+
+# Builds the FFmpeg runtime, FFmpegKitNext, from the sources pinned in
+# scripts/ffmpeg-kit-next.lock, twice and independently: on two runner images,
+# the second on two CPU cores only. Only when both AARs are byte-identical is the
+# AAR published, as an asset of a pre-release named after its SHA-256, and pinned:
+# this workflow commits its URL, SHA-256 and inputs to scripts/ffmpeg-kit-next-aar.txt.
+#
+# It runs by itself after a push to main that changes what the AAR is built from
+# (scripts/ffmpeg-kit-next-inputs.sh lists it), and does nothing when the pin is
+# already current. It takes hours: the second build on two cores can take up to
+# the job limit. Tag a release only after it has pinned the AAR (release.yml checks).
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/ffmpeg-kit-next.lock
+      - scripts/build-ffmpeg-kit-next.sh
+      - scripts/ffmpeg-kit-next.verification-metadata.xml
+      - scripts/ffmpeg-kit-next-inputs.sh
+      - .github/workflows/ffmpeg-aar.yml
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Build even if the pinned AAR is current (to check it still reproduces)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+# A newer push supersedes the builds of an older one.
+concurrency:
+  group: ffmpeg-aar-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The work folder of the published AAR: its path ends up in the AAR (see the script).
+  FFMPEG_KIT_WORKDIR: /var/tmp/ffmpeg-kit-next
+
+jobs:
+  check:
+    name: Is the pinned AAR current?
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      inputs: ${{ steps.inputs.outputs.inputs }}
+      build: ${{ steps.inputs.outputs.build }}
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare the inputs with the pin
+        id: inputs
+        env:
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
+        run: |
+          inputs=$(scripts/ffmpeg-kit-next-inputs.sh)
+          echo "inputs=$inputs" >> "$GITHUB_OUTPUT"
+          if scripts/ffmpeg-kit-next-inputs.sh --check && [ "$FORCE" != true ]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "### The pinned AAR is current: nothing to build" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build on ${{ matrix.runner }}${{ matrix.cpus && format(' (CPUs {0})', matrix.cpus) || '' }}
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            cpus: ""
+          - runner: ubuntu-26.04
+            cpus: "0,1"
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Make room on the disk
+        run: |
+          # Toolchains the build does not use (it brings its own through Nix).
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
+          df -h /
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          # Fetching the pinned nixpkgs from GitHub without hitting its rate limit.
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          set_as_trusted_user: false
+
+      - name: Build the AAR from source
+        env:
+          CPUS: ${{ matrix.cpus }}
+        run: |
+          if [ -n "$CPUS" ]; then
+            taskset -c "$CPUS" ./scripts/build-ffmpeg-kit-next.sh
+          else
+            ./scripts/build-ffmpeg-kit-next.sh
+          fi
+
+      - name: Hash the AAR
+        run: |
+          cd media/libs
+          for f in ffmpeg-kit-next-*.aar; do
+            echo "### ${{ matrix.runner }}: \`$(sha256sum "$f" | cut -d ' ' -f 1)\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+          for f in *.provenance.txt; do mv "$f" "${f%.provenance.txt}.${{ matrix.runner }}.provenance.txt"; done
+
+      - name: Keep the build log
+        if: failure()
+        run: cp "$FFMPEG_KIT_WORKDIR/ffmpeg-kit-next/build.log" media/libs/ || true
+
+      - name: Upload the AAR
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aar-${{ matrix.runner }}
+          path: media/libs/
+          if-no-files-found: ignore
+
+  publish:
+    name: Compare, publish and pin
+    needs: [check, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Download both AARs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: aar-*
+          path: aars
+
+      - name: Compare
+        id: compare
+        run: |
+          first=$(find aars/aar-ubuntu-24.04 -name 'ffmpeg-kit-next-*.aar' | head -n 1)
+          second=$(find aars/aar-ubuntu-26.04 -name 'ffmpeg-kit-next-*.aar' | head -n 1)
+          a=$(sha256sum "$first" | cut -d ' ' -f 1)
+          b=$(sha256sum "$second" | cut -d ' ' -f 1)
+          echo "ubuntu-24.04:           $a"
+          echo "ubuntu-26.04, 2 cores: $b"
+          {
+            echo "aar=$first"
+            echo "second=$second"
+            echo "sha256=$a"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$a" != "$b" ]; then
+            echo "::error::The two builds of the AAR differ: it is not published. See the diffoscope report."
+            exit 1
+          fi
+
+      - name: Explain the difference
+        if: failure() && steps.compare.outputs.second != ''
+        env:
+          FIRST: ${{ steps.compare.outputs.aar }}
+          SECOND: ${{ steps.compare.outputs.second }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends diffoscope-minimal
+          diffoscope --text diffoscope.txt "$FIRST" "$SECOND" || true
+          head -c 60000 diffoscope.txt >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload the diffoscope report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: diffoscope
+          path: diffoscope.txt
+          if-no-files-found: ignore
+
+      - name: Publish the AAR
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AAR: ${{ steps.compare.outputs.aar }}
+          SHA256: ${{ steps.compare.outputs.sha256 }}
+        run: |
+          name=$(basename "$AAR")
+          version=${name#ffmpeg-kit-next-}
+          version=${version%.aar}
+          tag="ffmpeg-kit-next-${version}-${SHA256:0:12}"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${name}"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $tag already exists (same SHA-256 prefix): not published again."
+          else
+            {
+              echo "FFmpeg runtime of FFmpeg GUI: FFmpegKitNext ${version}, built from the sources pinned in"
+              echo "\`scripts/ffmpeg-kit-next.lock\` at ${GITHUB_SHA}, twice (ubuntu-24.04; ubuntu-26.04 on two cores),"
+              echo "with byte-identical results."
+              echo
+              echo "SHA-256: \`${SHA256}\`"
+              echo
+              echo "Rebuild it with \`FFMPEG_KIT_WORKDIR=/var/tmp/ffmpeg-kit-next scripts/build-ffmpeg-kit-next.sh\`."
+            } > notes.md
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "FFmpeg runtime ${version} (${SHA256:0:12})" --notes-file notes.md \
+              --prerelease --latest=false \
+              "$AAR" aars/aar-*/*.provenance.txt
+          fi
+          echo "### Published: \`${tag}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check out the branch
+        if: github.ref_type == 'branch'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref_name }}
+          path: repo
+          # This step pushes the pin.
+          persist-credentials: true
+
+      - name: Pin the AAR
+        if: github.ref_type == 'branch'
+        env:
+          URL: ${{ steps.publish.outputs.url }}
+          SHA256: ${{ steps.compare.outputs.sha256 }}
+          INPUTS: ${{ needs.check.outputs.inputs }}
+          BRANCH: ${{ github.ref_name }}
+        working-directory: repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for _ in 1 2 3; do
+            git fetch --quiet origin "$BRANCH"
+            git reset --quiet --hard FETCH_HEAD
+            if [ "$(scripts/ffmpeg-kit-next-inputs.sh)" != "$INPUTS" ]; then
+              echo "::notice::$BRANCH has moved on to other inputs: the run for that push pins its own AAR."
+              exit 0
+            fi
+            awk -v url="$URL" -v sha="$SHA256" -v inp="$INPUTS" '
+              $1 == "url"    { print "url    " url; next }
+              $1 == "sha256" { print "sha256 " sha; next }
+              $1 == "inputs" { print "inputs " inp; next }
+              { print }' scripts/ffmpeg-kit-next-aar.txt > pin.tmp
+            mv pin.tmp scripts/ffmpeg-kit-next-aar.txt
+            scripts/ffmpeg-kit-next-inputs.sh --check
+            if git diff --quiet; then
+              echo "The pin is already this AAR."
+              exit 0
+            fi
+            git commit --quiet -m "Pin the FFmpeg runtime ${SHA256:0:12}" -- scripts/ffmpeg-kit-next-aar.txt
+            if git push --quiet origin "HEAD:refs/heads/$BRANCH"; then
+              echo "### Pinned in \`scripts/ffmpeg-kit-next-aar.txt\` on \`$BRANCH\` ($(git rev-parse --short HEAD))" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          {
+            echo "### Could not push the pin (branch protection?): commit these lines in \`scripts/ffmpeg-kit-next-aar.txt\`"
+            echo
+            echo '```'
+            echo "url    ${URL}"
+            echo "sha256 ${SHA256}"
+            echo "inputs ${INPUTS}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1

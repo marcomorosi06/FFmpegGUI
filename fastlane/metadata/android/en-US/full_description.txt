@@ -1,0 +1,55 @@
+FFmpeg GUI puts the power of FFmpeg in a Material 3 Expressive app. Open a video, a song or a picture, edit it with a live preview, and export it in the format you need. Everything happens on your phone.
+
+<b>Private by design</b>
+FFmpeg GUI has no internet permission at all: no ads, no trackers, no account. Nothing you open ever leaves your device. Even the smart features run on the phone, with models you download once with your browser and that the app checks before using them.
+
+<b>What you see is what you get</b>
+Every change shows in the editor before anything is rendered, and the export makes exactly that: the preview runs the same filters FFmpeg will.
+
+<b>Video</b>
+* A timeline of clips: split, trim, reorder, duplicate and freeze frames
+* Speed or a speed curve along a clip, with ready-made ramps; the pitch kept or following the speed; reverse, crop, rotate, flip and the shape of the frame
+* Colour, fades and keyframes: clips zoom and pan, texts and pictures move, grow, turn and fade, with easings or curves drawn by hand
+* Texts, subtitles, and pictures or videos laid over the video, with crop, shapes, outline, shadow, blur and ready-made animations
+* Green screen and colour key
+* HDR videos converted to SDR with the right colours
+* Music and sounds on their own rows, each with its volume, speed, fades and equaliser
+
+<b>Smart features, on your phone</b>
+* Subtitles from speech: the video is listened to on the phone, in 25 European languages, and the words appear as they are found. Style them, correct them, burn them in or save them as .srt
+* Transcripts of any audio or video file, read beside the player and saved as .txt or .srt
+* Subject cut-out without a green screen, on photos, stickers and pictures laid over the video, corrected with two brushes: tap or paint roughly over what should stay or go and the model finds the rest, or paint exactly with the precise brush and zoom
+* A lighter or a more precise model for each feature, your choice
+
+<b>Audio</b>
+* A ten-band equaliser with presets, compressor, limiter, echo, reverb and more, heard live
+* Loudness levelling, fades, silence trimming and splitting into parts
+* Tags and cover art
+* Lossy or lossless output, with the bitrate or bit depth you choose
+
+<b>Pictures</b>
+* Exposure, highlights, shadows, colour, filters and effects
+* Crop, straighten and perspective
+* Text, stickers, drawing and borders
+* Background removal by colour or by subject, kept transparent in PNG, WEBP and TIFF
+* An HDR look saved as Ultra HDR JPG: from the photo's own HDR or worked out of its light, everywhere, on the subject, on the background or where you paint it
+
+<b>And more</b>
+* GIFs with their own size, frame rate, colours and dithering
+* Share any video, song or picture to the app to edit it straight away
+* Recent projects, kept only on your phone, to continue editing later
+* Split a video into parts, delivered as one zip, or save its frames
+* Record a new video with the camera
+
+<b>For FFmpeg users</b>
+The command is always in view, and you can edit it by hand before converting.
+
+<b>Formats</b>
+MP4, MKV, AVI, GIF, MP3, M4A, OGG, OPUS, FLAC, WAV, JPG, PNG, WEBP, BMP, TIFF, or any FFmpeg command you write.
+
+Videos are encoded by your phone's own video chip, many times faster, with the processor taking over when it cannot. Exports keep running in the background, with a Live Update on Android 16, and a copy of every finished file can go straight to your gallery or music folders. The colours follow your wallpaper, or the app's own teal.
+
+<b>Support the project</b>
+FFmpeg GUI is made by one person, in spare time, and will stay free. If it is useful to you, you can buy me a coffee on Ko-fi: https://ko-fi.com/marcomorosi
+
+Free and open source under the European Union Public Licence 1.2. FFmpeg is used under the GNU General Public License 3.0. The speech model, Parakeet TDT 0.6B v3 by NVIDIA, is used under CC BY 4.0; the cut-out models, IS-Net and U2-NetP, and SlimSAM, under Apache 2.0.

@@ -1,0 +1,7 @@
+First release.
+
+* Video, audio and picture editors with a live preview of every change
+* Export to video, audio, GIF and picture formats, or with your own FFmpeg command
+* Green screen, captions, overlays, stabilisation, equaliser, tags and cover art
+* Recent projects to continue editing later, kept only on your phone
+* No internet permission, no ads, no trackers
