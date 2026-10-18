@@ -1018,13 +1018,13 @@ macOS; later builds reuse the checked sources in `.ffmpeg-kit-next/`.
 
 **The AAR the app is built with is pinned, and reproducible.**
 
-- `.github/workflows/ffmpeg-aar.yml` runs after a push to `main` that changes
+- `.github/workflows/ffmpeg-aar.yml` runs after a push to `master` that changes
   the AAR's inputs (`scripts/ffmpeg-kit-next-inputs.sh`: the lock, the build
   script, the Gradle verification file), and stops at once if the pin is already
   current. It builds the AAR twice, on ubuntu-24.04 and on ubuntu-26.04 limited
   to two CPU cores, and publishes it as an asset of a pre-release named after its
   SHA-256 only when both are byte-identical (otherwise it uploads a diffoscope
-  report). It then commits the pin, unless `main` has moved on to other inputs
+  report). It then commits the pin, unless `master` has moved on to other inputs
   meanwhile (that push's own run pins those).
 - `scripts/ffmpeg-kit-next-aar.txt` pins that asset (URL, SHA-256 and the hash of
   its inputs); `scripts/fetch-ffmpeg-kit-next.sh` downloads and checks it.

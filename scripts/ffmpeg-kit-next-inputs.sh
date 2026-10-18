@@ -43,7 +43,7 @@ case "${1:-}" in
         if [[ "$pinned" != "$current" ]]; then
             echo "The FFmpeg runtime pinned in scripts/ffmpeg-kit-next-aar.txt was built from other inputs" >&2
             echo "(pinned: ${pinned:--}, now: $current)." >&2
-            echo "The \"FFmpeg runtime (AAR)\" workflow builds and pins the new one after a push to main." >&2
+            echo "The \"FFmpeg runtime (AAR)\" workflow builds and pins the new one after a push to master." >&2
             exit 1
         fi
         echo "The pinned FFmpeg runtime was built from these inputs ($current)."

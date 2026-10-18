@@ -6,7 +6,7 @@ name: FFmpeg runtime (AAR)
 # AAR published, as an asset of a pre-release named after its SHA-256, and pinned:
 # this workflow commits its URL, SHA-256 and inputs to scripts/ffmpeg-kit-next-aar.txt.
 #
-# It runs by itself after a push to main that changes what the AAR is built from
+# It runs by itself after a push to master that changes what the AAR is built from
 # (scripts/ffmpeg-kit-next-inputs.sh lists it), and does nothing when the pin is
 # already current. It takes hours: the second build on two cores can take up to
 # the job limit. Tag a release only after it has pinned the AAR (release.yml checks).
@@ -14,7 +14,7 @@ name: FFmpeg runtime (AAR)
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - scripts/ffmpeg-kit-next.lock
       - scripts/build-ffmpeg-kit-next.sh
