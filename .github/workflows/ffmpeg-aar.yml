@@ -194,6 +194,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           AAR: ${{ steps.compare.outputs.aar }}
           SHA256: ${{ steps.compare.outputs.sha256 }}
+          INPUTS: ${{ needs.check.outputs.inputs }}
         run: |
           name=$(basename "$AAR")
           version=${name#ffmpeg-kit-next-}
@@ -218,16 +219,32 @@ jobs:
               --prerelease --latest=false \
               "$AAR" aars/aar-*/*.provenance.txt
           fi
-          echo "### Published: \`${tag}\`" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Published: \`${tag}\`"
+            echo
+            echo "Its pin (the next step commits it; if it cannot, write these lines in \`scripts/ffmpeg-kit-next-aar.txt\`):"
+            echo
+            echo '```'
+            echo "url    ${url}"
+            echo "sha256 ${SHA256}"
+            echo "inputs ${INPUTS}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check out the branch
         if: github.ref_type == 'branch'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.ref_name }}
-          path: repo
-          # This step pushes the pin.
-          persist-credentials: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          # A plain clone with the job's token (the next step pushes with it), so
+          # that git says what went wrong if it fails.
+          basic=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$basic"
+          auth="AUTHORIZATION: basic $basic"
+          git -c http.extraheader="$auth" clone --depth 1 --branch "$BRANCH" \
+            "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git" repo
+          git -C repo config "http.${GITHUB_SERVER_URL}/.extraheader" "$auth"
 
       - name: Pin the AAR
         if: github.ref_type == 'branch'
