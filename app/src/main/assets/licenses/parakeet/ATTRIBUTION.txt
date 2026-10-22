@@ -1,0 +1,20 @@
+Parakeet TDT 0.6B v3 - token list
+
+The app contains the token list (assets/speech/parakeet-tdt-0.6b-v3-tokens.txt)
+of the speech recognition model "Parakeet TDT 0.6B v3".
+
+Model:    Parakeet TDT 0.6B v3
+Author:   NVIDIA Corporation
+Source:   https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+Licence:  Creative Commons Attribution 4.0 International (CC BY 4.0),
+          https://creativecommons.org/licenses/by/4.0/
+          full text in this folder as CC-BY-4.0.txt
+
+The token list is the file tokens.txt of the sherpa-onnx conversion of the
+model, https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8 ,
+distributed without changes (SHA-256
+d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d).
+
+The model itself is not part of the app: the user downloads it.
+The licensor provides the material as-is and makes no warranties; see the
+licence for the full disclaimer.

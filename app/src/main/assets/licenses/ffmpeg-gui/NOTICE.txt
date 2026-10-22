@@ -1,0 +1,32 @@
+FFmpeg GUI
+Copyright (c) 2026 Marco Morosi
+
+SOURCE CODE
+The source code of FFmpeg GUI is licensed under the European Union Public
+Licence v1.2 (EUPL-1.2), in this folder as EUPL-1.2.txt. The EUPL is
+published in all the official languages of the European Union, and every
+language version is equally valid.
+
+THIS APP (THE APK)
+The APK combines the FFmpeg GUI source code with FFmpeg and with libraries
+licensed under the GNU General Public License (x264, x265, Xvid, vid.stab,
+eSpeak NG). As allowed by Article 5 of the EUPL (compatibility clause), the
+APK as a whole is distributed under the GNU General Public License,
+version 3 (GPL-3.0), in ../ffmpeg-libraries/ffmpeg-kit-next-GPL-3.0.txt.
+Every third-party component keeps its own licence: see ../README.txt.
+
+CORRESPONDING SOURCE
+The complete source code of this APK is:
+- the FFmpeg GUI repository, https://github.com/marcomorosi06/FFmpegGUI ,
+  at the tag of this release;
+- FFmpeg, FFmpegKitNext and the libraries built into the FFmpeg runtime,
+  at the commits pinned in scripts/ffmpeg-kit-next.lock of that tag, built
+  by scripts/build-ffmpeg-kit-next.sh;
+- sherpa-onnx v1.13.8 (https://github.com/k2-fsa/sherpa-onnx) and the
+  sources its build pins, and ONNX Runtime 1.28.0
+  (https://github.com/microsoft/onnxruntime).
+
+NO WARRANTY
+FFmpeg GUI is provided "as is", without any warranty, to the extent
+permitted by applicable law. See Articles 7 and 8 of the EUPL and
+sections 15 and 16 of the GPL-3.0.
