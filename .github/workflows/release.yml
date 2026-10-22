@@ -6,7 +6,11 @@ name: Reproducible APK
 #   2. izzyondroid: IzzyOnDroid's own builder (rbtlog) rebuilds the tag from the
 #      recipe in .github/izzyondroid/;
 #   3. compare: the two APKs must be byte-identical (diffoscope report otherwise);
-#   4. draft: only then the unsigned APK goes into a draft release of the tag.
+#   sources: meanwhile, the complete source of the APK is packed into one archive
+#      (scripts/package-sources.sh): the APK is GPL-3.0, and its source must stay
+#      available next to it even if a third-party repository disappears;
+#   4. draft: only then the unsigned APK and the source archive go into a draft
+#      release of the tag.
 #
 # The release key never leaves your machine: download the APK from the draft,
 # sign it there without re-aligning it (apksigner --alignment-preserved true),
@@ -193,6 +197,45 @@ jobs:
           path: ${{ runner.temp }}/apks/
           if-no-files-found: ignore
 
+  sources:
+    name: Pack the complete source
+    # Independent of the APK build: it only reads the tag and the sources it pins.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      name: ${{ steps.archive.outputs.name }}
+      sha256: ${{ steps.archive.outputs.sha256 }}
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+
+      - name: Pack FFmpeg GUI, the FFmpeg runtime and sherpa-onnx sources
+        id: archive
+        run: |
+          name="ffmpeg-gui-${TAG}-source.tar.xz"
+          bash scripts/package-sources.sh "$RUNNER_TEMP/$name"
+          mv "$RUNNER_TEMP/$name" "$name"
+          sha=$(sha256sum "$name" | cut -d ' ' -f 1)
+          {
+            echo "name=$name"
+            echo "sha256=$sha"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### $name"
+            echo
+            echo "SHA-256 \`$sha\`, $(du -h "$name" | cut -f 1)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the source archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          path: ${{ steps.archive.outputs.name }}
+          archive: false
+          if-no-files-found: error
+
   compare:
     name: Compare
     needs: [build, izzyondroid]
@@ -242,7 +285,7 @@ jobs:
 
   draft:
     name: Draft the release
-    needs: [build, compare]
+    needs: [build, compare, sources]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -254,16 +297,26 @@ jobs:
           name: ${{ needs.build.outputs.name }}
           path: draft
 
+      - name: Download the source archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.sources.outputs.name }}
+          path: draft
+
       - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
           NAME: ${{ needs.build.outputs.name }}
           UNSIGNED_SHA256: ${{ needs.build.outputs.sha256 }}
           AAR_SHA256: ${{ needs.build.outputs.aar }}
+          SOURCE_NAME: ${{ needs.sources.outputs.name }}
+          SOURCE_SHA256: ${{ needs.sources.outputs.sha256 }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           apk="draft/$NAME"
+          source="draft/$SOURCE_NAME"
           sha256sum -c <<< "$UNSIGNED_SHA256  $apk"
+          sha256sum -c <<< "$SOURCE_SHA256  $source"
           # The SHA-256 of the APK verified here, to check the download against.
           {
             echo "unsigned-sha256: \`$UNSIGNED_SHA256\`"
@@ -271,19 +324,21 @@ jobs:
             echo "FFmpeg runtime (AAR) SHA-256: \`$AAR_SHA256\`"
             echo
             echo "Built, and rebuilt identical by IzzyOnDroid's builder, in [this run]($RUN_URL)."
+            echo
+            echo "Complete source of the APK (GPL-3.0): \`$SOURCE_NAME\`, SHA-256 \`$SOURCE_SHA256\`."
           } > notes.md
           if draft=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2> /dev/null); then
             if [ "$draft" != true ]; then
               echo "::error::The release of $TAG is already published: not touched."
               exit 1
             fi
-            gh release upload "$TAG" "$apk" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$TAG" "$apk" "$source" --repo "$GITHUB_REPOSITORY" --clobber
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
           else
             prerelease=()
             if [[ "$TAG" == *-* ]]; then prerelease=(--prerelease); fi
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
-              --title "$TAG" --notes-file notes.md "${prerelease[@]}" "$apk"
+              --title "$TAG" --notes-file notes.md "${prerelease[@]}" "$apk" "$source"
           fi
           {
             echo "### Draft release of \`$TAG\` ready"
@@ -292,5 +347,5 @@ jobs:
             echo
             echo "\`apksigner sign --alignment-preserved true --v1-signing-enabled false --ks /path/to/ffmpeggui-release.jks --out ffmpeg-gui-${TAG}.apk $NAME\`"
             echo
-            echo "Then attach \`ffmpeg-gui-${TAG}.apk\` to the draft, delete \`$NAME\` from it and publish the release."
+            echo "Then attach \`ffmpeg-gui-${TAG}.apk\` to the draft, delete \`$NAME\` from it and publish the release. Keep \`$SOURCE_NAME\` in it: it is the source the GPL-3.0 asks to offer with the APK."
           } >> "$GITHUB_STEP_SUMMARY"
