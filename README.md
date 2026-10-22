@@ -243,7 +243,7 @@ Releases are reproducible: [IzzyOnDroid](https://izzyondroid.org/docs/reproducib
      --out ffmpeg-gui-v1.0.apk ffmpeg-gui-v1.0-unsigned.apk
    ```
 
-   Attach `ffmpeg-gui-v1.0.apk` to the draft (the IzzyOnDroid recipe looks for that name), delete the unsigned APK from it and publish the release. Signing any other way (Android Studio, or `apksigner` without `--alignment-preserved true`) gives an APK IzzyOnDroid cannot reproduce.
+   Attach `ffmpeg-gui-v1.0.apk` to the draft (the IzzyOnDroid recipe looks for that name), delete the unsigned APK from it and publish the release. Leave `ffmpeg-gui-v1.0-source.tar.xz` in it: it is the complete source of the APK (the app, FFmpegKitNext with every library the FFmpeg runtime is built from, sherpa-onnx with its dependencies), packed by `scripts/package-sources.sh`, which the GPL-3.0 asks to keep available next to the APK. Signing any other way (Android Studio, or `apksigner` without `--alignment-preserved true`) gives an APK IzzyOnDroid cannot reproduce.
 3. **Check.** Publishing starts *Verify published release*: rbtlog downloads the published APK and repeats IzzyOnDroid's whole check.
 
 **The FFmpeg runtime follows by itself.** After a push to `master` that changes `scripts/ffmpeg-kit-next.lock`, `scripts/build-ffmpeg-kit-next.sh` or the Gradle verification file, the *FFmpeg runtime (AAR)* workflow builds the AAR twice (it takes hours), publishes it as a pre-release if both builds match, and commits the new pin to `scripts/ffmpeg-kit-next-aar.txt` (`git pull` afterwards). If `master` is protected, it cannot push: its summary gives the three lines to commit. A tag pushed before the pin is refused (the pinned AAR was built from other inputs): delete it, wait for the pin, and tag again.
