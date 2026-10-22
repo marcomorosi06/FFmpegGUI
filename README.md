@@ -278,14 +278,26 @@ FFmpeg GUI is made by one person, in spare time, and will stay free and open sou
 
 ## Credits
 
-- [FFmpeg](https://ffmpeg.org), through [FFmpegKitNext](https://github.com/arthenica/ffmpeg-kit-next), under the GPL 3.0
+- [FFmpeg](https://ffmpeg.org) (LGPL 2.1+ / GPL 2+), through [FFmpegKitNext](https://github.com/arthenica/ffmpeg-kit-next) (GPL 3.0 with the GPL libraries), built with:
+  - [x264](https://www.videolan.org/developers/x264.html), [x265](https://www.x265.org), [Xvid](https://www.xvid.com) and [vid.stab](https://github.com/georgmartius/vid.stab) (GPL 2+)
+  - [LAME](https://lame.sourceforge.io), [FriBidi](https://github.com/fribidi/fribidi) and libiconv (LGPL)
+  - libass, dav1d, FreeType, HarfBuzz, Fontconfig, Opus, Vorbis, Ogg, zimg, Expat, libpng and cpu_features (permissive licences)
 - [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache 2.0) and [ONNX Runtime](https://onnxruntime.ai) (MIT)
+- [Jetpack Compose](https://developer.android.com/compose), [AndroidX](https://developer.android.com/jetpack/androidx) and [Media3](https://developer.android.com/media/media3) (Apache 2.0)
 - [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) by NVIDIA (CC BY 4.0), downloaded by the user; its token list ships with the app
 - [IS-Net](https://github.com/xuebinqin/DIS) and [U2-Net](https://github.com/xuebinqin/U-2-Net) by Xuebin Qin et al. (Apache 2.0), as converted by [rembg](https://github.com/danielgatis/rembg) (MIT)
 - [SlimSAM](https://github.com/czg1225/SlimSAM) by Zigeng Chen et al. (Apache 2.0), a pruned [Segment Anything](https://github.com/facebookresearch/segment-anything), as converted to ONNX by [Xenova](https://huggingface.co/Xenova/slimsam-77-uniform)
 - [anti-vocale](https://github.com/RisorseArtificiali/anti-vocale) (Apache 2.0), where the idea of on-device transcription and the way to run the model come from
 - [Google Sans Flex](https://fonts.google.com/specimen/Google+Sans+Flex) (SIL Open Font License)
 
+Each component stays under its own licence.
+
 ## License
 
-Copyright (c) 2026 Marco Morosi. Licensed under the [EUPL v1.2](LICENSE).
+Copyright (c) 2026 Marco Morosi.
+
+The source code of FFmpeg GUI is licensed under the [EUPL v1.2](LICENSE), which is available in all the official languages of the EU, each version equally valid.
+
+The APK also contains FFmpeg built with GPL libraries (x264, x265, Xvid, vid.stab) and other third-party components (see Credits). As allowed by Article 5 of the EUPL (compatibility clause), the APK as a whole is distributed under the [GNU GPL v3](https://www.gnu.org/licenses/gpl-3.0.html). Each third-party component stays under its own licence.
+
+FFmpeg GUI is provided "as is", without any warranty, to the extent permitted by law.
