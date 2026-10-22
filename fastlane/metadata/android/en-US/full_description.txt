@@ -52,4 +52,4 @@ Videos are encoded by your phone's own video chip, many times faster, with the p
 <b>Support the project</b>
 FFmpeg GUI is made by one person, in spare time, and will stay free. If it is useful to you, you can buy me a coffee on Ko-fi: https://ko-fi.com/marcomorosi
 
-Free and open source under the European Union Public Licence 1.2. FFmpeg is used under the GNU General Public License 3.0. The speech model, Parakeet TDT 0.6B v3 by NVIDIA, is used under CC BY 4.0; the cut-out models, IS-Net and U2-NetP, and SlimSAM, under Apache 2.0.
+Free and open source: the source code is under the European Union Public Licence 1.2, and the app, which includes FFmpeg, is distributed under the GNU General Public License 3.0.
