@@ -108,4 +108,82 @@ class VectorTracerTest {
         val p = picture(40, 40) { x, y -> (0xFF shl 24) or ((x * 6) shl 16) or ((y * 6) shl 8) or 128 }
         assertEquals(VectorTracer.trace(p).toSvg(), VectorTracer.trace(p).toSvg())
     }
+
+    /** Red to blue from left to right, smoothly. */
+    private fun ramp(w: Int, h: Int) = picture(w, h) { x, _ ->
+        val f = x / (w - 1.0)
+        (0xFF shl 24) or ((255 * (1 - f)).toInt() shl 16) or (255 * f).toInt()
+    }
+
+    @Test
+    fun `without gradients a smooth ramp is flat colours`() {
+        val image = VectorTracer.trace(ramp(120, 60), TraceSettings(colors = 3, speckle = 0))
+        assertEquals(0, image.gradients)
+        assertFalse(image.toSvg().contains("Gradient"))
+    }
+
+    @Test
+    fun `a smooth ramp is shaded with a linear gradient along it`() {
+        val image = VectorTracer.trace(ramp(120, 60), TraceSettings(colors = 2, speckle = 0, gradients = true))
+        val shaded = image.layers.mapNotNull { it.gradient }
+        assertTrue(shaded.isNotEmpty())
+        for (g in shaded) {
+            assertFalse(g.radial)
+            // It runs across, left to right, and keeps level.
+            assertTrue(abs(g.bx - g.ax) > 10 * abs(g.by - g.ay))
+            val reddish = if (g.bx > g.ax) g.colors.first() else g.colors.last()
+            val bluish = if (g.bx > g.ax) g.colors.last() else g.colors.first()
+            assertTrue((reddish shr 16 and 0xFF) > (bluish shr 16 and 0xFF))
+            assertTrue((bluish and 0xFF) > (reddish and 0xFF))
+            // Its stops rise.
+            assertTrue(g.offsets.toList().zipWithNext().all { (a, b) -> a <= b })
+        }
+        // The palette still counts the picture's colours, not its shaded shapes.
+        assertEquals(2, image.palette.size)
+        val svg = image.toSvg()
+        assertTrue(svg.contains("<linearGradient id=\"ffg-trace-"))
+        assertTrue(svg.contains("fill=\"url(#ffg-trace-"))
+    }
+
+    @Test
+    fun `light fading out from a centre is shaded with a radial gradient`() {
+        val p = picture(100, 100) { x, y ->
+            val d = kotlin.math.hypot(x - 49.5, y - 49.5) / 70.0
+            val v = (255 * (1 - d)).toInt().coerceIn(0, 255)
+            (0xFF shl 24) or (v shl 16) or (v shl 8) or v
+        }
+        val image = VectorTracer.trace(p, TraceSettings(colors = 2, speckle = 0, gradients = true))
+        val disc = image.layers.mapNotNull { it.gradient }.firstOrNull { it.radial }
+        assertTrue(disc != null)
+        // Centred where the light is, the light at its middle.
+        assertEquals(50f, disc!!.ax, 6f)
+        assertEquals(50f, disc.ay, 6f)
+        assertTrue((disc.colors.first() and 0xFF) > (disc.colors.last() and 0xFF))
+        assertTrue(image.toSvg().contains("<radialGradient"))
+    }
+
+    @Test
+    fun `flat colours stay flat even with gradients on`() {
+        val p = picture(60, 60) { x, y -> if (x in 15..44 && y in 15..44) red else white }
+        val flat = VectorTracer.trace(p, TraceSettings(colors = 2, speckle = 0))
+        val shaded = VectorTracer.trace(p, TraceSettings(colors = 2, speckle = 0, gradients = true))
+        assertEquals(0, shaded.gradients)
+        assertEquals(flat.toSvg(), shaded.toSvg())
+    }
+
+    @Test
+    fun `black and white ignores gradients`() {
+        val image = VectorTracer.trace(ramp(80, 40), TraceSettings(mono = true, gradients = true))
+        assertEquals(0, image.gradients)
+    }
+
+    @Test
+    fun `shapes touching only by a corner are apart`() {
+        // Two pixels of one colour, corner to corner.
+        val labels = intArrayOf(0, -1, -1, 0)
+        val (component, labelOf) = VectorTracer.components(labels, 2, 2)
+        assertEquals(2, labelOf.size)
+        assertTrue(component[0] != component[3])
+        assertEquals(-1, component[1])
+    }
 }

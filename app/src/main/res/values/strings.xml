@@ -1073,6 +1073,8 @@
     <string name="trace_mono">Black and white</string>
     <string name="trace_colour_count">How many colours</string>
     <string name="trace_smooth">Curved edges</string>
+    <string name="trace_gradients">Gradients</string>
+    <string name="trace_gradients_hint">On: shapes whose colour fades across them get a gradient instead of one flat colour. Softer for photos and shaded pictures, a little heavier.</string>
     <string name="trace_smooth_hint">On: gentle bends become curves, sharp corners stay sharp. Off: straight lines only, as pixel art wants.</string>
     <string name="trace_kind_title">What is your picture?</string>
     <string name="trace_kind_logo">Logo or icon</string>
@@ -1084,7 +1086,7 @@
     <string name="trace_kind_illustration">Illustration</string>
     <string name="trace_kind_illustration_hint">Many flat colours with smooth outlines.</string>
     <string name="trace_kind_photo">Photo</string>
-    <string name="trace_kind_photo_hint">A poster of many colours: small spots are left out so that the file stays light.</string>
+    <string name="trace_kind_photo_hint">A poster of many colours, each shape shaded with a gradient as the photo is: small spots are left out so that the file stays light.</string>
     <string name="trace_kind_pixel">Pixel art</string>
     <string name="trace_kind_pixel_hint">Every square kept as it is, with straight edges.</string>
     <string name="trace_kind_custom_hint">Your own settings. Pick a kind above to start again from a ready one.</string>
@@ -1112,11 +1114,15 @@
         <item quantity="other">%1$d black shapes</item>
     </plurals>
     <string name="trace_working">Tracing\u2026</string>
+    <plurals name="trace_shaded">
+        <item quantity="one">%1$d shape with a gradient</item>
+        <item quantity="other">%1$d shapes with gradients</item>
+    </plurals>
     <plurals name="trace_shapes">
         <item quantity="one">%1$d shape, %2$d colours</item>
         <item quantity="other">%1$d shapes, %2$d colours</item>
     </plurals>
-    <string name="trace_hint">The picture becomes shapes, sharp at any size: best for logos, icons, drawings and text. A photo turns into a poster of many shapes. Texts, stickers and the drawing are traced with it when it is saved.</string>
+    <string name="trace_hint">The picture becomes shapes, sharp at any size: best for logos, icons, drawings and text. A photo turns into a poster of many shapes, softer with gradients. Texts, stickers and the drawing are traced with it when it is saved.</string>
     <string name="canvas_picture">The picture</string>
     <string name="canvas_on">A canvas of its own</string>
     <string name="canvas_on_hint">The file is the canvas; the picture becomes a layer you move, size, turn and stack</string>
@@ -1995,7 +2001,20 @@
     <string name="svg_opacity">Opacity</string>
     <string name="svg_corners">Corners</string>
     <string name="svg_paint_none">None</string>
-    <string name="svg_paint_gradient">A gradient now</string>
+    <string name="svg_paint_gradient">Gradient</string>
+    <string name="svg_paint_color">Colour</string>
+    <string name="svg_paint_pattern">Painted by the file itself (a pattern or a gradient it cannot show here): pick a colour or a gradient to change it.</string>
+    <string name="svg_gradient_linear">Linear</string>
+    <string name="svg_gradient_radial">Radial</string>
+    <string name="svg_gradient_angle">Angle</string>
+    <string name="svg_gradient_stop">Stop %1$d of %2$d</string>
+    <string name="svg_gradient_stop_opacity">Opacity</string>
+    <string name="svg_gradient_stop_position">Position</string>
+    <string name="svg_gradient_reverse">Reverse</string>
+    <string name="svg_gradient_remove_stop">Remove stop</string>
+    <string name="svg_gradient_hint">Tap the bar to add a stop there; drag a stop to move it. Each shape keeps a gradient of its own.</string>
+    <string name="svg_gradient_bar_description">Gradient stops</string>
+    <string name="svg_gradient_stop_description">Stop at %1$d%%</string>
     <string name="svg_text_size">Size</string>
     <string name="svg_text_bold">Bold</string>
     <string name="svg_font_sans">Sans</string>

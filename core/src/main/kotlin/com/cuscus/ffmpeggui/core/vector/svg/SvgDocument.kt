@@ -455,8 +455,8 @@ data class SvgDocument(
     /** The gradients of the definitions by id, for drawing (a gradient's stops may come from the one it refers to). */
     val gradients: Map<String, SvgGradient> by lazy { SvgReader.gradients(head + nodes.flatMap { SvgReader.otherElements(it) }) }
 
-    /** The SVG text of the drawing. */
-    fun write(): String = Xml.write(SvgWriter.root(this))
+    /** The SVG text of the drawing (the app's own gradients that nothing uses left out). */
+    fun write(): String = Xml.write(SvgWriter.root(withoutUnusedGradients()))
 
     companion object {
         /** The drawing in [text]; throws [XmlException] when it is not XML, [IllegalArgumentException] when not an SVG. */

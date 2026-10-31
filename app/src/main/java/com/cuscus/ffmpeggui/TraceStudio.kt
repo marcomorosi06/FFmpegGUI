@@ -39,6 +39,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BubbleChart
 import androidx.compose.material.icons.rounded.Draw
 import androidx.compose.material.icons.rounded.Gesture
+import androidx.compose.material.icons.rounded.Gradient
 import androidx.compose.material.icons.rounded.GridOn
 import androidx.compose.material.icons.rounded.Interests
 import androidx.compose.material.icons.rounded.Palette
@@ -84,7 +85,7 @@ import kotlin.math.roundToInt
  */
 
 /** What a trace made: its colours (ARGB, the largest first) and how many outlines it has. */
-internal class TraceResult(val palette: List<Int>, val outlines: Int)
+internal class TraceResult(val palette: List<Int>, val outlines: Int, val gradients: Int = 0)
 
 /** A change to the trace; the step names a run of changes that undo as one (null: one change). */
 internal typealias TraceChange = (String?, (TraceSettings) -> TraceSettings) -> Unit
@@ -98,17 +99,18 @@ internal enum class TracePreset(
     val settle: (TraceSettings) -> TraceSettings,
 ) {
     LOGO(R.string.trace_kind_logo, R.string.trace_kind_logo_hint, Icons.Rounded.Interests, MaterialShapes.Cookie9Sided,
-        { it.copy(mono = false, colors = 8, detail = 0.75f, speckle = 8, smooth = true) }),
+        { it.copy(mono = false, colors = 8, detail = 0.75f, speckle = 8, smooth = true, gradients = false) }),
     DRAWING(R.string.trace_kind_drawing, R.string.trace_kind_drawing_hint, Icons.Rounded.Draw, MaterialShapes.Flower,
-        { it.copy(mono = true, detail = 0.7f, speckle = 12, smooth = true) }),
+        { it.copy(mono = true, detail = 0.7f, speckle = 12, smooth = true, gradients = false) }),
     TEXT(R.string.trace_kind_text, R.string.trace_kind_text_hint, Icons.Rounded.TextFields, MaterialShapes.Square,
-        { it.copy(mono = true, detail = 0.9f, speckle = 4, smooth = true) }),
+        { it.copy(mono = true, detail = 0.9f, speckle = 4, smooth = true, gradients = false) }),
     ILLUSTRATION(R.string.trace_kind_illustration, R.string.trace_kind_illustration_hint, Icons.Rounded.Palette, MaterialShapes.SoftBurst,
-        { it.copy(mono = false, colors = 16, detail = 0.6f, speckle = 8, smooth = true) }),
+        { it.copy(mono = false, colors = 16, detail = 0.6f, speckle = 8, smooth = true, gradients = false) }),
     PHOTO(R.string.trace_kind_photo, R.string.trace_kind_photo_hint, Icons.Rounded.Photo, MaterialShapes.Clover4Leaf,
-        { it.copy(mono = false, colors = 24, detail = 0.45f, speckle = 30, smooth = true) }),
+        // Each shape shaded as the photo is: softer than a poster of flat colours.
+        { it.copy(mono = false, colors = 24, detail = 0.45f, speckle = 30, smooth = true, gradients = true) }),
     PIXEL(R.string.trace_kind_pixel, R.string.trace_kind_pixel_hint, Icons.Rounded.GridOn, MaterialShapes.PixelCircle,
-        { it.copy(mono = false, colors = 32, detail = 1f, speckle = 0, smooth = false) }),
+        { it.copy(mono = false, colors = 32, detail = 1f, speckle = 0, smooth = false, gradients = false) }),
     ;
 
     /** Whether [settings] are this kind's, as it sets them (the traced size apart). */
@@ -177,6 +179,7 @@ internal fun TraceControls(
                 enter = expandVertically(motion.defaultSpatialSpec()) + fadeIn(motion.defaultEffectsSpec()),
                 exit = shrinkVertically(motion.fastSpatialSpec()) + fadeOut(motion.fastEffectsSpec()),
             ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 ValueSlider(
                     label = stringResource(R.string.trace_colour_count),
                     valueText = settings.colors.toString(),
@@ -189,6 +192,15 @@ internal fun TraceControls(
                     startLabel = stringResource(R.string.trace_colours_few),
                     endLabel = stringResource(R.string.trace_colours_many),
                 )
+                // Shapes shaded as the picture is, rather than one flat colour each.
+                SwitchCard(
+                    icon = Icons.Rounded.Gradient,
+                    title = stringResource(R.string.trace_gradients),
+                    subtitle = stringResource(R.string.trace_gradients_hint),
+                    checked = settings.gradients,
+                    onCheckedChange = { on -> onChange(null) { it.copy(gradients = on) } },
+                )
+                }
             }
         }
 
@@ -316,6 +328,15 @@ private fun TraceOutcome(working: Boolean, result: TraceResult?, mono: Boolean) 
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant,
                 )
+                // How many of the shapes are shaded with a gradient.
+                val shaded = result?.gradients ?: 0
+                AnimatedVisibility(visible = !working && shaded > 0) {
+                    Text(
+                        text = pluralStringResource(R.plurals.trace_shaded, shaded, shaded),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.primary,
+                    )
+                }
             }
             WeightMeter(weight)
         }

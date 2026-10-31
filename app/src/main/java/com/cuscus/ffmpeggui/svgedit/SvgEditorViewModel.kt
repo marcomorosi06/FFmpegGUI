@@ -121,6 +121,8 @@ class SvgEditorViewModel(application: Application) : AndroidViewModel(applicatio
         /** The last trace's colours (ARGB, the largest first) and outlines. */
         val palette: List<Int> = emptyList(),
         val outlines: Int = 0,
+        /** How many of its shapes are shaded with a gradient. */
+        val gradients: Int = 0,
     )
 
     private val _tracing = MutableStateFlow<Tracing?>(null)
@@ -239,7 +241,7 @@ class SvgEditorViewModel(application: Application) : AndroidViewModel(applicatio
             val made = source.mapCatching { src -> src to withContext(Dispatchers.Default) { traced(src, settings) } }
             made.onSuccess { (src, doc) ->
                 traceSource = src
-                _tracing.value = Tracing(settings, working = false, colours = doc.second.layers.size, palette = doc.second.palette, outlines = doc.second.outlines)
+                _tracing.value = Tracing(settings, working = false, colours = doc.second.palette.size, palette = doc.second.palette, outlines = doc.second.outlines, gradients = doc.second.gradients)
                 start(doc.first, name.substringBeforeLast('.'))
             }.onFailure { e ->
                 Log.w(TAG, "Cannot trace $uri", e)
@@ -266,7 +268,7 @@ class SvgEditorViewModel(application: Application) : AndroidViewModel(applicatio
             _doc.value = doc
             _selected.value = null
             _also.value = emptySet()
-            _tracing.value = Tracing(settings, working = false, colours = image.layers.size, palette = image.palette, outlines = image.outlines)
+            _tracing.value = Tracing(settings, working = false, colours = image.palette.size, palette = image.palette, outlines = image.outlines, gradients = image.gradients)
         }
     }
 
@@ -287,13 +289,16 @@ class SvgEditorViewModel(application: Application) : AndroidViewModel(applicatio
     private fun traced(src: TraceSource, settings: TraceSettings): Pair<SvgDocument, VectorImage> {
         val image = VectorTracer.trace(src.raster, settings.sane())
         val doc = SvgDocument.parse(image.toSvg(src.width, src.height))
-        // Each colour a layer of its own, named after it.
-        val named = doc.copy(nodes = doc.nodes.map { n ->
+        // Each colour a layer of its own, named after it; a shaded shape after the colour it shades.
+        val named = doc.copy(nodes = doc.nodes.mapIndexed { i, n ->
             val fill = (n as? SvgShape)?.style?.fill
-            if (n is SvgShape && fill?.kind == PaintKind.COLOR) {
-                n.copy(id = "colour-" + SvgPaint.color(fill.argb).toCss().removePrefix("#"))
-            } else {
-                n
+            when {
+                n is SvgShape && fill?.kind == PaintKind.COLOR -> n.copy(id = "colour-" + SvgPaint.color(fill.argb).toCss().removePrefix("#"))
+                n is SvgShape && fill?.kind == PaintKind.URL -> {
+                    val colour = image.layers.getOrNull(i)?.argb?.let { SvgPaint.color(it.toLong() and 0xFFFFFFFFL).toCss().removePrefix("#") }
+                    n.copy(id = "gradient-" + (colour ?: "shape"))
+                }
+                else -> n
             }
         })
         // Two layers of one colour would share an id: the second gets a number.

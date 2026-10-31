@@ -648,6 +648,7 @@ object ModelJson {
             put("speckle", e.trace.speckle)
             put("mono", e.trace.mono)
             put("maxSide", e.trace.maxSide)
+            put("gradients", e.trace.gradients)
         })
         put("canvas", e.canvas) { c ->
             jsonObject {
@@ -706,6 +707,7 @@ object ModelJson {
                     speckle = t.int("speckle", n.speckle),
                     mono = t.bool("mono", n.mono),
                     maxSide = t.int("maxSide", n.maxSide),
+                    gradients = t.bool("gradients", n.gradients),
                 )
             } ?: d.trace,
             canvas = o.objOrNull("canvas", d.canvas) { c ->

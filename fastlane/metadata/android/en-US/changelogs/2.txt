@@ -3,11 +3,9 @@
 * Video effects, magic transitions
 * On-device subtitle translation
 * Texts: outline, soft shadow, box, your own fonts
-* SVG editor: symmetry, booleans, layers, snapping
-* Picture to SVG tracing
+* SVG editor: gradients, symmetry, booleans, layers, snapping
 * Blank pages, compressor
 * Picture editor: canvas, corners, layers
 * Live scrubbing, frame steps, mono theme
 * New format picker, settings
-* Audio mixer: whole track and clips linked
 * Fixes: low contrast, toolbar outline

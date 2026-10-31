@@ -21,8 +21,14 @@ import kotlin.random.Random
  * corners. Colours are laid largest first, each one stroked with itself by
  * half a pixel so that no hairline shows between neighbours.
  *
+ * With [TraceSettings.gradients], each large enough shape is also measured on
+ * the picture under it: when its colours run along a direction (or out from a
+ * centre) far better than one flat colour explains them, the shape is filled
+ * with that linear (or radial) gradient instead, its stops the picture's own
+ * colours along the way.
+ *
  * It suits logos, icons, drawings, text and flat graphics; a photograph turns
- * into a poster of many shapes.
+ * into a poster of many shapes, softer with gradients.
  */
 
 /** How a picture is traced. */
@@ -39,6 +45,8 @@ data class TraceSettings(
     val mono: Boolean = false,
     /** The picture is traced at most this large on its longer side. */
     val maxSide: Int = 1200,
+    /** Shapes whose colours shade across them are filled with a gradient ([mono] ignores it). */
+    val gradients: Boolean = false,
 ) {
     fun sane(): TraceSettings = copy(
         colors = colors.coerceIn(2, 64),
@@ -59,8 +67,30 @@ sealed interface PathOp {
     data object Close : PathOp
 }
 
-/** The shapes of one colour ([argb]): its outlines, filled even-odd. */
-class VectorLayer(val argb: Int, val ops: List<PathOp>, val pixels: Int)
+/**
+ * A gradient a traced shape is filled with, in pixels of the traced picture:
+ * a linear one runs from [ax], [ay] to [bx], [by]; a [radial] one is centred
+ * on [ax], [ay] and reaches [bx], [by]. Its stops are [offsets] (0..1, rising)
+ * and [colors] (ARGB).
+ */
+class TracedGradient(
+    val radial: Boolean,
+    val ax: Float,
+    val ay: Float,
+    val bx: Float,
+    val by: Float,
+    val offsets: FloatArray,
+    val colors: IntArray,
+) {
+    /** How far a radial gradient reaches from its centre. */
+    val radius: Float get() = hypot(bx - ax, by - ay)
+}
+
+/**
+ * The shapes of one colour ([argb], the palette's): their outlines, filled
+ * even-odd, with that colour or, when [gradient] is set, with the gradient.
+ */
+class VectorLayer(val argb: Int, val ops: List<PathOp>, val pixels: Int, val gradient: TracedGradient? = null)
 
 /**
  * A traced picture: [width] x [height] pixels (the traced size), its layers
@@ -71,8 +101,12 @@ class VectorImage(val width: Int, val height: Int, val layers: List<VectorLayer>
     /** The number of outlines (a measure of how heavy the SVG is). */
     val outlines: Int get() = layers.sumOf { layer -> layer.ops.count { it is PathOp.MoveTo } }
 
-    /** Its colours (ARGB), the one covering most of the picture first. */
-    val palette: List<Int> get() = layers.sortedByDescending { it.pixels }.map { it.argb }
+    /** Its colours (ARGB), the one covering most of the picture first; shaded shapes count with their colour. */
+    val palette: List<Int>
+        get() = layers.groupBy { it.argb }.entries.sortedByDescending { e -> e.value.sumOf { it.pixels } }.map { it.key }
+
+    /** How many shapes are filled with a gradient. */
+    val gradients: Int get() = layers.count { it.gradient != null }
 
     /** The SVG, shown [outWidth] x [outHeight] by default (it scales to anything). */
     fun toSvg(outWidth: Int = width, outHeight: Int = height): String {
@@ -80,9 +114,16 @@ class VectorImage(val width: Int, val height: Int, val layers: List<VectorLayer>
         out.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
         out.append("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"").append(outWidth).append("\" height=\"").append(outHeight)
             .append("\" viewBox=\"0 0 ").append(width).append(' ').append(height).append("\">\n")
-        for (layer in layers) {
-            val rgb = String.format(Locale.ROOT, "#%06x", layer.argb and 0xFFFFFF)
-            val alpha = (layer.argb ushr 24) and 0xFF
+        // The gradients, in the traced picture's pixels, each named after its layer.
+        val shaded = layers.withIndex().filter { it.value.gradient != null }
+        if (shaded.isNotEmpty()) {
+            out.append("<defs>\n")
+            for ((i, layer) in shaded) gradient(out, gradientId(i), layer.gradient!!)
+            out.append("</defs>\n")
+        }
+        for ((i, layer) in layers.withIndex()) {
+            val rgb = if (layer.gradient != null) "url(#${gradientId(i)})" else String.format(Locale.ROOT, "#%06x", layer.argb and 0xFFFFFF)
+            val alpha = if (layer.gradient != null) 255 else (layer.argb ushr 24) and 0xFF
             out.append("<path fill=\"").append(rgb).append("\" fill-rule=\"evenodd\"")
             if (alpha < 255) out.append(" fill-opacity=\"").append(number(alpha / 255f)).append('"')
             if (stroked) {
@@ -103,6 +144,24 @@ class VectorImage(val width: Int, val height: Int, val layers: List<VectorLayer>
         }
         out.append("</svg>\n")
         return out.toString()
+    }
+
+    /** The id of the gradient of layer [index] (the app's own prefix: unused ones are dropped when edited). */
+    private fun gradientId(index: Int): String = "ffg-trace-$index"
+
+    private fun gradient(out: StringBuilder, id: String, g: TracedGradient) {
+        if (g.radial) {
+            out.append("<radialGradient id=\"").append(id).append("\" gradientUnits=\"userSpaceOnUse\" cx=\"").append(number(g.ax))
+                .append("\" cy=\"").append(number(g.ay)).append("\" r=\"").append(number(g.radius)).append("\">")
+        } else {
+            out.append("<linearGradient id=\"").append(id).append("\" gradientUnits=\"userSpaceOnUse\" x1=\"").append(number(g.ax))
+                .append("\" y1=\"").append(number(g.ay)).append("\" x2=\"").append(number(g.bx)).append("\" y2=\"").append(number(g.by)).append("\">")
+        }
+        for (i in g.offsets.indices) {
+            out.append("<stop offset=\"").append(String.format(Locale.ROOT, "%.3f", g.offsets[i]).trimEnd('0').trimEnd('.').ifEmpty { "0" })
+                .append("\" stop-color=\"").append(String.format(Locale.ROOT, "#%06x", g.colors[i] and 0xFFFFFF)).append("\"/>")
+        }
+        out.append(if (g.radial) "</radialGradient>\n" else "</linearGradient>\n")
     }
 
     private fun number(v: Float): String {
@@ -131,15 +190,307 @@ object VectorTracer {
         val counts = IntArray(palette.size)
         for (l in labels) if (l >= 0) counts[l]++
         val order = palette.indices.filter { counts[it] > 0 }.sortedByDescending { counts[it] }
-        val layers = order.mapNotNull { label ->
-            val outlines = outlines(labels, w, h, label)
-                .filter { abs(area(it)) >= max(1, s.speckle) || s.speckle == 0 }
-                .map { simplified(it, s.tolerance) }
-                .filter { it.size >= 6 }
-            if (outlines.isEmpty()) null else VectorLayer(palette[label], outlines.flatMap { ops(it, s.smooth) }, counts[label])
+        val layers = if (s.gradients && !s.mono) {
+            shadedLayers(picture, labels, palette, order, s)
+        } else {
+            order.mapNotNull { label -> layer(labels, w, h, label, null, palette[label], counts[label], s, null) }
         }
         return VectorImage(w, h, layers, stroked = !s.mono)
     }
+
+    /**
+     * The layer of the pixels of [region] marked [id] ([bounds]: their box,
+     * minX minY maxX maxY, when known): its outlines without the specks,
+     * simplified; null when nothing is left.
+     */
+    private fun layer(region: IntArray, w: Int, h: Int, id: Int, bounds: IntArray?, argb: Int, pixels: Int, s: TraceSettings, gradient: TracedGradient?): VectorLayer? {
+        val found = if (bounds == null) outlines(region, w, h, id) else outlines(region, w, h, id, bounds[0], bounds[1], bounds[2], bounds[3])
+        val outlines = found
+            .filter { abs(area(it)) >= max(1, s.speckle) || s.speckle == 0 }
+            .map { simplified(it, s.tolerance) }
+            .filter { it.size >= 6 }
+        return if (outlines.isEmpty()) null else VectorLayer(argb, outlines.flatMap { ops(it, s.smooth) }, pixels, gradient)
+    }
+
+    // -- Gradients ----------------------------------------------------------------------
+
+    /**
+     * The layers when shapes may be shaded: every colour's area split into its
+     * connected shapes; each large one measured on [picture] and, when its
+     * colours run as a gradient, made a layer of its own with it, just above
+     * the flat rest of its colour.
+     */
+    private fun shadedLayers(picture: Raster, labels: IntArray, palette: IntArray, order: List<Int>, s: TraceSettings): List<VectorLayer> {
+        val w = picture.width
+        val h = picture.height
+        val n = w * h
+        val (component, labelOf) = components(labels, w, h)
+        val count = labelOf.size
+        // The pixels of each shape, one run after the other.
+        val start = IntArray(count + 1)
+        for (c in component) if (c >= 0) start[c + 1]++
+        for (c in 0 until count) start[c + 1] += start[c]
+        val members = IntArray(start[count])
+        val fill = start.copyOf()
+        for (i in 0 until n) component[i].let { c -> if (c >= 0) members[fill[c]++] = i }
+        val minPixels = max(GRADIENT_MIN_PIXELS, n / GRADIENT_MIN_SHARE)
+        val candidates = (0 until count).filter { start[it + 1] - start[it] >= minPixels }
+            .sortedByDescending { start[it + 1] - start[it] }
+            .take(MAX_GRADIENTS)
+        val gradientOf = arrayOfNulls<TracedGradient>(count)
+        for (c in candidates) gradientOf[c] = fitted(picture, members, start[c], start[c + 1])
+        // The flat rest of each colour keeps its label; each shaded shape gets an id after the palette.
+        val shadedIds = IntArray(count) { -1 }
+        var next = palette.size
+        for (c in 0 until count) if (gradientOf[c] != null) shadedIds[c] = next++
+        val region = IntArray(n) { i -> component[i].let { c -> if (c < 0) -1 else if (shadedIds[c] >= 0) shadedIds[c] else labels[i] } }
+        val bounds = Array(next) { intArrayOf(w, h, -1, -1) }
+        val pixels = IntArray(next)
+        for (i in 0 until n) {
+            val r = region[i]
+            if (r < 0) continue
+            val x = i % w
+            val y = i / w
+            val b = bounds[r]
+            if (x < b[0]) b[0] = x
+            if (y < b[1]) b[1] = y
+            if (x > b[2]) b[2] = x
+            if (y > b[3]) b[3] = y
+            pixels[r]++
+        }
+        val shadedOf = (0 until count).filter { shadedIds[it] >= 0 }.groupBy { labelOf[it] }
+        val out = ArrayList<VectorLayer>()
+        for (label in order) {
+            if (pixels[label] > 0) layer(region, w, h, label, bounds[label], palette[label], pixels[label], s, null)?.let { out += it }
+            for (c in shadedOf[label].orEmpty().sortedByDescending { pixels[shadedIds[it]] }) {
+                val id = shadedIds[c]
+                layer(region, w, h, id, bounds[id], palette[label], pixels[id], s, gradientOf[c])?.let { out += it }
+            }
+        }
+        return out
+    }
+
+    /**
+     * The connected shapes of [labels] (pixels side by side with the same label;
+     * touching by a corner is apart, as the outlines keep them): each pixel's
+     * shape (-1 where transparent), and each shape's label.
+     */
+    internal fun components(labels: IntArray, w: Int, h: Int): Pair<IntArray, IntArray> {
+        val component = IntArray(labels.size) { -1 }
+        val labelOf = ArrayList<Int>()
+        val queue = IntArray(labels.size)
+        for (seed in labels.indices) {
+            if (labels[seed] < 0 || component[seed] >= 0) continue
+            val id = labelOf.size
+            val label = labels[seed]
+            labelOf += label
+            var head = 0
+            var tail = 0
+            component[seed] = id
+            queue[tail++] = seed
+            while (head < tail) {
+                val i = queue[head++]
+                val x = i % w
+                val y = i / w
+                if (x > 0 && component[i - 1] < 0 && labels[i - 1] == label) { component[i - 1] = id; queue[tail++] = i - 1 }
+                if (x < w - 1 && component[i + 1] < 0 && labels[i + 1] == label) { component[i + 1] = id; queue[tail++] = i + 1 }
+                if (y > 0 && component[i - w] < 0 && labels[i - w] == label) { component[i - w] = id; queue[tail++] = i - w }
+                if (y < h - 1 && component[i + w] < 0 && labels[i + w] == label) { component[i + w] = id; queue[tail++] = i + w }
+            }
+        }
+        return component to labelOf.toIntArray()
+    }
+
+    /**
+     * The gradient that best tells the colours of the pixels members[from until to]
+     * of [picture]: along the direction they change most (a least-squares plane
+     * per channel), or out from a centre (a least-squares bowl), its stops their
+     * mean colours along the way. Null when one flat colour tells them about as
+     * well, or when they barely change.
+     */
+    private fun fitted(picture: Raster, members: IntArray, from: Int, to: Int): TracedGradient? {
+        val w = picture.width
+        val step = max(1, (to - from) / FIT_SAMPLE)
+        val size = (to - from + step - 1) / step
+        val xs = DoubleArray(size)
+        val ys = DoubleArray(size)
+        val colours = Array(3) { DoubleArray(size) }
+        var mx = 0.0; var my = 0.0
+        val mean = DoubleArray(3)
+        for (k in 0 until size) {
+            val i = members[from + k * step]
+            val p = picture.pixels[i]
+            xs[k] = i % w + 0.5
+            ys[k] = i / w + 0.5
+            colours[0][k] = ((p shr 16) and 0xFF).toDouble()
+            colours[1][k] = ((p shr 8) and 0xFF).toDouble()
+            colours[2][k] = (p and 0xFF).toDouble()
+            mx += xs[k]; my += ys[k]
+            for (c in 0..2) mean[c] += colours[c][k]
+        }
+        mx /= size; my /= size
+        for (c in 0..2) mean[c] /= size
+        for (k in 0 until size) { xs[k] -= mx; ys[k] -= my }
+        var flatError = 0.0
+        for (k in 0 until size) for (c in 0..2) flatError += WEIGHT[c] * sq(colours[c][k] - mean[c])
+        if (flatError <= 0.0) return null
+
+        // -- Along a direction: a plane per channel, the direction they change most together.
+        var sxx = 0.0; var sxy = 0.0; var syy = 0.0
+        val sxc = DoubleArray(3); val syc = DoubleArray(3)
+        for (k in 0 until size) {
+            sxx += xs[k] * xs[k]; sxy += xs[k] * ys[k]; syy += ys[k] * ys[k]
+            for (c in 0..2) { sxc[c] += xs[k] * (colours[c][k] - mean[c]); syc[c] += ys[k] * (colours[c][k] - mean[c]) }
+        }
+        // A line of pixels has no second direction to measure.
+        val det = sxx * syy - sxy * sxy
+        if (det <= 1e-9 * max(1.0, sxx * syy)) return null
+        var m11 = 0.0; var m12 = 0.0; var m22 = 0.0
+        for (c in 0..2) {
+            val gx = (syy * sxc[c] - sxy * syc[c]) / det
+            val gy = (sxx * syc[c] - sxy * sxc[c]) / det
+            m11 += WEIGHT[c] * gx * gx; m12 += WEIGHT[c] * gx * gy; m22 += WEIGHT[c] * gy * gy
+        }
+        val angle = 0.5 * kotlin.math.atan2(2 * m12, m11 - m22)
+        val dx = kotlin.math.cos(angle)
+        val dy = kotlin.math.sin(angle)
+        // Colours that change the same way all round (a disc of light) have no direction.
+        val linear = if (m11 + m22 > 1e-12) ramp(DoubleArray(size) { xs[it] * dx + ys[it] * dy }, colours) else null
+
+        // -- Out from a centre: a bowl per channel (its plane and its curve), one centre for them all.
+        var radial: Ramp? = null
+        var centreX = 0.0
+        var centreY = 0.0
+        val bowl = bowlCentre(xs, ys, colours, mean)
+        if (bowl != null) {
+            centreX = bowl.first
+            centreY = bowl.second
+            val reach = kotlin.math.sqrt((sxx + syy) / size)
+            if (hypot(centreX, centreY) <= RADIAL_REACH * reach) {
+                radial = ramp(DoubleArray(size) { hypot(xs[it] - centreX, ys[it] - centreY) }, colours)
+            }
+        }
+        val useRadial = radial != null && (linear == null || radial.error < RADIAL_BETTER * linear.error)
+        val best = (if (useRadial) radial else linear) ?: return null
+        if (best.error > GOOD_FIT * flatError) return null
+        if (distance(best.colours.first(), best.colours.last()) < MIN_SPAN) return null
+        val colors = IntArray(best.colours.size) { j ->
+            val c = best.colours[j]
+            (0xFF shl 24) or (c[0].roundToInt().coerceIn(0, 255) shl 16) or (c[1].roundToInt().coerceIn(0, 255) shl 8) or c[2].roundToInt().coerceIn(0, 255)
+        }
+        return if (useRadial) {
+            val ax = (mx + centreX).toFloat()
+            val ay = (my + centreY).toFloat()
+            val offsets = FloatArray(best.ts.size) { (best.ts[it] / best.end).toFloat().coerceIn(0f, 1f) }
+            TracedGradient(true, ax, ay, ax + best.end.toFloat(), ay, offsets, colors)
+        } else {
+            val offsets = FloatArray(best.ts.size) { ((best.ts[it] - best.start) / (best.end - best.start)).toFloat().coerceIn(0f, 1f) }
+            TracedGradient(
+                false,
+                (mx + dx * best.start).toFloat(), (my + dy * best.start).toFloat(),
+                (mx + dx * best.end).toFloat(), (my + dy * best.end).toFloat(),
+                offsets, colors,
+            )
+        }
+    }
+
+    /** Colours along a run of values: where the run starts and ends, its stops (value, colour) and how far the pixels stray from them. */
+    private class Ramp(val start: Double, val end: Double, val ts: DoubleArray, val colours: List<DoubleArray>, val error: Double)
+
+    /**
+     * The colours as a ramp over [t] (one value per pixel): the values from the
+     * 2nd to the 98th percentile cut into equal bins, each bin's mean colour a
+     * stop at its middle, every pixel told by the stops either side of it.
+     */
+    private fun ramp(t: DoubleArray, colours: Array<DoubleArray>): Ramp? {
+        val sorted = t.copyOf().also { it.sort() }
+        val start = sorted[(sorted.size * 0.02).toInt().coerceIn(0, sorted.lastIndex)]
+        val end = sorted[(sorted.size * 0.98).toInt().coerceIn(0, sorted.lastIndex)]
+        if (end - start < MIN_RAMP_PX) return null
+        val sums = Array(STOPS) { DoubleArray(4) }
+        for (k in t.indices) {
+            val bin = (((t[k] - start) / (end - start)) * STOPS).toInt().coerceIn(0, STOPS - 1)
+            for (c in 0..2) sums[bin][c] += colours[c][k]
+            sums[bin][3] += 1.0
+        }
+        val ts = ArrayList<Double>()
+        val stops = ArrayList<DoubleArray>()
+        for (j in 0 until STOPS) {
+            if (sums[j][3] == 0.0) continue
+            ts += start + (end - start) * (j + 0.5) / STOPS
+            stops += doubleArrayOf(sums[j][0] / sums[j][3], sums[j][1] / sums[j][3], sums[j][2] / sums[j][3])
+        }
+        if (stops.size < 2) return null
+        var error = 0.0
+        val told = DoubleArray(3)
+        for (k in t.indices) {
+            val v = t[k]
+            var j = 0
+            while (j < ts.size - 1 && ts[j + 1] < v) j++
+            if (v <= ts[0]) {
+                for (c in 0..2) told[c] = stops[0][c]
+            } else if (j >= ts.size - 1) {
+                for (c in 0..2) told[c] = stops.last()[c]
+            } else {
+                val f = ((v - ts[j]) / (ts[j + 1] - ts[j])).coerceIn(0.0, 1.0)
+                for (c in 0..2) told[c] = stops[j][c] + (stops[j + 1][c] - stops[j][c]) * f
+            }
+            for (c in 0..2) error += WEIGHT[c] * sq(colours[c][k] - told[c])
+        }
+        return Ramp(start, end, ts.toDoubleArray(), stops, error)
+    }
+
+    /**
+     * The centre (from the pixels' mean) of the bowls c = a + bx x + by y + q (x^2 + y^2)
+     * that best fit each channel, each channel's centre weighed by how much it
+     * curves; null when none curves.
+     */
+    private fun bowlCentre(xs: DoubleArray, ys: DoubleArray, colours: Array<DoubleArray>, mean: DoubleArray): Pair<Double, Double>? {
+        // Normal equations of [1, x, y, r2] against each channel.
+        val m = Array(4) { DoubleArray(4) }
+        val v = Array(3) { DoubleArray(4) }
+        for (k in xs.indices) {
+            val row = doubleArrayOf(1.0, xs[k], ys[k], xs[k] * xs[k] + ys[k] * ys[k])
+            for (a in 0..3) {
+                for (b in 0..3) m[a][b] += row[a] * row[b]
+                for (c in 0..2) v[c][a] += row[a] * (colours[c][k] - mean[c])
+            }
+        }
+        var cx = 0.0
+        var cy = 0.0
+        var weight = 0.0
+        for (c in 0..2) {
+            val solution = solve(m, v[c]) ?: return null
+            val q = solution[3]
+            if (abs(q) < 1e-9) continue
+            val wq = WEIGHT[c] * q * q
+            cx += wq * (-solution[1] / (2 * q))
+            cy += wq * (-solution[2] / (2 * q))
+            weight += wq
+        }
+        return if (weight <= 0.0) null else (cx / weight) to (cy / weight)
+    }
+
+    /** [a] x = [b] by Gaussian elimination with partial pivoting; null when singular. */
+    private fun solve(a: Array<DoubleArray>, b: DoubleArray): DoubleArray? {
+        val size = b.size
+        val m = Array(size) { r -> DoubleArray(size + 1) { c -> if (c < size) a[r][c] else b[r] } }
+        for (col in 0 until size) {
+            var pivot = col
+            for (r in col + 1 until size) if (abs(m[r][col]) > abs(m[pivot][col])) pivot = r
+            if (abs(m[pivot][col]) < 1e-12) return null
+            val swap = m[pivot]; m[pivot] = m[col]; m[col] = swap
+            for (r in 0 until size) {
+                if (r == col) continue
+                val f = m[r][col] / m[col][col]
+                if (f != 0.0) for (c in col..size) m[r][c] -= f * m[col][c]
+            }
+        }
+        return DoubleArray(size) { m[it][size] / m[it][it] }
+    }
+
+    private fun sq(v: Double) = v * v
+
 
     // -- Size -------------------------------------------------------------------------
 
@@ -315,6 +666,11 @@ object VectorTracer {
             if (y < minY) minY = y
             if (y > maxY) maxY = y
         }
+        return outlines(labels, w, h, label, minX, minY, maxX, maxY)
+    }
+
+    /** [outlines] of the pixels labelled [label], all within minX..maxX, minY..maxY. */
+    internal fun outlines(labels: IntArray, w: Int, h: Int, label: Int, minX: Int, minY: Int, maxX: Int, maxY: Int): List<IntArray> {
         if (maxX < 0) return emptyList()
         val bw = maxX - minX + 1
         val bh = maxY - minY + 1
@@ -491,6 +847,37 @@ object VectorTracer {
 
     /** A turn sharper than about 70 degrees stays a corner. */
     private const val SHARP_COS = 0.34f
+
+    /** How much each channel counts in a colour's distance (as [distance]: the green most). */
+    private val WEIGHT = doubleArrayOf(2.0, 4.0, 3.0)
+
+    /** A shape is measured for a gradient from this many pixels, and from this share of the picture. */
+    private const val GRADIENT_MIN_PIXELS = 120
+    private const val GRADIENT_MIN_SHARE = 4000
+
+    /** At most this many shapes are shaded (the largest). */
+    private const val MAX_GRADIENTS = 400
+
+    /** At most this many of a shape's pixels are measured. */
+    private const val FIT_SAMPLE = 30_000
+
+    /** Stops of a traced gradient (fewer where no pixel falls). */
+    private const val STOPS = 5
+
+    /** A gradient is kept when it leaves at most this share of a flat colour's error... */
+    private const val GOOD_FIT = 0.55
+
+    /** ...and its ends are at least this far apart (about 12 levels a channel). */
+    private const val MIN_SPAN = 1300.0
+
+    /** A run shorter than this many pixels is no gradient. */
+    private const val MIN_RAMP_PX = 3.0
+
+    /** A radial gradient wins when it leaves this share of the linear one's error, or less... */
+    private const val RADIAL_BETTER = 0.8
+
+    /** ...and its centre is within this many times the shape's spread of its middle. */
+    private const val RADIAL_REACH = 3.0
 
     private const val SAMPLE = 20_000
     private const val ITERATIONS = 10

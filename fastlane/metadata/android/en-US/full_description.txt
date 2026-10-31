@@ -35,7 +35,7 @@ Every change shows in the editor before anything is rendered, and the export mak
 * Crop, straighten and perspective
 * Text, stickers, drawing and borders
 * Background removal by colour or by subject, kept transparent in PNG, WEBP and TIFF
-* An SVG editor with live symmetry, repeats, booleans, path tools and layers; photos traced into SVG
+* An SVG editor with gradients, symmetry, repeats, booleans, path tools and layers; photos traced into SVG
 * An HDR look saved as Ultra HDR JPG: from the photo's own HDR or worked out of its light, everywhere, on the subject, on the background or where you paint it
 
 <b>And more</b>

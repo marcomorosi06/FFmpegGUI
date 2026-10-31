@@ -16,8 +16,11 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -27,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.cuscus.ffmpeggui.core.vector.PathOp
 import com.cuscus.ffmpeggui.core.vector.TraceSettings
 import com.cuscus.ffmpeggui.core.vector.VectorImage
+import com.cuscus.ffmpeggui.core.vector.VectorLayer
 import com.cuscus.ffmpeggui.core.vector.VectorTracer
 import com.cuscus.ffmpeggui.preview.toRaster
 import com.cuscus.ffmpeggui.ui.expressive.PanelHint
@@ -61,7 +65,7 @@ internal fun rememberTraced(picture: Bitmap?, settings: TraceSettings, active: B
         value = traced to false
     }
 
-/** The traced picture, filling the space it is given (its colours, even-odd, as the SVG draws them). */
+/** The traced picture, filling the space it is given (its colours and gradients, even-odd, as the SVG draws them). */
 @Composable
 internal fun VectorPreview(image: VectorImage, modifier: Modifier = Modifier) {
     val paths = remember(image) {
@@ -75,18 +79,29 @@ internal fun VectorPreview(image: VectorImage, modifier: Modifier = Modifier) {
                     PathOp.Close -> path.close()
                 }
             }
-            path to Color(layer.argb)
+            path to brushOf(layer)
         }
     }
     Canvas(modifier = modifier) {
         val sx = size.width / image.width.coerceAtLeast(1)
         val sy = size.height / image.height.coerceAtLeast(1)
-        withTransform({ scale(sx, sy, pivot = androidx.compose.ui.geometry.Offset.Zero) }) {
-            for ((path, color) in paths) {
-                drawPath(path, color)
-                if (image.stroked) drawPath(path, color, style = Stroke(width = 0.5f, join = StrokeJoin.Round))
+        withTransform({ scale(sx, sy, pivot = Offset.Zero) }) {
+            for ((path, brush) in paths) {
+                drawPath(path, brush)
+                if (image.stroked) drawPath(path, brush, style = Stroke(width = 0.5f, join = StrokeJoin.Round))
             }
         }
+    }
+}
+
+/** What paints [layer]: its colour, or its gradient in the traced picture's pixels. */
+private fun brushOf(layer: VectorLayer): Brush {
+    val g = layer.gradient ?: return SolidColor(Color(layer.argb))
+    val stops = Array(g.offsets.size) { g.offsets[it] to Color(g.colors[it]) }
+    return if (g.radial) {
+        Brush.radialGradient(*stops, center = Offset(g.ax, g.ay), radius = g.radius.coerceAtLeast(0.01f))
+    } else {
+        Brush.linearGradient(*stops, start = Offset(g.ax, g.ay), end = Offset(g.bx, g.by))
     }
 }
 
@@ -98,7 +113,7 @@ internal fun ImageTracePanel(trace: TraceSettings, traced: VectorImage?, working
             settings = trace,
             onChange = { key, change -> onChange(key?.let { "trace:$it" }) { it.copy(trace = change(it.trace).sane()) } },
             working = working,
-            result = traced?.let { TraceResult(it.palette, it.outlines) },
+            result = traced?.let { TraceResult(it.palette, it.outlines, it.gradients) },
         )
         PanelHint(stringResource(R.string.trace_hint))
     }

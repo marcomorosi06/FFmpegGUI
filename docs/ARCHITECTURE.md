@@ -402,7 +402,22 @@ a WEBP; the engine reads it (`ImageRecoder.read`) and traces it
    detail) and, smooth, drawn as quadratic curves through the middles of its
    sides, turns sharper than about 70 degrees kept as corners;
 5. colours laid largest first, each stroked with itself by half a pixel so
-   that no hairline shows between neighbours.
+   that no hairline shows between neighbours;
+6. with gradients asked for (`TraceSettings.gradients`, colours only), each
+   colour's area split into its shapes (4-connected, as the outlines keep
+   them apart); every shape of at least 120 px (and 1/4000 of the picture),
+   the 400 largest, measured on the picture under it: a least-squares plane
+   per channel gives the direction its colours change most, a least-squares
+   bowl (`c = a + bx x + by y + q (x^2 + y^2)`, one centre for the three
+   channels) the centre they fade from; the pixels along each are cut into
+   five bins from the 2nd to the 98th percentile, each bin's mean colour a
+   stop. The radial one wins when it leaves at most 80 % of the linear one's
+   error and its centre is near the shape. The gradient is kept when it
+   leaves at most 55 % of a flat colour's error and its ends differ by about
+   12 levels a channel; the shape is then a layer of its own, just above the
+   flat rest of its colour, filled and stroked with a `userSpaceOnUse`
+   gradient (`ffg-trace-N`) in the traced pixels. Flat pictures trace exactly
+   as without; a 1200 px photo takes up to about two thirds more time.
 
 The shapes tool previews it over the stage (`VectorPreview`, the same path
 steps) while it is open. Shared copies of an SVG go to Download (not every
@@ -418,9 +433,11 @@ same `VectorTracer`, one path per colour named after it) with a card to
 change how until its shapes are edited. That card and the picture editor's
 shapes tool share `TraceControls` (`TraceStudio.kt`): the kind of picture
 first (logo, drawing, text, illustration, photo, pixel art, each a ready
-`TraceSettings`), then what the last trace made (its palette, its outlines
-and how heavy the file is), then its colours and its shapes, every slider
-naming what its two ends do. A video's frame saved as an SVG
+`TraceSettings`; a photo's shapes are shaded with gradients), then what the
+last trace made (its palette, its outlines, how many are shaded and how
+heavy the file is), then its colours (with the gradients switch) and its
+shapes, every slider naming what its two ends do. A shaded shape is named
+after the colour it shades (`gradient-rrggbb`). A video's frame saved as an SVG
 still goes through the picture editor. The toolbar adds shapes (a gallery
 of basic ones, lines and every Material shape as an exact path), texts, and
 curves drawn with the pen (`smoothStroke`: simplified, then Catmull-Rom
@@ -510,6 +527,26 @@ shapes").
   controls swapped), break apart (each piece a shape), join (several shapes
   one even-odd path, in the first one's units and style).
 - *Align on the page*, for several, as well as on their box.
+
+**Gradients** (`core/vector/svg/SvgGradients.kt`, tested;
+`SvgGradientEditor.kt`). In the look sheet a fill or an outline is none, a
+colour or a gradient (a line has no box for one: colours only). The editor
+shows a gradient as a `GradientSpec`: linear or radial, an angle, stops
+(offset, colour with its opacity). On the sheet: a tile painted as the shape
+is, a bar of the stops (a tap adds one in the colour the gradient has there,
+up to eight; a stop dragged along stays between its neighbours), the kind,
+the angle (resting on every 15 degrees), and the chosen stop's colour,
+opacity and place; reverse and remove. `paintWithGradient` writes it into
+the definitions at the top (into the first `defs`, or a new one): in place
+when the gradient is the node's alone and written plainly there, else as a
+new `ffg-gradient-N`, so that a duplicate, a symmetry copy or a file's
+shared gradient never changes with it. When only the stops change, the
+gradient keeps where it lies as written (its units, coordinates and
+transform, a traced one's pixels too); a new kind or angle lays it across
+the node's box (`objectBoundingBox`, long enough to reach the far corners).
+When the drawing is written, the app's own gradients (`ffg-` ids) that
+nothing names any more are left out (`withoutUnusedGradients`); a file's
+own are always kept, as some programs keep unused ones as swatches.
 
 **Continue editing** (`SvgDrawingStore`). A moment after each change (and
 when the editor is left) the drawing is kept in `files/drawings/<id>/`
@@ -1147,6 +1184,7 @@ later ask for the notification permission at the first export.
 | subtitle translation (models, text, UI)     | `core/translate/`, `app/.../translate/`              |
 | dubbing in the subtitles' language          | `core/dub/`, `app/.../dub/`                          |
 | the voice set apart from the rest           | `core/voice/`, `app/.../voice/`, `app/.../VoicePanels.kt`, `app/.../VoiceScreen.kt` |
+| SVG gradients (editing, tracing)            | `core/vector/svg/SvgGradients.kt`, `app/.../svgedit/SvgGradientEditor.kt`, `core/vector/VectorTracer.kt` |
 | SVG booleans, aligning, grouping            | `app/.../svgedit/SvgBooleans.kt`, `core/vector/svg/SvgArrange.kt`, `app/.../svgedit/SvgActions.kt` |
 | the command studio (suggestions, checker)   | `core/command/studio/`, `app/.../command/`           |
 | codecs, quality mapping, containers         | `core/command/EncoderArguments.kt`                   |

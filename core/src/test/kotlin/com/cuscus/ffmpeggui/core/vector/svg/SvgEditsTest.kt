@@ -164,7 +164,7 @@ class SvgEditsTest {
         val px = IntArray(w * h) { i -> if (i % w in 10..25 && i / w in 5..20) 0xFFFF0000.toInt() else 0xFFFFFFFF.toInt() }
         val image = com.cuscus.ffmpeggui.core.vector.VectorTracer.trace(
             com.cuscus.ffmpeggui.core.image.Raster(w, h, px),
-            com.cuscus.ffmpeggui.core.vector.TraceSettings(colors = 2, vectorLayers = false),
+            com.cuscus.ffmpeggui.core.vector.TraceSettings(colors = 2),
         )
         val doc = SvgDocument.parse(image.toSvg(400, 300))
         assertEquals(400.0, doc.width, 0.0)

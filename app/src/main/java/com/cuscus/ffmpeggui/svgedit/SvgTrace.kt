@@ -115,7 +115,7 @@ internal fun SvgTraceCard(
             settings = t,
             onChange = { _, change -> onChange(change(t).sane()) },
             working = tracing.working,
-            result = TraceResult(tracing.palette, tracing.outlines).takeIf { tracing.palette.isNotEmpty() },
+            result = TraceResult(tracing.palette, tracing.outlines, tracing.gradients).takeIf { tracing.palette.isNotEmpty() },
         )
         PanelHint(stringResource(R.string.svg_trace_hint))
         Button(

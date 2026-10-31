@@ -16,7 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FormatBold
-import androidx.compose.material.icons.rounded.FormatColorReset
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
@@ -40,12 +39,14 @@ import com.cuscus.ffmpeggui.CompactSlider
 import com.cuscus.ffmpeggui.R
 import com.cuscus.ffmpeggui.core.vector.svg.CONNECT_ARROWS
 import com.cuscus.ffmpeggui.core.vector.svg.ConnectorStyle
+import com.cuscus.ffmpeggui.core.vector.svg.GradientSpec
 import com.cuscus.ffmpeggui.core.vector.svg.PaintKind
+import com.cuscus.ffmpeggui.core.vector.svg.gradientSpec
+import com.cuscus.ffmpeggui.core.vector.svg.paintWithGradient
 import com.cuscus.ffmpeggui.core.vector.svg.connectorStyle
 import com.cuscus.ffmpeggui.core.vector.svg.isLineLike
 import com.cuscus.ffmpeggui.core.vector.svg.restyleConnector
 import com.cuscus.ffmpeggui.core.vector.svg.SvgDocument
-import com.cuscus.ffmpeggui.core.vector.svg.SvgPaint
 import com.cuscus.ffmpeggui.core.vector.svg.SvgShape
 import com.cuscus.ffmpeggui.core.vector.svg.SvgStyle
 import com.cuscus.ffmpeggui.core.vector.svg.SvgText
@@ -55,7 +56,6 @@ import com.cuscus.ffmpeggui.core.vector.svg.ownBounds
 import com.cuscus.ffmpeggui.core.vector.svg.resolvedStyle
 import com.cuscus.ffmpeggui.core.vector.svg.svgNumber
 import com.cuscus.ffmpeggui.core.vector.svg.update
-import com.cuscus.ffmpeggui.ui.expressive.ColorSwatchRow
 import com.cuscus.ffmpeggui.ui.expressive.ConnectedChoiceGroup
 import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
 import com.cuscus.ffmpeggui.ui.expressive.PanelCard
@@ -63,7 +63,8 @@ import com.cuscus.ffmpeggui.ui.expressive.PanelHint
 import kotlin.math.roundToInt
 
 /*
- * How the selected node looks: its fill and its outline (a colour, or none),
+ * How the selected node looks: its fill and its outline (none, a colour or a
+ * gradient, see SvgGradientEditor.kt),
  * how wide and how dashed the outline is, how see-through it all is, how
  * round a rectangle's corners are; for a text, its words, size, weight and
  * font. Everything shows on the stage as it changes; each control is one
@@ -101,9 +102,26 @@ internal fun SvgStyleSheet(
     val kind = kindOf(node)
     val isLine = node is SvgShape && node.isLineLike
     val scale = minOf(doc.viewBox.width, doc.viewBox.height)
+    val keys = (listOf(key) + others).distinct()
     fun restyle(step: String, change: (SvgStyle) -> SvgStyle) = onChange(step) { d ->
-        (listOf(key) + others).distinct().fold(d) { acc, k -> acc.update(k) { it.withStyle(change(it.style)) } }
+        keys.fold(d) { acc, k -> acc.update(k) { it.withStyle(change(it.style)) } }
     }
+    /** Each picked node's fill (or outline) painted with [spec], in a gradient of its own. */
+    fun gradient(step: String, stroke: Boolean, spec: GradientSpec) = onChange(step) { d ->
+        keys.fold(d) { acc, k ->
+            // An outline chosen where there was none comes with a width that shows.
+            val widened = if (stroke && resolved.stroke.kind == PaintKind.NONE && (own.strokeWidth ?: resolved.strokeWidth) < scale * 0.004) {
+                acc.update(k) { it.withStyle(it.style.copy(strokeWidth = scale * 0.01)) }
+            } else {
+                acc
+            }
+            widened.paintWithGradient(k, stroke, spec)
+        }
+    }
+    val primary = scheme.primary.toArgb().toLong() and 0xFFFFFFFFL
+    val tertiary = scheme.tertiary.toArgb().toLong() and 0xFFFFFFFFL
+    val swatches = listOf(primary, tertiary) + SWATCHES
+    val fillGradient = doc.gradientSpec(resolved.fill)
 
     PeekThroughSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = scheme.surfaceContainerLow) {
         Column(
@@ -119,7 +137,8 @@ internal fun SvgStyleSheet(
                     from = kind.shape,
                     to = kind.shape,
                     morphed = false,
-                    color = resolved.fill.takeIf { it.kind == PaintKind.COLOR }?.let { androidx.compose.ui.graphics.Color((it.argb or 0xFF000000L).toInt()) }
+                    color = (resolved.fill.takeIf { it.kind == PaintKind.COLOR }?.argb ?: fillGradient?.stops?.first()?.argb)
+                        ?.let { androidx.compose.ui.graphics.Color((it or 0xFF000000L).toInt()) }
                         ?: scheme.primaryContainer,
                     modifier = Modifier.size(48.dp),
                 ) {}
@@ -142,12 +161,20 @@ internal fun SvgStyleSheet(
                 PaintCard(
                     title = stringResource(R.string.svg_fill),
                     paint = resolved.fill,
+                    gradient = fillGradient,
+                    swatches = swatches,
                     onPaint = { p -> restyle("fill") { it.copy(fill = p) } },
+                    onGradient = { step, spec -> gradient("fill-gradient-$step", stroke = false, spec) },
                 )
             }
             PaintCard(
                 title = stringResource(R.string.svg_outline),
                 paint = resolved.stroke,
+                gradient = doc.gradientSpec(resolved.stroke),
+                swatches = swatches,
+                // A line has no box for a gradient to lie across.
+                allowGradient = !isLine,
+                onGradient = { step, spec -> gradient("stroke-gradient-$step", stroke = true, spec) },
                 onPaint = { p ->
                     restyle("stroke") {
                         // An outline chosen where there was none comes with a width that shows.
@@ -261,35 +288,6 @@ private fun ConnectorControls(node: SvgShape, onChange: (String, (SvgDocument) -
             onSelect = { a -> onChange("arrows") { d -> d.restyleConnector(key, style, a.value) } },
         )
         PanelHint(stringResource(R.string.svg_connector_hint))
-    }
-}
-
-/** A fill or an outline: none, or a colour. */
-@Composable
-private fun PaintCard(title: String, paint: SvgPaint, onPaint: (SvgPaint) -> Unit) {
-    PanelCard {
-        Text(title, style = MaterialTheme.typography.titleSmallEmphasized)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            FilterChip(
-                selected = paint.kind == PaintKind.NONE,
-                onClick = { onPaint(SvgPaint.NONE) },
-                label = { Text(stringResource(R.string.svg_paint_none)) },
-                leadingIcon = { Icon(Icons.Rounded.FormatColorReset, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                shape = RoundedCornerShape(16.dp),
-            )
-            if (paint.kind == PaintKind.URL) {
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.svg_paint_gradient), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        val primary = MaterialTheme.colorScheme.primary.toArgb().toLong() and 0xFFFFFFFFL
-        val tertiary = MaterialTheme.colorScheme.tertiary.toArgb().toLong() and 0xFFFFFFFFL
-        ColorSwatchRow(
-            colors = listOf(primary, tertiary) + SWATCHES,
-            selected = if (paint.kind == PaintKind.COLOR) paint.argb else 0L,
-            onSelect = { onPaint(SvgPaint.color(it)) },
-            noneSelected = paint.kind != PaintKind.COLOR,
-        )
     }
 }
 
