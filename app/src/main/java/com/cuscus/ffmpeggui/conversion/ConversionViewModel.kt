@@ -631,6 +631,20 @@ class ConversionViewModel(
     }
 
     /**
+     * Lets only clip [clipId] be heard, as one undo step: the whole video keeps its
+     * own sound again (its volume untouched), this clip is unmuted and every other
+     * clip is muted. Each clip keeps its own volume.
+     */
+    fun soloClipSound(clipId: String) = mutate { settings ->
+        var timeline = settings.timeline
+        for (clip in timeline.clips) {
+            val muted = clip.id != clipId
+            if (clip.effects.muted != muted) timeline = timeline.updateEffects(clip.id) { it.copy(muted = muted) }
+        }
+        settings.copy(timeline = timeline, wholeEffects = settings.wholeEffects.copy(muted = false))
+    }
+
+    /**
      * How an effects change joins the undo history: a slider or a crop being dragged
      * makes one step per setting; a switch (a turn, a flip, mute, reverse) is always a
      * step of its own, so two quick taps are undone one at a time.

@@ -9,4 +9,5 @@
 * Picture editor: canvas, corners, layers
 * Live scrubbing, frame steps, mono theme
 * New format picker, settings
+* Audio mixer: whole track and clips linked
 * Fixes: low contrast, toolbar outline

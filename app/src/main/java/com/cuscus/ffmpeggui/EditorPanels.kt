@@ -24,9 +24,12 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -90,6 +93,7 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.BurstMode
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ClosedCaption
@@ -104,6 +108,7 @@ import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Schedule
@@ -126,6 +131,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.runtime.Composable
@@ -152,6 +159,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -188,6 +196,7 @@ import com.cuscus.ffmpeggui.ui.expressive.ValueSlider
 import com.cuscus.ffmpeggui.ui.expressive.springPress
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 /*
@@ -228,10 +237,34 @@ private val CAPTION_COLORS = listOf(
 
 // -- Audio ---------------------------------------------------------------------------
 
+/** One clip of the timeline whose footage has sound, as the audio mixer lists it. */
+internal data class ClipSound(
+    val id: String,
+    /** Its place on the timeline, from 1. */
+    val number: Int,
+    /** Name of the clip's file. */
+    val fileName: String,
+    /** The clip's file, for its thumbnail; null where clips show no picture (an audio file). */
+    val pictureUri: Uri?,
+    /** Where the clip starts in its file: its thumbnail is that frame. */
+    val fileStartMs: Long,
+    /** The file is a picture, not a video. */
+    val still: Boolean,
+    val volume: Float,
+    val muted: Boolean,
+    /** Its volume changes over the clip (keyframes): [volume] is where it starts. */
+    val animated: Boolean,
+)
+
 /**
  * The sound of the whole video (or of one clip): the footage's own sound, and
  * the list of sounds placed on the video, from where one is added or picked
  * for editing on the timeline.
+ *
+ * The whole video's track is the master of every clip's: its switch silences
+ * all of them (each keeps its own settings) and its volume multiplies theirs.
+ * The whole video lists its clips under the master, each with its switch and
+ * the level it is heard at; a clip shows when the master silences it.
  */
 @Composable
 internal fun AudioSectionContent(
@@ -251,11 +284,32 @@ internal fun AudioSectionContent(
     onSelectSound: (String) -> Unit,
     /** False for an audio file, whose own sound is always kept (it is what the file is made of). */
     canRemoveOriginal: Boolean = true,
+    /** In [clipScope]: the whole video leaves out its footage's sound, this clip's included. */
+    masterMuted: Boolean = false,
+    /** In [clipScope]: the whole video's volume, which this clip's is multiplied by. */
+    masterVolume: Float = 1f,
+    /** Out of [clipScope]: every clip with sound, each under the whole video's track. */
+    clipSounds: List<ClipSound> = emptyList(),
+    /** Silences (true) or lets be heard one clip of [clipSounds], by id. */
+    onClipMuted: (String, Boolean) -> Unit = { _, _ -> },
+    /** Lets only clip (id) be heard: the whole video's track back on, every other clip muted. */
+    onSoloClip: (String) -> Unit = {},
+    /** Opens the volume of one clip (id). */
+    onOpenClip: (String) -> Unit = {},
+    /** In [clipScope]: the whole video's track back on, every clip keeping its own settings. */
+    onMasterOn: () -> Unit = {},
+    /** In [clipScope]: lets only this clip be heard (see [onSoloClip]). */
+    onSoloThis: () -> Unit = {},
+    /** The clip of [clipSounds] under the playhead (id), marked in the list. */
+    clipAtPlayhead: String? = null,
 ) {
     var chosenSource by remember { mutableStateOf(AudioSource.ORIGINAL) }
     // Placed sounds belong to the whole video.
     val source = if (clipScope) AudioSource.ORIGINAL else chosenSource
     val motion = MaterialTheme.motionScheme
+    // A clip is heard only while the whole video keeps its own sound too.
+    val silencedByWhole = clipScope && masterMuted
+    val heard = !removeAudio && !silencedByWhole
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         if (clipScope) {
@@ -276,24 +330,42 @@ internal fun AudioSectionContent(
         ) { shown ->
             when (shown) {
                 AudioSource.ORIGINAL -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    AnimatedVisibility(
+                        visible = silencedByWhole,
+                        enter = expandVertically(motion.defaultEffectsSpec()) + fadeIn(motion.defaultEffectsSpec()),
+                        exit = shrinkVertically(motion.fastEffectsSpec()) + fadeOut(motion.fastEffectsSpec()),
+                    ) {
+                        WholeTrackOffNotice(onMasterOn = onMasterOn, onSoloThis = onSoloThis)
+                    }
                     if (canRemoveOriginal) {
                         SwitchCard(
                             icon = Icons.Rounded.Mic,
-                            title = stringResource(R.string.audio_use_original),
-                            subtitle = stringResource(if (removeAudio) R.string.audio_original_excluded else R.string.audio_original_kept),
-                            checked = !removeAudio,
-                            onCheckedChange = { onRemoveAudio(!it) },
+                            title = stringResource(if (clipScope) R.string.audio_use_clip else R.string.audio_use_original),
+                            subtitle = stringResource(
+                                when {
+                                    silencedByWhole -> R.string.audio_clip_silenced_by_whole
+                                    removeAudio && clipScope -> R.string.audio_clip_excluded
+                                    removeAudio -> R.string.audio_original_excluded
+                                    clipScope -> R.string.audio_clip_kept
+                                    else -> R.string.audio_original_kept
+                                },
+                            ),
+                            checked = heard,
+                            onCheckedChange = { on ->
+                                // Turned on under a silent whole video: only this clip is heard.
+                                if (on && silencedByWhole) onSoloThis() else onRemoveAudio(!on)
+                            },
                         )
                     }
                     AnimatedVisibility(
-                        visible = !removeAudio || !canRemoveOriginal,
+                        visible = heard || !canRemoveOriginal,
                         enter = expandVertically(motion.defaultEffectsSpec()) + fadeIn(motion.defaultEffectsSpec()),
                         exit = shrinkVertically(motion.fastEffectsSpec()) + fadeOut(motion.fastEffectsSpec()),
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             PanelCard {
                                 ValueSlider(
-                                    label = stringResource(R.string.audio_volume),
+                                    label = stringResource(if (clipScope) R.string.audio_volume_clip else R.string.audio_volume_whole),
                                     valueText = stringResource(R.string.value_percent, (volumeLevel * 100).toInt()),
                                     value = volumeLevel,
                                     onValueChange = onVolumeLevel,
@@ -302,6 +374,17 @@ internal fun AudioSectionContent(
                                     defaultValue = 1f,
                                     startLabel = stringResource(R.string.value_percent, 0),
                                     endLabel = stringResource(R.string.value_percent, 200),
+                                )
+                            }
+                            // The level actually heard, when the whole video's changes it.
+                            if (clipScope && masterVolume != 1f) {
+                                PanelHint(
+                                    stringResource(
+                                        R.string.audio_clip_effective,
+                                        (volumeLevel * masterVolume * 100).roundToInt(),
+                                        (masterVolume * 100).roundToInt(),
+                                        (volumeLevel * 100).roundToInt(),
+                                    ),
                                 )
                             }
                             // Loudness levelling works on the final mix.
@@ -315,6 +398,18 @@ internal fun AudioSectionContent(
                                 )
                             }
                         }
+                    }
+                    // The clips, each under the whole video's track.
+                    if (!clipScope && clipSounds.isNotEmpty()) {
+                        ClipMixer(
+                            clips = clipSounds,
+                            clipAtPlayhead = clipAtPlayhead,
+                            wholeOff = removeAudio && canRemoveOriginal,
+                            wholeVolume = volumeLevel,
+                            onClipMuted = onClipMuted,
+                            onSoloClip = onSoloClip,
+                            onOpenClip = onOpenClip,
+                        )
                     }
                 }
 
@@ -337,6 +432,287 @@ internal fun AudioSectionContent(
                 }
             }
         }
+    }
+}
+
+/**
+ * Shown on a clip while the whole video leaves out its own sound: the clip is
+ * silent whatever its volume, and one tap brings back the whole track or only
+ * this clip.
+ */
+@Composable
+private fun WholeTrackOffNotice(onMasterOn: () -> Unit, onSoloThis: () -> Unit) {
+    val haptic = LocalHapticFeedback.current
+    Column(
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(MaterialTheme.colorScheme.tertiaryContainer)
+            .padding(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            MorphingContainer(
+                from = MaterialShapes.Cookie6Sided,
+                to = MaterialShapes.Cookie6Sided,
+                morphed = false,
+                color = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(
+                    Icons.Rounded.VolumeOff,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onTertiary,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.audio_whole_off_title),
+                    style = MaterialTheme.typography.titleSmallEmphasized,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+                Text(
+                    stringResource(R.string.audio_whole_off_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+            }
+        }
+        Button(
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                onSoloThis()
+            },
+            shapes = ButtonDefaults.shapes(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Rounded.Movie, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.audio_solo_clip))
+        }
+        FilledTonalButton(
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                onMasterOn()
+            },
+            shapes = ButtonDefaults.shapes(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Rounded.VolumeUp, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.audio_whole_on))
+        }
+    }
+}
+
+/**
+ * The clips under the whole video's track: each one's switch and the level it
+ * is heard at (its own times the whole video's). A tap on a clip opens its
+ * volume. Turned on while the whole track is off, a clip is heard alone.
+ */
+@Composable
+private fun ClipMixer(
+    clips: List<ClipSound>,
+    clipAtPlayhead: String?,
+    wholeOff: Boolean,
+    wholeVolume: Float,
+    onClipMuted: (String, Boolean) -> Unit,
+    onSoloClip: (String) -> Unit,
+    onOpenClip: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+        Text(
+            stringResource(R.string.audio_clips_title),
+            style = MaterialTheme.typography.titleSmallEmphasized,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        PanelHint(
+            stringResource(if (wholeOff) R.string.audio_clips_hint_off else R.string.audio_clips_hint),
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        clips.forEach { clip ->
+            key(clip.id) {
+                ClipSoundRow(
+                    clip = clip,
+                    atPlayhead = clip.id == clipAtPlayhead,
+                    wholeOff = wholeOff,
+                    wholeVolume = wholeVolume,
+                    onToggle = { on -> if (on && wholeOff) onSoloClip(clip.id) else onClipMuted(clip.id, !on) },
+                    onOpen = { onOpenClip(clip.id) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * One clip in the mixer, recognisable at a glance: its first frame with its
+ * number on the timeline, its file and, for the clip under the playhead, a tag.
+ * Then the level it is heard at and its switch.
+ */
+@Composable
+private fun ClipSoundRow(
+    clip: ClipSound,
+    atPlayhead: Boolean,
+    wholeOff: Boolean,
+    wholeVolume: Float,
+    onToggle: (Boolean) -> Unit,
+    onOpen: () -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+    val motion = MaterialTheme.motionScheme
+    val heard = !clip.muted && !wholeOff
+    val background by animateColorAsState(
+        targetValue = if (atPlayhead) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "clipSoundBackground",
+    )
+    val textAlpha by animateFloatAsState(
+        targetValue = if (heard) 1f else 0.7f,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "clipSoundText",
+    )
+    val level = (clip.volume * wholeVolume * 100).roundToInt()
+    val subtitle = when {
+        wholeOff -> stringResource(R.string.audio_clip_row_whole_off)
+        clip.muted -> stringResource(R.string.audio_clip_row_muted)
+        clip.animated -> stringResource(R.string.audio_clip_row_level_animated, level)
+        else -> stringResource(R.string.audio_clip_row_level, level)
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .springPress(interaction, pressedScale = 0.98f)
+            .clip(RoundedCornerShape(24.dp))
+            .background(background),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier
+                .weight(1f)
+                .clickable(interactionSource = interaction, indication = LocalIndication.current, role = Role.Button) {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onOpen()
+                }
+                .padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+        ) {
+            ClipSoundThumbnail(clip = clip, heard = heard)
+            Column(modifier = Modifier.weight(1f).graphicsLayer { alpha = textAlpha }) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = stringResource(R.string.scope_clip, clip.number),
+                        style = MaterialTheme.typography.titleSmallEmphasized,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                    )
+                    AnimatedVisibility(
+                        visible = atPlayhead,
+                        enter = fadeIn(motion.defaultEffectsSpec()) + expandHorizontally(motion.defaultEffectsSpec()),
+                        exit = fadeOut(motion.fastEffectsSpec()) + shrinkHorizontally(motion.fastEffectsSpec()),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.audio_clip_row_at_playhead),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            maxLines = 1,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(MaterialTheme.colorScheme.primary)
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+                Text(
+                    text = clip.fileName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Switch(
+            checked = heard,
+            onCheckedChange = { on ->
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onToggle(on)
+            },
+            thumbContent = if (heard) {
+                { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(SwitchDefaults.IconSize)) }
+            } else {
+                null
+            },
+            modifier = Modifier.padding(end = 14.dp),
+        )
+    }
+}
+
+/**
+ * The clip's first frame with its number on the timeline in a corner, as the
+ * clip strips show it; veiled, with a muted speaker, while the clip is silent.
+ */
+@Composable
+private fun ClipSoundThumbnail(clip: ClipSound, heard: Boolean) {
+    val motion = MaterialTheme.motionScheme
+    val thumbnail = clip.pictureUri?.let { rememberClipThumbnail(it, clip.fileStartMs, clip.still) }
+    val veil by animateFloatAsState(
+        targetValue = if (heard) 0f else 0.55f,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "clipSoundVeil",
+    )
+    Box(
+        modifier = Modifier
+            .size(width = 72.dp, height = 48.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+    ) {
+        if (thumbnail != null) {
+            Image(
+                bitmap = thumbnail,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Icon(
+                if (clip.pictureUri == null) Icons.Rounded.MusicNote else Icons.Rounded.Movie,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.Center).size(22.dp),
+            )
+        }
+        // Silent: the frame is veiled and a muted speaker sits on it.
+        Box(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = veil }.background(Color.Black))
+        AnimatedVisibility(
+            visible = !heard,
+            enter = fadeIn(motion.defaultEffectsSpec()) + scaleIn(motion.defaultSpatialSpec()),
+            exit = fadeOut(motion.fastEffectsSpec()) + scaleOut(motion.fastSpatialSpec()),
+            modifier = Modifier.align(Alignment.Center),
+        ) {
+            Icon(Icons.Rounded.VolumeOff, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+        }
+        Text(
+            text = clip.number.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(4.dp)
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(6.dp))
+                .padding(horizontal = 5.dp),
+        )
     }
 }
 

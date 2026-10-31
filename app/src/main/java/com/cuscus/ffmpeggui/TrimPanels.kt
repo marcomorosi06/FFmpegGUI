@@ -525,7 +525,7 @@ private fun ClipBlocks(
  * Null until ready or when there is no picture.
  */
 @Composable
-private fun rememberClipThumbnail(uri: Uri, positionMs: Long, still: Boolean): ImageBitmap? {
+internal fun rememberClipThumbnail(uri: Uri, positionMs: Long, still: Boolean): ImageBitmap? {
     val context = LocalContext.current
     // Rounded to the second: dragging a trim handle should not decode a frame per pixel.
     val second = positionMs / 1000

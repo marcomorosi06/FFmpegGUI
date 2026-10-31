@@ -685,6 +685,7 @@ class MainActivity : ComponentActivity() {
                                 wholeEffects = s.wholeEffects,
                                 onUpdateEffects = vm::updateEffects,
                                 onTransitionForAll = vm::setTransitionForAll,
+                                onSoloClipSound = vm::soloClipSound,
                                 projectRatio = s.projectRatio,
                                 customCommand = s.customCommand,
                                 commandPreview = commandPreview,

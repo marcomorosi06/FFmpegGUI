@@ -209,6 +209,22 @@ dynamics, space, effects, pitch, stereo), and a selected placed sound has clean
 up, dynamics, space, effects and stereo of its own (`AudioClip.effects`, next
 to its three-band equaliser and voice).
 
+The footage's sound is one hierarchy, and the audio panel (`AudioSectionContent`)
+shows it as such. The whole video's track is the master: its switch
+(`wholeEffects.muted`) drops the footage's sound of every clip, and its volume
+multiplies each clip's (`Effects.volume`), exactly as the export and the preview
+apply them. Under the master the panel lists every playing clip with sound
+(`ClipSound`), recognisable at a glance: its first frame with its number on
+the timeline (`rememberClipThumbnail`, as the clip strips draw it), its file
+name and a tag on the clip under the playhead; then its switch, the level it
+is heard at (its own volume times the master's) and, on a tap, its own volume
+panel, with the clip selected and shown. A clip's panel says when the
+master silences it, with the level actually heard when the master's volume is
+not 100 %. Turning a clip on while the master is off lets only that clip be
+heard (`ConversionViewModel.soloClipSound`, one undo step: the master back on,
+every other clip muted, every volume kept). Turning the master off and on
+again leaves each clip's own settings as they were.
+
 What is done to the final sound is `AudioEffects` (`core/model/AudioEffects.kt`):
 ten octave bands of equaliser, low and high cut, noise gate, compressor,
 lo-fi bits, one modulation (chorus, flanger, phaser, tremolo, vibrato), echo,

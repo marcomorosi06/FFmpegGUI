@@ -99,6 +99,7 @@ import com.cuscus.ffmpeggui.core.timeline.TimeSpan
 import com.cuscus.ffmpeggui.core.preview.SubtitleCue
 import com.cuscus.ffmpeggui.core.model.CropRect
 import com.cuscus.ffmpeggui.core.model.Effects
+import com.cuscus.ffmpeggui.core.model.KeyProperty
 import com.cuscus.ffmpeggui.core.model.Transition
 import com.cuscus.ffmpeggui.core.model.transitionLengths
 import com.cuscus.ffmpeggui.core.model.stackOrder
@@ -183,6 +184,8 @@ fun ConfigScreen(
     onUpdateEffects: (String?, (Effects) -> Effects) -> Unit,
     /** Gives every clip this transition into the next one (null: plain cuts). */
     onTransitionForAll: (Transition?) -> Unit = {},
+    /** Lets only clip (id) be heard: the whole video's track back on, every other clip muted. */
+    onSoloClipSound: (String) -> Unit = {},
     projectRatio: CanvasRatio,
     customCommand: String,
     commandPreview: String,
@@ -400,6 +403,40 @@ fun ConfigScreen(
     val selectedImage = imageOverlays.firstOrNull { it.id == selectedOverlayId }?.let { it.at(keyMsOf(it)) }
     val selectedIndex = selectedClipId?.let { id -> timeline.indexOf(id) } ?: -1
     val selectedClip = timeline.clips.getOrNull(selectedIndex)
+    // The clips that play and have sound of their own, for the audio mixer.
+    val clipSounds = remember(timeline, playingClips, sources, audioMode) {
+        val playing = playingClips.map { it.id }.toSet()
+        timeline.clips.mapIndexedNotNull { index, clip ->
+            val source = sources.firstOrNull { it.id == clip.sourceId } ?: return@mapIndexedNotNull null
+            val hasSound = !source.isStill && source.info?.hasAudio != false
+            if (clip.id !in playing || !hasSound) return@mapIndexedNotNull null
+            ClipSound(
+                id = clip.id,
+                number = index + 1,
+                fileName = source.fileName,
+                // An audio file's clips have no picture to show.
+                pictureUri = if (audioMode) null else source.uri,
+                fileStartMs = clip.startMs,
+                still = source.isStill,
+                volume = clip.effects.volume,
+                muted = clip.effects.muted,
+                animated = clip.effects.keyframes.animates(KeyProperty.VOLUME),
+            )
+        }
+    }
+    // The clip under the playhead, on the clock the tools seek on (see playingStartOf):
+    // only a change of clip recomposes what reads it, not every frame of playback.
+    val clipAtPlayhead by remember(playingClips, playback) {
+        derivedStateOf {
+            val at = playback.playheadMs.longValue
+            var start = 0L
+            playingClips.firstOrNull { clip ->
+                val inside = at >= start && at < start + clip.lengthMs
+                start += clip.lengthMs
+                inside
+            }?.id ?: playingClips.lastOrNull()?.id
+        }
+    }
     val scopeClipId = selectedClip?.id
     val scopeEffects = selectedClip?.let { it.effects.at(keyMsOf(it)) } ?: wholeEffects
     // Changes go through the keyframes: what something with keyframes animates is put in the
@@ -1446,6 +1483,16 @@ fun ConfigScreen(
                         selectSound(id)
                     },
                     canRemoveOriginal = !audioMode || scopeClipId != null,
+                    // An audio file always keeps its own sound: nothing above a clip silences it.
+                    masterMuted = !audioMode && wholeEffects.muted,
+                    masterVolume = wholeEffects.volume,
+                    clipSounds = clipSounds,
+                    onClipMuted = { clipId, muted -> onUpdateEffects(clipId) { it.copy(muted = muted) } },
+                    onSoloClip = onSoloClipSound,
+                    onOpenClip = { clipId -> openTool(EditorTool.VOLUME, clipId) },
+                    onMasterOn = { onUpdateEffects(null) { it.copy(muted = false) } },
+                    onSoloThis = { scopeClipId?.let(onSoloClipSound) },
+                    clipAtPlayhead = clipAtPlayhead,
                 )
                 EditorTool.VOICE_SPLIT -> {
                     // The clip's file, or those of every clip that plays (with sound).

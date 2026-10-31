@@ -24,8 +24,8 @@
 </p>
 
 <p align="center">
-  <a href="http://apps.obtainium.imranr.dev/redirect.html?r=obtainium://app/%7B%22id%22%3A%22com.cuscus.ffmpeggui%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fmarcomorosi06%2FFFmpegGUI%22%2C%22author%22%3A%22marcomorosi06%22%2C%22name%22%3A%22FFmpeg%20GUI%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%7D%22%7D"><img src="docs/badges/obtainium-stable.svg" alt="Get it on Obtainium: stable releases" height="80"></a>
-  <a href="http://apps.obtainium.imranr.dev/redirect.html?r=obtainium://app/%7B%22id%22%3A%22com.cuscus.ffmpeggui%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fmarcomorosi06%2FFFmpegGUI%22%2C%22author%22%3A%22marcomorosi06%22%2C%22name%22%3A%22FFmpeg%20GUI%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%7D%22%7D"><img src="docs/badges/obtainium-prerelease.svg" alt="Get it on Obtainium: also pre-releases" height="80"></a>
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.cuscus.ffmpeggui%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fmarcomorosi06%2FFFmpegGUI%22%2C%22author%22%3A%22marcomorosi06%22%2C%22name%22%3A%22FFmpeg%20GUI%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%7D%22%7D"><img src="docs/badges/obtainium-stable.svg" alt="Get it on Obtainium: stable releases" height="80"></a>
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.cuscus.ffmpeggui%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fmarcomorosi06%2FFFmpegGUI%22%2C%22author%22%3A%22marcomorosi06%22%2C%22name%22%3A%22FFmpeg%20GUI%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%7D%22%7D"><img src="docs/badges/obtainium-prerelease.svg" alt="Get it on Obtainium: also pre-releases" height="80"></a>
 </p>
 
 <p align="center">
