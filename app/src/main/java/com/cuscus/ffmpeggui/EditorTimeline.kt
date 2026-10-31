@@ -77,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cuscus.ffmpeggui.core.model.TextOverlay
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.ui.graphics.StrokeCap
@@ -110,6 +111,8 @@ import com.cuscus.ffmpeggui.core.model.Keyframes
 import com.cuscus.ffmpeggui.core.model.SpeedCurve
 import kotlin.math.ln
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import java.util.Locale
@@ -197,6 +200,8 @@ fun EditorTimeline(
     onSelectClip: (String?) -> Unit,
     /** An edge of the selected clip was dragged: the part of its file it now shows. */
     onTrimClip: (String, Long, Long) -> Unit = { _, _, _ -> },
+    /** A clip held and dragged to another place among the clips: moved by this many places. Null: clips stay put. */
+    onMoveClip: ((String, Int) -> Unit)? = null,
     /**
      * The join after a clip (its id) was tapped: its transition into the next one.
      * Null draws no joins.
@@ -353,6 +358,7 @@ fun EditorTimeline(
     val currentOnAdd by rememberUpdatedState(onAdd)
     val currentSelectedClip by rememberUpdatedState(selectedClipId)
     val currentOnTrimClip by rememberUpdatedState(onTrimClip)
+    val currentOnMoveClip by rememberUpdatedState(onMoveClip)
     val currentSources by rememberUpdatedState(sourcesById)
     val currentOnJunction by rememberUpdatedState(onJunction)
 
@@ -446,6 +452,34 @@ fun EditorTimeline(
 
     // An item being moved or trimmed by hand; drawn where the finger takes it, saved on release.
     var itemDrag by remember { mutableStateOf<ItemDrag?>(null) }
+
+    // A clip held and dragged among the others; it follows the finger, the others make room.
+    var clipMove by remember { mutableStateOf<ClipMove?>(null) }
+
+    /**
+     * Where the clip of [state] would go if let go now (its new place among the
+     * clips), and where every clip is drawn meanwhile: the held one under the
+     * finger, the others one after another with a gap where it would land.
+     */
+    fun moveLayout(state: ClipMove): Pair<Int, Map<String, Long>> {
+        val others = currentTimeline.clips.filter { it.id != state.clipId }
+        val heldCentre = state.startMs + state.lengthMs / 2.0 + state.dxPx.floatValue / pxPerMs
+        var target = 0
+        var at = 0L
+        for (clip in others) {
+            if (at + clip.lengthMs / 2.0 < heldCentre) target++
+            at += clip.lengthMs
+        }
+        val starts = HashMap<String, Long>(others.size + 1)
+        var next = 0L
+        others.forEachIndexed { index, clip ->
+            if (index == target) next += state.lengthMs
+            starts[clip.id] = next
+            next += clip.lengthMs
+        }
+        starts[state.clipId] = Math.round(state.startMs + state.dxPx.floatValue / pxPerMs.toDouble())
+        return target to starts
+    }
 
     /** Where [ms] of the timeline is drawn, for the current position and zoom. */
     fun xOf(ms: Double, width: Float): Float = width / 2f + ((ms - position()) * pxPerMs).toFloat()
@@ -559,6 +593,9 @@ fun EditorTimeline(
     val trimBadgeStyle = remember(onPrimary) { TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold, color = onPrimary) }
     val clipShape = remember { Path() }
     val junctionGlyph = remember { Path() }
+    // Kept from frame to frame: the timeline is drawn again on every frame while it plays.
+    val bars = remember { BarBatch() }
+    val bandShade = remember { BandShade() }
 
     // Read in composition, so that the timeline is drawn again when a waveform arrives.
     val waveforms = sounds.associate { it.uri to viewState.waveform(it.uri) }
@@ -828,6 +865,61 @@ fun EditorTimeline(
                             else -> currentOnSelect(null)
                         }
                     }
+                }
+                // A clip held, then dragged: it goes elsewhere among the clips, as a placed sound
+                // goes elsewhere on the video. Seen first of all, so that once the hold is
+                // recognised the scroll, the trim and the tap leave the gesture alone.
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        if (pxPerMs <= 0f || currentOnMoveClip == null || currentTimeline.clips.size < 2) return@awaitEachGesture
+                        if (down.position.y < trackTop || down.position.y > trackTop + trackHeight) return@awaitEachGesture
+                        val timeMs = position() + (down.position.x - size.width / 2f) / pxPerMs
+                        val index = clipAt(currentTimeline, currentStarts, timeMs.toLong()) ?: return@awaitEachGesture
+                        val clip = currentTimeline.clips[index]
+                        val start = currentStarts.getOrNull(index) ?: return@awaitEachGesture
+                        // The selected clip's edges are its trim handles.
+                        if (clip.id == currentSelectedClip) {
+                            val left = xOf(start.toDouble(), size.width.toFloat())
+                            val right = xOf((start + clip.lengthMs).toDouble(), size.width.toFloat())
+                            if (abs(down.position.x - left) <= handleGrabPx || abs(down.position.x - right) <= handleGrabPx) return@awaitEachGesture
+                        }
+                        val held = awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
+                        held.consume()
+                        holdView()
+                        currentOnSelect(clip.id)
+                        val state = ClipMove(clip.id, index, start, clip.lengthMs)
+                        clipMove = state
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        var lastTarget = index
+                        var fingerX = held.position.x
+                        fun followTarget() {
+                            val target = moveLayout(state).first
+                            if (target != lastTarget) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            lastTarget = target
+                        }
+                        // Near a side the timeline moves on by itself, the clip with it.
+                        val autoScroll = edgeScroll(fingerX = { fingerX }, maxMs = { currentTotal.toFloat() }) { shift ->
+                            state.dxPx.floatValue += shift
+                            followTarget()
+                        }
+                        val finished = horizontalDrag(held.id) { change ->
+                            state.dxPx.floatValue += change.positionChange().x
+                            fingerX = change.position.x
+                            change.consume()
+                            followTarget()
+                        }
+                        autoScroll.cancel()
+                        // Let go without moving: the up is the hold's, not a tap.
+                        currentEvent.changes.forEach { it.consume() }
+                        val target = moveLayout(state).first
+                        clipMove = null
+                        releaseView(drag.positionMs.floatValue)
+                        if (finished && target != index) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            currentOnMoveClip?.invoke(clip.id, target - index)
+                        }
+                    }
                 },
         ) {
             if (pxPerMs <= 0f) return@Canvas
@@ -849,8 +941,14 @@ fun EditorTimeline(
             val trimmedNow = trimming?.let { trimmed(it) }
             val pushAfter = if (trimming?.edge == ItemEdge.END && trimmedNow != null) trimmedNow.second - trimming.endMs else 0L
             val pushBefore = if (trimming?.edge == ItemEdge.START && trimmedNow != null) trimmedNow.first - trimming.startMs else 0L
-            clips.forEachIndexed { index, original ->
-                val start = currentStarts.getOrNull(index) ?: return@forEachIndexed
+            // A clip being moved is drawn last, over the others, which make room for it.
+            val moving = clipMove
+            val moveStarts = moving?.let { moveLayout(it).second }
+            val drawOrder = if (moving == null) clips.indices.toList() else clips.indices.sortedBy { clips[it].id == moving.clipId }
+            drawOrder.forEach { index ->
+                val original = clips[index]
+                val held = moving != null && original.id == moving.clipId
+                val start = (if (moveStarts != null) moveStarts[original.id] else currentStarts.getOrNull(index)) ?: return@forEach
                 // A clip whose edge is being dragged is drawn as it will be: its kept start
                 // where its start was moved to, or its end where its end was moved to.
                 var clip = original
@@ -867,20 +965,25 @@ fun EditorTimeline(
                 }
                 val left = x((start + shift).toFloat())
                 val right = x((start + shift + clip.lengthMs).toFloat()).coerceAtLeast(left + MIN_CLIP_WIDTH_DP.dp.toPx())
-                if (right < 0f || left > size.width) return@forEachIndexed
-                val rect = RoundRect(left + gap / 2, trackTop, right - gap / 2, trackTop + trackHeight, corner)
+                if (right < 0f || left > size.width) return@forEach
+                // The clip held is lifted a little off the track, on its shadow.
+                val lift = if (held) 3.dp.toPx() else 0f
+                val rect = RoundRect(left + gap / 2, trackTop - lift, right - gap / 2, trackTop + trackHeight - lift, corner)
+                if (held) drawRoundRect(Color.Black.copy(alpha = 0.35f), Offset(rect.left, rect.top + lift * 2f), Size(rect.width, rect.height), corner)
                 val source = sourcesById[clip.sourceId]
                 clipShape.reset()
                 clipShape.addRoundRect(rect)
                 clipPath(clipShape) {
                     drawRect(surfaceColor, topLeft = Offset(rect.left, rect.top), size = Size(rect.width, rect.height))
                     if (source != null && soundClips) {
-                        drawClipWaveform(viewState.waveform(source.uri), clip, rect.left, rect.right, trackTop, trackHeight, pxPerMs, primary)
+                        drawClipWaveform(bars, viewState.waveform(source.uri), clip, rect.left, rect.right, trackTop, trackHeight, pxPerMs, primary)
                     } else if (source != null) {
                         drawFilmstrip(cache, source.uri, source.isStill, clip, rect.left, rect.right, trackTop, trackHeight, pxPerMs)
                         // Its own sound along the bottom (a picture, or a file without sound, has none).
                         if (clipWaveforms && !source.isStill && source.info?.hasAudio != false) {
                             drawClipSoundBand(
+                                bars = bars,
+                                shade = bandShade,
                                 waveform = viewState.waveform(source.uri),
                                 clip = clip,
                                 left = rect.left,
@@ -914,7 +1017,9 @@ fun EditorTimeline(
                     )
                 }
                 val selected = clip.id == selectedClipId
-                if (selected) {
+                if (held) {
+                    drawRoundRect(primary, Offset(rect.left, rect.top), Size(rect.width, rect.height), corner, style = Stroke(width = 3.dp.toPx()))
+                } else if (selected) {
                     // The selected clip: a frame, and its edges as tabs to drag (an open-ended
                     // clip, still waiting for its length, has only the frame).
                     drawTrimHandles(
@@ -961,7 +1066,7 @@ fun EditorTimeline(
 
             // The joins between clips, each a button: a line for a plain cut, a bow tie for a
             // transition (filled in the accent).
-            if (currentOnJunction != null && trimming == null && clips.size > 1) {
+            if (currentOnJunction != null && trimming == null && moving == null && clips.size > 1) {
                 val radius = JUNCTION_RADIUS.toPx()
                 val cy = trackTop + trackHeight / 2f
                 for (index in 0 until clips.size - 1) {
@@ -995,7 +1100,7 @@ fun EditorTimeline(
             // The parts the whole-video trim cuts away: veiled, inside the clips' own rounded
             // shapes (the empty space around the clips stays as it is).
             val keptEndMs = (trimEndMs ?: currentTotal).coerceAtMost(currentTotal)
-            if (currentTotal > 0 && (currentTrimStart > 0L || keptEndMs < currentTotal)) {
+            if (moving == null && currentTotal > 0 && (currentTrimStart > 0L || keptEndMs < currentTotal)) {
                 val keptFrom = x(currentTrimStart.toFloat())
                 val keptTo = x(keptEndMs.toFloat())
                 clips.forEachIndexed { index, clip ->
@@ -1060,6 +1165,7 @@ fun EditorTimeline(
                     val sound = if (item.kind == LaneKind.SOUND) soundsById[item.id] else null
                     if (sound != null && span is SoundSpan) {
                         drawSound(
+                            bars = bars,
                             sound = sound,
                             span = span,
                             clock = currentClock,
@@ -1387,6 +1493,7 @@ private fun DrawScope.drawTrimHandles(
  * white outline and a grip at each end, the handles that trim it.
  */
 private fun DrawScope.drawSound(
+    bars: BarBatch,
     sound: AudioClip,
     span: SoundSpan,
     clock: OutputClock,
@@ -1419,19 +1526,22 @@ private fun DrawScope.drawSound(
         val step = 3.dp.toPx()
         val barWidth = 1.5.dp.toPx()
         val middle = top + height / 2f
-        var px = max(left, 0f) + step / 2f
+        val gain = if (sound.muted) 0.15f else sound.volume.coerceAtMost(1f)
+        // The bars stay on the block as it scrolls (one every step from its left end),
+        // instead of being laid out again from the screen's edge at every frame.
+        var px = left + firstBar(left, step) * step + step / 2f
         val end = min(right, size.width)
         while (px < end) {
             val a = fileMsAt(px - step / 2f)
             val b = fileMsAt(px + step / 2f)
-            val gain = if (sound.muted) 0.15f else sound.volume.coerceAtMost(1f)
             // Across the seam of a repetition the two ends are measured on their own.
             val peak = if (abs(b - a) > span.rangeMs / 2) waveform.peakBetween(a, a) else waveform.peakBetween(min(a, b), max(a, b))
             val level = kotlin.math.sqrt(peak * gain)
             val barHeight = (height - 6.dp.toPx()) * level.coerceIn(0.04f, 1f)
-            drawLine(wave, Offset(px, middle - barHeight / 2f), Offset(px, middle + barHeight / 2f), strokeWidth = barWidth)
+            bars.add(px, middle - barHeight / 2f, middle + barHeight / 2f)
             px += step
         }
+        bars.draw(this, wave, barWidth, rounded = false)
     }
 
     // Fades: the corners they soften, as ramps of the block's own tone.
@@ -1484,6 +1594,11 @@ private class ClipDrag(
     /** Where the edge snaps, on the timeline (milliseconds). */
     val targets: List<Double>,
 ) {
+    val dxPx = mutableFloatStateOf(0f)
+}
+
+/** A clip held and dragged among the others (see moveLayout): where it was, and how far the finger took it. */
+private class ClipMove(val clipId: String, val from: Int, val startMs: Long, val lengthMs: Long) {
     val dxPx = mutableFloatStateOf(0f)
 }
 
@@ -1704,6 +1819,7 @@ private fun DrawScope.drawFilmstrip(
  * the track, one bar every few pixels; flat bars while the file is being read.
  */
 private fun DrawScope.drawClipWaveform(
+    bars: BarBatch,
     waveform: Waveform?,
     clip: Clip,
     left: Float,
@@ -1717,16 +1833,18 @@ private fun DrawScope.drawClipWaveform(
     val bar = 2.dp.toPx()
     val middle = top + height / 2f
     val tallest = height / 2f - 4.dp.toPx()
-    var x = max(left, 0f)
+    // Bars anchored to the clip (see drawSound), all drawn in one go.
+    var x = left + firstBar(left, step) * step
     val end = min(right, size.width)
     while (x < end) {
         val fromMs = clip.startMs + ((x - left) / pxPerMs).toLong()
         val toMs = clip.startMs + ((x + step - left) / pxPerMs).toLong()
         val peak = waveform?.peakBetween(fromMs, toMs) ?: 0.05f
         val half = (peak.coerceIn(0f, 1f) * tallest).coerceAtLeast(bar / 2f)
-        drawRoundRect(color.copy(alpha = 0.85f), Offset(x, middle - half), Size(bar, half * 2f), CornerRadius(bar / 2f))
+        bars.add(x + bar / 2f, middle - half, middle + half)
         x += step
     }
+    bars.draw(this, color.copy(alpha = 0.85f), bar, rounded = true)
 }
 
 /**
@@ -1738,6 +1856,8 @@ private fun DrawScope.drawClipWaveform(
  * strength. Flat bars while the file is still being read.
  */
 private fun DrawScope.drawClipSoundBand(
+    bars: BarBatch,
+    shade: BandShade,
     waveform: Waveform?,
     clip: Clip,
     left: Float,
@@ -1754,13 +1874,7 @@ private fun DrawScope.drawClipSoundBand(
     val to = min(right, size.width)
     if (to <= from) return
     drawRect(
-        brush = Brush.verticalGradient(
-            0f to Color.Transparent,
-            0.35f to Color.Black.copy(alpha = 0.45f),
-            1f to Color.Black.copy(alpha = 0.7f),
-            startY = top - height * 0.35f,
-            endY = bottom,
-        ),
+        brush = shade.between(top - height * 0.35f, bottom),
         topLeft = Offset(from, top - height * 0.35f),
         size = Size(to - from, height * 1.35f),
     )
@@ -1773,25 +1887,106 @@ private fun DrawScope.drawClipSoundBand(
         bright -> 1f
         else -> 0.85f
     }
-    val tint = color.copy(alpha = alpha)
-    var x = from
+    // Bars anchored to the clip (see drawSound), all drawn in one go.
+    var x = left + firstBar(left, step) * step
     while (x < to) {
         val fromMs = clip.startMs + ((x - left) / pxPerMs).toLong()
         val toMs = clip.startMs + ((x + step - left) / pxPerMs).toLong()
         val peak = waveform?.peakBetween(fromMs, toMs) ?: 0.04f
         val tall = (peak.coerceIn(0f, 1f) * tallest).coerceAtLeast(bar)
-        drawRoundRect(tint, Offset(x, floor - tall), Size(bar, tall), CornerRadius(bar / 2f))
+        bars.add(x + bar / 2f, floor - tall, floor)
         x += step
+    }
+    bars.draw(this, color.copy(alpha = alpha), bar, rounded = true)
+}
+
+/** The first bar, one every [step] from [left], that is not left of the screen. */
+private fun firstBar(left: Float, step: Float): Int = if (left >= 0f) 0 else floor(-left / step).toInt()
+
+/**
+ * Vertical bars collected and drawn as one batch of lines: a waveform is a few
+ * hundred bars, drawn again on every frame while the timeline moves, and one
+ * call for all of them costs far less than one rounded rectangle each.
+ */
+private class BarBatch {
+    private var points = FloatArray(512)
+    private var count = 0
+    private val paint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        style = android.graphics.Paint.Style.STROKE
+    }
+
+    /** A bar centred on [x], from [top] to [bottom]. */
+    fun add(x: Float, top: Float, bottom: Float) {
+        if (count + 4 > points.size) points = points.copyOf(points.size * 2)
+        points[count++] = x
+        points[count++] = top
+        points[count++] = x
+        points[count++] = bottom
+    }
+
+    /** Draws the bars added since the last time, [width] wide; [rounded] ends stay inside top and bottom. */
+    fun draw(scope: DrawScope, color: Color, width: Float, rounded: Boolean) {
+        if (count == 0) return
+        if (rounded) {
+            // A round cap adds half the width at each end: the line is shortened by as much.
+            val inset = width / 2f
+            var i = 0
+            while (i < count) {
+                val top = points[i + 1] + inset
+                val bottom = points[i + 3] - inset
+                if (bottom < top) {
+                    val middle = (points[i + 1] + points[i + 3]) / 2f
+                    points[i + 1] = middle
+                    points[i + 3] = middle
+                } else {
+                    points[i + 1] = top
+                    points[i + 3] = bottom
+                }
+                i += 4
+            }
+        }
+        paint.color = color.toArgb()
+        paint.strokeWidth = width
+        paint.strokeCap = if (rounded) android.graphics.Paint.Cap.ROUND else android.graphics.Paint.Cap.BUTT
+        scope.drawContext.canvas.nativeCanvas.drawLines(points, 0, count, paint)
+        count = 0
     }
 }
 
-/** "0:05", "1:30"; "0:05.5" [withTenths]. */
+/** The dark band under a clip's sound, made again only when the track moves or changes size. */
+private class BandShade {
+    private var from = Float.NaN
+    private var to = Float.NaN
+    private var brush: Brush? = null
+
+    fun between(startY: Float, endY: Float): Brush {
+        val kept = brush
+        if (kept != null && startY == from && endY == to) return kept
+        from = startY
+        to = endY
+        return Brush.verticalGradient(
+            0f to Color.Transparent,
+            0.35f to Color.Black.copy(alpha = 0.45f),
+            1f to Color.Black.copy(alpha = 0.7f),
+            startY = startY,
+            endY = endY,
+        ).also { brush = it }
+    }
+}
+
+/**
+ * "0:05", "1:30"; "0:05.5" [withTenths]. Built by hand: the ruler writes its
+ * times on every frame, and String.format costs far more than a few appends.
+ */
 private fun formatRulerTime(ms: Long, withTenths: Boolean): String {
     val seconds = ms / 1000
-    return if (withTenths) {
-        String.format(Locale.US, "%d:%02d.%d", seconds / 60, seconds % 60, (ms % 1000) / 100)
-    } else {
-        String.format(Locale.US, "%d:%02d", seconds / 60, seconds % 60)
+    val rest = seconds % 60
+    return buildString(10) {
+        append(seconds / 60).append(':')
+        if (rest < 10) append('0')
+        append(rest)
+        if (withTenths) append('.').append((ms % 1000) / 100)
     }
 }
 

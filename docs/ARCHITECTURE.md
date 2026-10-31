@@ -81,6 +81,15 @@ The footage is a sequence of clips, as in a video editor
 - opening a file creates one clip over all of it; `splitAt`, `remove`,
   `duplicate`, `move`, `trim`, `append` (another file) and `insertAt` reshape
   the sequence;
+- "+" picks one file or several at once (`OpenMultipleDocuments`;
+  `ConversionViewModel.addClips`): they are inspected a few at a time
+  (`probeAll`), pictures are made into stills one after the other, and the
+  clips are appended in the order picked, as one undo step. Sounds
+  (`addAudioClips`) and pictures or videos laid over the video (`addOverlays`)
+  are picked the same way and go one after another from the playhead; in the
+  picture editor the pictures all show at once, each a little lower and to the
+  right of the one before (`STAGGER`). The file the project is opened with is
+  still picked alone;
 - a clip can show a *still*: a picture added with "+" or opened as the project,
   or a freeze frame (the "Freeze" tool cuts the clip under the playhead and puts
   that frame in between with `insertAt`). `StillMaker` writes every still as an
@@ -106,6 +115,12 @@ The footage is a sequence of clips, as in a video editor
   view holds still, and when the finger rests near a side the timeline moves
   on by itself, frame by frame, faster the nearer it is (`edgeScroll`), the
   edge going with it; on release the playhead is brought to the view;
+- a clip held a moment (any clip; on the selected one, not on its handles)
+  is picked up and follows the finger, lifted on its shadow, while the others
+  make room where it would land (`ClipMove`, `moveLayout` in
+  `EditorTimeline.kt`); a tick marks each new place, the timeline moves on by
+  itself near a side, and letting go moves it there (`Timeline.move`, one
+  undo step), as a placed sound is moved by dragging it;
 - "trim the whole video" does not touch the clips: `ConversionSettings` keeps
   `trimStartMs` / `trimEndMs` on the timeline and `Timeline.window()` returns the
   clips that really play (`ConversionSettings.playingClips`). The preview and
@@ -742,6 +757,26 @@ scrubbing mode (`ExoPlayer.setScrubbingModeEnabled`, Media3 1.8 and later),
 which shows each frame as soon as it can, and leaves it once no frame has been
 asked for 180 ms, showing the last one exactly. A tap, a frame step or a seek
 from the media notification stays a plain exact seek.
+
+From one clip to the next the main player goes on along its playlist without
+a seek. A clip rarely starts on a key frame, so its first frames have to be
+decoded from the key frame before it; on one decoder that held the picture for
+a moment at every cut. The main player is built with Media3's video renderer
+prewarming (`processingPlayer(..., prewarm = true)`,
+`DefaultRenderersFactory.experimentalSetEnableMediaCodecVideoRendererPrewarming`):
+a second decoder gets the next item ready while the current one plays, and the
+two take turns. The other players (placed sounds, the clip coming in through a
+transition) play one item and do without.
+
+The editor's timeline is one `Canvas` drawn again on every frame while the
+preview plays (the playhead stays in the middle and everything moves under
+it), so its drawing keeps the work per frame small: the bars of every waveform
+(the clips' own sound, an audio file's clips, the placed sounds) are collected
+in a `BarBatch` and drawn with a single `drawLines` call instead of a rounded
+rectangle each, and stay anchored to their clip as it scrolls (one every few
+pixels from the clip's left end, not from the screen's edge, so they no longer
+shimmer); the dark band under a clip's sound reuses one gradient
+(`BandShade`); the ruler writes its times without `String.format`.
 
 What a live preview cannot be: reversed *audio* is not audible (muted), loudness
 normalisation is a constant gain rather than loudnorm's dynamic processing, and

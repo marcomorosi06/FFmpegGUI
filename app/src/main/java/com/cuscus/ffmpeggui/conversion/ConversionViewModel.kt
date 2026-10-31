@@ -26,6 +26,7 @@ import com.cuscus.ffmpeggui.voice.VoiceSeparator
 import com.cuscus.ffmpeggui.LayerMove
 import com.cuscus.ffmpeggui.FfmpegGuiApp
 import com.cuscus.ffmpeggui.ImageOverlay
+import com.cuscus.ffmpeggui.PickedFile
 import com.cuscus.ffmpeggui.ShapeLayer
 import com.cuscus.ffmpeggui.core.command.CommandBuilder
 import com.cuscus.ffmpeggui.core.command.MediaPaths
@@ -114,6 +115,9 @@ import com.cuscus.ffmpeggui.work.WorkReports
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -123,6 +127,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
@@ -780,22 +786,40 @@ class ConversionViewModel(
     // Placed sounds: music, voice-overs, effects, freely on the video's clock
 
     /**
-     * Places the sound of [uri] (an audio file, or the sound of a video) at
-     * [atOutputMs] of the exported video, whole. The file is inspected first;
-     * one without sound or without a known length is not added. [onAdded] gets
-     * the new sound's id, so that it can be selected.
+     * Places the sounds of [files] (audio files, or the sound of videos), each
+     * whole, one after another from [atOutputMs] of the exported video, in the
+     * order given, as one step of the history. The files are inspected first
+     * (at the same time); one without sound or without a known length is not
+     * added. [onAdded] gets the first new sound's id, so that it can be selected.
      */
-    fun addAudioClip(uri: Uri, fileName: String, atOutputMs: Long, onAdded: (String) -> Unit = {}) {
+    fun addAudioClips(files: List<PickedFile>, atOutputMs: Long, onAdded: (String) -> Unit = {}) {
+        if (files.isEmpty()) return
         val project = _inputUri.value
         viewModelScope.launch {
-            val name = withContext(ioDispatcher) { mediaProbe.displayName(uri.toString()) } ?: fileName
-            val info = withContext(ioDispatcher) { mediaProbe.describe(uri.toString()) }
+            val probed = probeAll(files)
             if (_inputUri.value != project) return@launch
-            if (info == null || !info.hasAudio || info.durationMs <= 0L) return@launch
-            val clip = AudioClip(uri = uri, name = name, span = SoundSpan.wholeFile(atOutputMs, info.durationMs))
-            mutate { it.copy(audioClips = it.audioClips + clip) }
-            onAdded(clip.id)
+            var at = atOutputMs
+            val clips = probed.mapNotNull { (file, name, info) ->
+                if (info == null || !info.hasAudio || info.durationMs <= 0L) return@mapNotNull null
+                AudioClip(uri = file.uri, name = name, span = SoundSpan.wholeFile(at, info.durationMs)).also { at = it.span.endMs }
+            }
+            if (clips.isEmpty()) return@launch
+            mutate { it.copy(audioClips = it.audioClips + clips) }
+            onAdded(clips.first().id)
         }
+    }
+
+    /** The name and description of every file of [files], a few read at the same time, in their order. */
+    private suspend fun probeAll(files: List<PickedFile>): List<Triple<PickedFile, String, MediaInfo?>> = coroutineScope {
+        val turns = Semaphore(PROBES_AT_ONCE)
+        files.map { file ->
+            async(ioDispatcher) {
+                turns.withPermit {
+                    val uri = file.uri.toString()
+                    Triple(file, mediaProbe.displayName(uri) ?: file.fallbackName, mediaProbe.describe(uri))
+                }
+            }
+        }.awaitAll()
     }
 
     /**
@@ -898,42 +922,46 @@ class ConversionViewModel(
     // Timeline: the footage as a sequence of clips
 
     /**
-     * Appends a whole file as a new clip. A video joins as it is; a picture
-     * becomes a still clip of [STILL_LENGTH_MS]. The file is inspected first (in
-     * the background), so the clip arrives already knowing its length and size.
+     * Appends every file of [files] as a new clip, whole, in the order given, as
+     * one step of the history. A video joins as it is; a picture becomes a still
+     * clip of [STILL_LENGTH_MS]. The files are inspected first (in the
+     * background, at the same time), so the clips arrive already knowing their
+     * length and size.
      */
-    fun addClip(uri: Uri, fileName: String) {
+    fun addClips(files: List<PickedFile>) {
+        if (files.isEmpty()) return
         val project = _inputUri.value
         viewModelScope.launch {
-            val name = withContext(ioDispatcher) { mediaProbe.displayName(uri.toString()) } ?: fileName
-            val info = withContext(ioDispatcher) { mediaProbe.describe(uri.toString()) }
-            if (info?.isStill == true) {
-                val still = withContext(ioDispatcher) { importStill(uri) }
-                if (_inputUri.value != project) {
-                    still?.let { scratch.discard(it.first.toString()) }
-                    return@launch
+            val probed = probeAll(files)
+            // Pictures are made into stills one at a time: each is decoded whole first.
+            val added = probed.mapNotNull { (file, name, info) ->
+                if (info?.isStill == true) {
+                    // A picture that cannot be read is not added at all.
+                    val (stillUri, stillInfo) = withContext(ioDispatcher) { importStill(file.uri) } ?: return@mapNotNull null
+                    EditorSource(newId(), stillUri, name, stillInfo) to STILL_LENGTH_MS
+                } else {
+                    // A file that could not be inspected still joins, open-ended; it counts as
+                    // unreadable, like a main file whose probe failed.
+                    EditorSource(newId(), file.uri, name, info) to info?.durationMs?.takeIf { it > 0 }
                 }
-                // A picture that cannot be read is not added at all.
-                val (stillUri, stillInfo) = still ?: return@launch
-                appendSource(EditorSource(newId(), stillUri, name, stillInfo), endMs = STILL_LENGTH_MS)
-            } else {
-                // Ignore the answer if another project was opened in the meantime.
-                if (_inputUri.value != project) return@launch
-                // A file that could not be inspected still joins, open-ended; it counts as
-                // unreadable, like a main file whose probe failed.
-                appendSource(EditorSource(newId(), uri, name, info), endMs = info?.durationMs?.takeIf { it > 0 })
             }
+            // Ignore the answer if another project was opened in the meantime.
+            if (_inputUri.value != project) {
+                added.filter { it.first.isStill }.forEach { scratch.discard(it.first.uri.toString()) }
+                return@launch
+            }
+            appendSources(added)
         }
     }
 
-    /** Adds [source] and a clip showing it from its start to [endMs] (null = to its end). */
-    private fun appendSource(source: EditorSource, endMs: Long?) {
-        knownSourceInfo[source.id] = source.info
-        mutate {
-            it.copy(
-                sources = it.sources + source,
-                timeline = it.timeline.append(Clip(id = newId(), sourceId = source.id, endMs = endMs)),
-            )
+    /** Adds each source and a clip showing it from its start to its end (null = to the end of the file). */
+    private fun appendSources(added: List<Pair<EditorSource, Long?>>) {
+        if (added.isEmpty()) return
+        added.forEach { (source, _) -> knownSourceInfo[source.id] = source.info }
+        mutate { settings ->
+            var timeline = settings.timeline
+            added.forEach { (source, endMs) -> timeline = timeline.append(Clip(id = newId(), sourceId = source.id, endMs = endMs)) }
+            settings.copy(sources = settings.sources + added.map { it.first }, timeline = timeline)
         }
     }
 
@@ -1059,33 +1087,50 @@ class ConversionViewModel(
     }
 
     /**
-     * Lays the picture or video at [uri] over the exported video from
-     * [atOutputMs], a third of the frame wide and centred: a picture for
-     * [TimeSpan.DEFAULT_LENGTH_MS], a video for its whole length (with its sound).
-     * The file is inspected first; [onAdded] gets the new overlay's id,
-     * [onFailed] is called when it cannot be read.
+     * Lays the pictures and videos of [files] over the exported video, a third
+     * of the frame wide and centred, in the order given, each above the one
+     * before, as one step of the history: a picture for
+     * [TimeSpan.DEFAULT_LENGTH_MS], a video for its whole length (with its
+     * sound). With [oneAfterAnother] (on a video) each starts where the one
+     * before ends, from [atOutputMs]; otherwise (on a picture) they all show at
+     * once, each a little lower and to the right of the one before, so that none
+     * hides another. The files are inspected first; [onAdded] gets the first new
+     * overlay's id, [onFailed] runs once if a file could not be read.
      */
-    fun addOverlay(uri: Uri, fileName: String, atOutputMs: Long, onAdded: (String) -> Unit = {}, onFailed: () -> Unit = {}) {
+    fun addOverlays(
+        files: List<PickedFile>,
+        atOutputMs: Long,
+        oneAfterAnother: Boolean,
+        onAdded: (String) -> Unit = {},
+        onFailed: () -> Unit = {},
+    ) {
+        if (files.isEmpty()) return
         val project = _inputUri.value
         viewModelScope.launch {
-            val name = withContext(ioDispatcher) { mediaProbe.displayName(uri.toString()) } ?: fileName
-            val info = withContext(ioDispatcher) { mediaProbe.describe(uri.toString()) }
+            val probed = probeAll(files)
             if (_inputUri.value != project) return@launch
-            if (info == null) {
-                onFailed()
-                return@launch
+            var at = atOutputMs
+            val overlays = probed.mapIndexedNotNull { index, (file, name, info) ->
+                if (info == null) return@mapIndexedNotNull null
+                val nudge = if (oneAfterAnother) 0f else (index % STAGGER_STEPS) * STAGGER
+                val base = ImageOverlay(uri = file.uri, fileName = name, x = 0.5f + nudge, y = 0.5f + nudge, scaleW = NEW_PICTURE_WIDTH)
+                val overlay = if (info.isVideo && !info.isStill && info.durationMs > 0L) {
+                    base.copy(aspect = info.frameAspect(), hasAudio = info.hasAudio)
+                        .withVideo(SoundSpan.wholeFile(at, info.durationMs))
+                } else {
+                    // Its shape places it while it turns (see the keyframes).
+                    base.copy(aspect = info.frameAspect()).withSpan(TimeSpan(0L, TimeSpan.DEFAULT_LENGTH_MS).movedTo(at))
+                }
+                if (oneAfterAnother) at = overlay.span.endMs
+                overlay
             }
-            val base = ImageOverlay(uri = uri, fileName = name, x = 0.5f, y = 0.5f, scaleW = NEW_PICTURE_WIDTH)
-            val overlay = if (info.isVideo && !info.isStill && info.durationMs > 0L) {
-                base.copy(aspect = info.frameAspect(), hasAudio = info.hasAudio)
-                    .withVideo(SoundSpan.wholeFile(atOutputMs, info.durationMs))
-            } else {
-                // Its shape places it while it turns (see the keyframes).
-                base.copy(aspect = info.frameAspect()).withSpan(TimeSpan(0L, TimeSpan.DEFAULT_LENGTH_MS).movedTo(atOutputMs))
+            if (overlays.size < files.size) onFailed()
+            if (overlays.isEmpty()) return@launch
+            // On top of everything already there, each above the one before.
+            mutate { settings ->
+                overlays.fold(settings) { s, overlay -> s.copy(imageOverlays = s.imageOverlays + overlay.copy(layer = s.topLayer(null))) }
             }
-            // On top of everything already there.
-            mutate { it.copy(imageOverlays = it.imageOverlays + overlay.copy(layer = it.topLayer(null))) }
-            onAdded(overlay.id)
+            onAdded(overlays.first().id)
         }
     }
 
@@ -2865,6 +2910,13 @@ class ConversionViewModel(
 
         /** Width of a new picture laid over the video, as a fraction of the frame. */
         private const val NEW_PICTURE_WIDTH = 0.33f
+
+        /** Files picked together that are inspected at the same time. */
+        private const val PROBES_AT_ONCE = 4
+
+        /** How far each picture added at once lies from the one before (a share of the free room), and after how many it starts over. */
+        private const val STAGGER = 0.08f
+        private const val STAGGER_STEPS = 6
 
         /** How long a new still (a picture or a freeze frame) is shown; the clip panel changes it. */
         const val STILL_LENGTH_MS = 3_000L

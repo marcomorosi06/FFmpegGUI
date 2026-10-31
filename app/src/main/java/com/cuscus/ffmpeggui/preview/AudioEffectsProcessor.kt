@@ -161,9 +161,17 @@ internal class StemMixProcessor(private val levels: () -> Pair<Float, Float>) : 
     }
 }
 
-/** A player whose sound goes through [processors], in order, on its way to the speaker (as 16-bit samples). */
+/**
+ * A player whose sound goes through [processors], in order, on its way to the
+ * speaker (as 16-bit samples).
+ *
+ * With [prewarm] a second video decoder gets the next item of the playlist
+ * ready while the current one plays: from one clip to the next the picture
+ * goes on at once, instead of waiting for the new clip's first frames (decoded
+ * from the key frame before the clip's start) on the same decoder.
+ */
 @OptIn(UnstableApi::class)
-internal fun processingPlayer(context: Context, vararg processors: AudioProcessor): ExoPlayer {
+internal fun processingPlayer(context: Context, vararg processors: AudioProcessor, prewarm: Boolean = false): ExoPlayer {
     val renderers = object : DefaultRenderersFactory(context) {
         override fun buildAudioSink(
             context: Context,
@@ -176,6 +184,7 @@ internal fun processingPlayer(context: Context, vararg processors: AudioProcesso
             .setAudioProcessors(arrayOf(*processors))
             .build()
     }
+    renderers.experimentalSetEnableMediaCodecVideoRendererPrewarming(prewarm)
     return ExoPlayer.Builder(context, renderers).build()
 }
 

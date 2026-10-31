@@ -143,7 +143,7 @@ class EditorPreviewPlayer(context: Context) {
     val liveAudio = LiveAudio()
 
     /** Bind this to the surface that shows the picture. */
-    val videoPlayer: ExoPlayer = processingPlayer(context, AudioEffectsProcessor({ liveAudio.stages }, liveAudio.meter)).apply {
+    val videoPlayer: ExoPlayer = processingPlayer(context, AudioEffectsProcessor({ liveAudio.stages }, liveAudio.meter), prewarm = true).apply {
         repeatMode = Player.REPEAT_MODE_ALL
     }
 

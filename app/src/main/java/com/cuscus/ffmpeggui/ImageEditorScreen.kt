@@ -295,7 +295,8 @@ fun ImageEditorScreen(
     onAddText: (String, Long) -> String,
     onRemoveTextOverlay: (String) -> Unit,
     onUpdateText: (String, String?, (TextOverlay) -> TextOverlay) -> Unit,
-    onAddOverlay: (Uri, String, Long, (String) -> Unit) -> Unit,
+    /** Lays the pictures on the picture, all at once, each a little apart; the callback gets the first one's id. */
+    onAddOverlays: (List<PickedFile>, (String) -> Unit) -> Unit,
     onReplaceOverlay: (String, Uri, String) -> Unit,
     onRemoveImageOverlay: (String) -> Unit,
     onUpdateImage: (String, String?, (ImageOverlay) -> ImageOverlay) -> Unit,
@@ -644,9 +645,10 @@ fun ImageEditorScreen(
         selectedTool = ImageTool.TEXT_EDIT
     }
     val stickerName = stringResource(R.string.image_sticker_name)
-    val stickerPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) {
-            onAddOverlay(uri, uri.lastPathSegment?.substringAfterLast("/") ?: stickerName, 0L) { id ->
+    // Several pictures at once too.
+    val stickerPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            onAddOverlays(pickedFiles(uris) { stickerName }) { id ->
                 selectedOverlayId = id
                 // Added from the layers list, the list stays open to show it.
                 if (selectedTool != ImageTool.LAYERS) selectedTool = null

@@ -20,6 +20,13 @@ import java.util.UUID
  * a command is built (see conversion/RequestMapping.kt).
  */
 
+/** A file picked to be added to an editor, and the name it is given if it does not tell its own. */
+data class PickedFile(val uri: Uri, val fallbackName: String)
+
+/** The files picked, in their order; [fallback] names one by its place among them. */
+internal fun pickedFiles(uris: List<Uri>, fallback: (Int) -> String): List<PickedFile> =
+    uris.mapIndexed { index, uri -> PickedFile(uri, uri.lastPathSegment?.substringAfterLast("/") ?: fallback(index)) }
+
 /**
  * A media file the project uses. Clips on the timeline refer to it by [id].
  * [info] is filled in once the file has been inspected.

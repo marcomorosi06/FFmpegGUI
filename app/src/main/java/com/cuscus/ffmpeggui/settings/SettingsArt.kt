@@ -238,23 +238,32 @@ private fun EditorArt(waves: Boolean) {
     }
 }
 
-/** Round bars of a clip's sound; while [playing] they jump to new heights on the fast spatial spring. */
+/**
+ * Round bars of a clip's sound, each as wide as the others: as many as the
+ * clip has room for (none in a clip too narrow), never squeezed into lines.
+ * While [playing] they jump to new heights on the fast spatial spring.
+ */
 @Composable
 private fun WaveBars(color: Color, playing: Boolean, seed: Int, modifier: Modifier) {
     val motion = MaterialTheme.motionScheme
     val tick = rememberBeat(WAVE_BEAT_MS, steps = 16)
-    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
-        repeat(WAVE_BARS) { b ->
-            val rest = 0.35f + 0.5f * ((b * 37 + seed * 11) % 7) / 6f
-            val target = if (playing) 0.25f + 0.75f * ((b * 13 + tick * 7 + seed * 5) % 9) / 8f else rest
-            val h by animateFloatAsState(target, motion.fastSpatialSpec(), label = "bar")
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(36.dp * h.coerceIn(0.15f, 1.1f))
-                    .clip(RoundedCornerShape(50))
-                    .background(color.copy(alpha = 0.75f)),
-            )
+    BoxWithConstraints(contentAlignment = Alignment.CenterStart, modifier = modifier) {
+        val count = ((maxWidth + WAVE_GAP) / (WAVE_BAR + WAVE_GAP)).toInt().coerceIn(0, WAVE_BARS)
+        // Read here: inside the row below the box's own scope is not the receiver.
+        val tallest = maxHeight
+        Row(horizontalArrangement = Arrangement.spacedBy(WAVE_GAP), verticalAlignment = Alignment.CenterVertically) {
+            repeat(count) { b ->
+                val rest = 0.35f + 0.5f * ((b * 37 + seed * 11) % 7) / 6f
+                val target = if (playing) 0.25f + 0.75f * ((b * 13 + tick * 7 + seed * 5) % 9) / 8f else rest
+                val h by animateFloatAsState(target, motion.fastSpatialSpec(), label = "bar")
+                Box(
+                    modifier = Modifier
+                        .width(WAVE_BAR)
+                        .height(tallest * h.coerceIn(0.15f, 1f))
+                        .clip(RoundedCornerShape(50))
+                        .background(color.copy(alpha = 0.75f)),
+                )
+            }
         }
     }
 }
@@ -470,5 +479,7 @@ private const val BACKDROP_BEAT_MS = 2_400L
 private const val EDITOR_BEAT_MS = 1_500L
 private const val WAVE_BEAT_MS = 180L
 private const val WAVE_BARS = 6
+private val WAVE_BAR = 5.dp
+private val WAVE_GAP = 4.dp
 private const val VIBRATION_PAUSE_MS = 900L
 private const val EXPORTS_REST_MS = 700L

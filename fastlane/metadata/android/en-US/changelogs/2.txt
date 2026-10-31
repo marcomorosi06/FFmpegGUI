@@ -1,12 +1,12 @@
-* Command studio, custom commands
-* One-tap dub, magic eraser, voice and music apart
+* Command studio for your own commands
+* One-tap dub, magic eraser, stem split
 * Video effects, magic transitions
-* Subtitles translated on the phone
+* On-device subtitle translation
 * Texts: outline, soft shadow, box, your own fonts
-* SVG editor: symmetry, booleans, layers, magnetic points
-* Pictures traced into SVG, by kind
+* SVG editor: symmetry, booleans, layers, snapping
+* Picture to SVG tracing
 * Blank pages, compressor
 * Picture editor: canvas, corners, layers
 * Live scrubbing, frame steps, mono theme
-* New format picker, settings and About
+* New format picker, settings
 * Fixes: low contrast, toolbar outline

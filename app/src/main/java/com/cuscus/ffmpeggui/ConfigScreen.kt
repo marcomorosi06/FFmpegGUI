@@ -186,7 +186,8 @@ fun ConfigScreen(
     projectRatio: CanvasRatio,
     customCommand: String,
     commandPreview: String,
-    onAddClip: (Uri, String) -> Unit,
+    /** Adds a clip for each file, at the end of the timeline, in this order. */
+    onAddClips: (List<PickedFile>) -> Unit,
     onSplitClip: (Long) -> Unit,
     /** Freezes the frame at this timeline position into a still clip; the second value names the still. */
     onFreezeFrame: (Long, String) -> Unit,
@@ -231,8 +232,8 @@ fun ConfigScreen(
     onSplit: (SplitMode, Int) -> Unit = { _, _ -> },
     /** Sounds placed freely on the video (music, voice-overs, effects). */
     audioClips: List<AudioClip>,
-    /** Places a file's sound at an output instant; the callback gets the new sound's id. */
-    onAddAudioClip: (Uri, String, Long, (String) -> Unit) -> Unit,
+    /** Places the files' sounds one after another from an output instant; the callback gets the first new sound's id. */
+    onAddAudioClips: (List<PickedFile>, Long, (String) -> Unit) -> Unit,
     /** Changes one sound; the key groups quick changes into one undo step. */
     onUpdateAudioClip: (String, String?, (AudioClip) -> AudioClip) -> Unit,
     onRemoveAudioClip: (String) -> Unit,
@@ -255,10 +256,11 @@ fun ConfigScreen(
     /** Pictures laid over the video, each shown during its own time. */
     imageOverlays: List<ImageOverlay> = emptyList(),
     /**
-     * Lays a picture or a video over the video at an output instant; the file is
-     * looked at first, then the callback gets the new overlay's id.
+     * Lays pictures or videos over the video, one after another from an output
+     * instant; the files are looked at first, then the callback gets the first
+     * new overlay's id (the last callback runs once when a file could not be read).
      */
-    onAddOverlay: (Uri, String, Long, (String) -> Unit, () -> Unit) -> Unit = { _, _, _, _, _ -> },
+    onAddOverlays: (List<PickedFile>, Long, (String) -> Unit, () -> Unit) -> Unit = { _, _, _, _ -> },
     /** Shows another picture or video in an overlay's place, keeping its settings. */
     onReplaceOverlay: (String, Uri, String, () -> Unit) -> Unit = { _, _, _, _ -> },
     onRemoveImageOverlay: (String) -> Unit = {},
@@ -767,21 +769,23 @@ fun ConfigScreen(
     // Back leaves the full screen preview before anything else.
     androidx.activity.compose.BackHandler(enabled = previewFullscreen) { previewFullscreen = false }
 
-    val fallbackName = stringResource(R.string.timeline_fallback_name, timeline.clips.size + 1)
-    // A new clip is a video or a picture (which becomes a still clip).
+    // New clips: videos or pictures (which become still clips), several at once, joined in
+    // the order they were picked.
+    val clipCount by rememberUpdatedState(timeline.clips.size)
     val clipPicker = androidx.activity.compose.rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
-    ) { uri: Uri? ->
-        if (uri != null) onAddClip(uri, uri.lastPathSegment?.substringAfterLast("/") ?: fallbackName)
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris: List<Uri> ->
+        onAddClips(pickedFiles(uris) { index -> context.getString(R.string.timeline_fallback_name, clipCount + 1 + index) })
     }
-    // A new sound: an audio file, or the sound of a video, placed at the playhead.
+    // New sounds: audio files, or the sound of videos, one after another from the playhead.
     val fallbackSoundName = stringResource(R.string.sound_fallback_name, audioClips.size + 1)
+    val soundCount by rememberUpdatedState(audioClips.size)
     val soundPicker = androidx.activity.compose.rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
-    ) { uri: Uri? ->
-        if (uri != null) {
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
             val atMs = playback.snapshot.value.outputMs
-            onAddAudioClip(uri, uri.lastPathSegment?.substringAfterLast("/") ?: fallbackSoundName, atMs) { id ->
+            onAddAudioClips(pickedFiles(uris) { index -> context.getString(R.string.sound_fallback_name, soundCount + 1 + index) }, atMs) { id ->
                 selectSound(id)
                 selectedTool = null
             }
@@ -800,14 +804,14 @@ fun ConfigScreen(
     // A new picture or video laid over the video, at the playhead; or another file for the selected one.
     val fallbackImageName = stringResource(R.string.image_fallback_name, imageOverlays.size + 1)
     val overlayReadFailed = stringResource(R.string.overlay_read_failed)
+    val overlayCount by rememberUpdatedState(imageOverlays.size)
+    // Several at once too: they show one after another from the playhead.
     val imagePicker = androidx.activity.compose.rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val name = uri.lastPathSegment?.substringAfterLast("/") ?: fallbackImageName
-            onAddOverlay(
-                uri,
-                name,
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            onAddOverlays(
+                pickedFiles(uris) { index -> context.getString(R.string.image_fallback_name, overlayCount + 1 + index) },
                 playback.snapshot.value.outputMs,
                 { id ->
                     selectOverlay(id)
@@ -1315,6 +1319,7 @@ fun ConfigScreen(
                 selectedItemId = selectedSound?.id ?: selectedText?.id ?: selectedImage?.id,
                 onSelectClip = selectClip,
                 onTrimClip = onTrimClip,
+                onMoveClip = onMoveClip,
                 // Joins between clips: their transitions (none for a sound file's clips).
                 onJunction = if (audioMode) null else openTransition,
                 onSelectItem = { kind, id -> if (kind == LaneKind.SOUND) selectSound(id) else selectOverlay(id) },
