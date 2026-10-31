@@ -28,6 +28,27 @@ class TransitionTest {
     }
 
     @Test
+    fun `clips under an effect meet with a cut, found where the next one starts`() {
+        val fairy = Transition(effect = "fairy")
+        assertEquals(listOf(0L, 1_000L), transitionLengths(listOf(fairy, fade, null), listOf(3_000L, 3_000L, 3_000L)))
+        val timeline = PreviewTimeline(
+            listOf(SegmentTiming(4_000, transition = fairy), SegmentTiming(4_000, speed = 2f, transition = fade), SegmentTiming(3_000)),
+            speed = 2f,
+        )
+        assertEquals(listOf(0L, 1_000L), timeline.overlaps)
+        assertNull(timeline.transitionAt(2_000))
+        // 4 s of the first clip at the video's double speed.
+        assertEquals(2_000L, timeline.cutOutputMs(0))
+        assertEquals(2_500L, timeline.cutOutputMs(1))
+        assertNull(timeline.cutOutputMs(2))
+        // Backwards, the first cut comes last.
+        val back = PreviewTimeline(listOf(SegmentTiming(4_000, transition = fairy), SegmentTiming(1_000)), speed = 1f, reversed = true)
+        assertEquals(1_000L, back.cutOutputMs(0))
+        val saved = ModelJson.effects(ModelJson.write(Effects(transition = fairy)))
+        assertEquals(fairy, saved.transition)
+    }
+
+    @Test
     fun `clips joined by a transition overlap on the preview timeline`() {
         val timeline = PreviewTimeline(
             listOf(SegmentTiming(4_000, transition = fade), SegmentTiming(4_000, speed = 2f, transition = fade), SegmentTiming(3_000)),

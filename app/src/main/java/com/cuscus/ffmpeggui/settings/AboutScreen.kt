@@ -83,6 +83,7 @@ import com.cuscus.ffmpeggui.media.FfmpegInfo
 import com.cuscus.ffmpeggui.ui.expressive.MorphShape
 import com.cuscus.ffmpeggui.ui.theme.appIconBackground
 import com.cuscus.ffmpeggui.ui.theme.appIconGlyph
+import com.cuscus.ffmpeggui.ui.theme.appIconTint
 import com.cuscus.ffmpeggui.ui.theme.DisplayFamily
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -278,6 +279,11 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
                     }
                 },
                 { shape ->
+                    LicenceRow(shape, stringResource(R.string.about_licence_androidsvg), stringResource(R.string.about_licence_apache)) {
+                        openLink(context, ProjectLinks.ANDROIDSVG)
+                    }
+                },
+                { shape ->
                     LicenceRow(shape, stringResource(R.string.about_licence_sherpa), stringResource(R.string.about_licence_apache)) {
                         openLink(context, ProjectLinks.SHERPA_ONNX)
                     }
@@ -307,6 +313,35 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
                 { shape ->
                     LicenceRow(shape, stringResource(R.string.about_licence_rembg), stringResource(R.string.about_licence_mit)) {
                         openLink(context, CutoutModel.REMBG_URL)
+                    }
+                },
+                { shape ->
+                    LicenceRow(shape, stringResource(R.string.about_licence_slimsam), stringResource(R.string.about_licence_apache)) {
+                        openLink(context, com.cuscus.ffmpeggui.cutout.RefineModel.MODEL_PAGE_URL)
+                    }
+                },
+                { shape ->
+                    // The translation models: downloaded by the user, credited as their licence asks.
+                    LicenceRow(shape, stringResource(R.string.about_licence_opus_mt), stringResource(R.string.about_licence_cc_by)) {
+                        openLink(context, com.cuscus.ffmpeggui.translate.OpusMt.PROJECT_URL)
+                    }
+                },
+                { shape ->
+                    // The dubbing model: downloaded by the user, credited as its licence asks.
+                    LicenceRow(shape, stringResource(R.string.about_licence_kokoro), stringResource(R.string.about_licence_apache)) {
+                        openLink(context, com.cuscus.ffmpeggui.dub.DubModel.MODEL_PAGE_URL)
+                    }
+                },
+                { shape ->
+                    // The voice model: downloaded by the user, credited as its licence asks.
+                    LicenceRow(shape, stringResource(R.string.about_licence_spleeter), stringResource(R.string.about_licence_mit)) {
+                        openLink(context, com.cuscus.ffmpeggui.voice.VoiceModel.MODEL_PAGE_URL)
+                    }
+                },
+                { shape ->
+                    // The effects in the app are the project's own, drawn by its script.
+                    LicenceRow(shape, stringResource(R.string.about_licence_effects), stringResource(R.string.about_licence_effects_summary), icon = Icons.Rounded.AutoAwesome) {
+                        openLink(context, ProjectLinks.EFFECTS_SCRIPT)
                     }
                 },
                 { shape ->
@@ -497,6 +532,7 @@ private fun ShapeShiftingLogo(size: Dp) {
         Image(
             painter = appIconGlyph(),
             contentDescription = null,
+            colorFilter = appIconTint(),
             modifier = Modifier
                 .graphicsLayer { rotationZ = -turnOf() }
                 .requiredSize(size * LOGO_GLYPH_SCALE),

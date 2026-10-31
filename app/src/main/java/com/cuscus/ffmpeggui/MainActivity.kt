@@ -39,6 +39,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
+import android.net.Uri
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedback
@@ -57,7 +58,12 @@ import com.cuscus.ffmpeggui.preview.soundWordsKey
 import com.cuscus.ffmpeggui.speech.SpeechModelStore
 import com.cuscus.ffmpeggui.onboarding.WelcomeScreen
 import com.cuscus.ffmpeggui.core.preview.normalizationGainDb
+import com.cuscus.ffmpeggui.translate.SubtitleTranslationUi
+import com.cuscus.ffmpeggui.translate.TranslationFeatureUi
 import com.cuscus.ffmpeggui.settings.AboutScreen
+import com.cuscus.ffmpeggui.svgedit.SvgDrawingStore
+import com.cuscus.ffmpeggui.svgedit.SvgEditorScreen
+import com.cuscus.ffmpeggui.svgedit.SvgEditorViewModel
 import com.cuscus.ffmpeggui.settings.AppSettings
 import com.cuscus.ffmpeggui.settings.ExportsUsage
 import com.cuscus.ffmpeggui.settings.SettingsCategory
@@ -65,6 +71,11 @@ import com.cuscus.ffmpeggui.settings.SettingsCategoryScreen
 import com.cuscus.ffmpeggui.settings.SettingsScreen
 import com.cuscus.ffmpeggui.settings.SmartFeaturesUi
 import com.cuscus.ffmpeggui.conversion.SpeechStatus
+import com.cuscus.ffmpeggui.conversion.VoiceStatus
+import com.cuscus.ffmpeggui.conversion.DubStatus
+import com.cuscus.ffmpeggui.settings.VoiceFeatureUi
+import com.cuscus.ffmpeggui.settings.DubFeatureUi
+import com.cuscus.ffmpeggui.dub.DubEditing
 import com.cuscus.ffmpeggui.settings.CutoutFeatureUi
 import com.cuscus.ffmpeggui.settings.RefineFeatureUi
 import com.cuscus.ffmpeggui.ui.theme.AppIcon
@@ -165,6 +176,13 @@ class MainActivity : ComponentActivity() {
                     if (!loaded) return@Surface
                     val navController = rememberNavController()
                     val vm: ConversionViewModel = viewModel(factory = ConversionViewModel.Factory)
+                    // The SVG editor's drawing, kept with the activity (opened from home, edited on its screen).
+                    val svgEditor: SvgEditorViewModel = viewModel()
+                    val svgBlankName = stringResource(R.string.svg_blank_name)
+                    // The SVG editor's drawings, shown with the recent projects.
+                    val drawingStore = remember { SvgDrawingStore.get(this@MainActivity) }
+                    val drawingCards by drawingStore.cards.collectAsState()
+                    svgEditor.keepDrawings = appSettings.saveProjects
 
                     // Top-level state
                     val inputUri by vm.inputUri.collectAsState()
@@ -181,6 +199,11 @@ class MainActivity : ComponentActivity() {
 
                     // The recent projects (kept only on this phone, see ProjectStore).
                     val projectCards by projectStore.cards.collectAsState()
+                    // Starting from nothing: the user's own blanks, and where a blank is made.
+                    val blankPresets by container.blankPresets.presets.collectAsState()
+                    val blankScope = rememberCoroutineScope()
+                    val blankFailed = stringResource(R.string.blank_failed)
+                    val blankDefault = stringResource(R.string.blank_default_name)
                     val openFailed = stringResource(R.string.projects_open_failed)
                     val duplicateName = stringResource(R.string.projects_copy_name, "%s")
 
@@ -204,6 +227,8 @@ class MainActivity : ComponentActivity() {
                     // Subtitles made from what is said: where the run is, the words it found so far.
                     val speech by vm.speech.collectAsState()
                     val liveWords by vm.liveWords.collectAsState()
+                    val translation by vm.translation.collectAsState()
+                    val translationModels by container.smartFeatures.translationStore.models.collectAsState()
                     val speechModel by container.smartFeatures.speechState.collectAsState()
                     // The subject cut-out of the key panels: its model, and where cutting a picture out is.
                     val cutoutModel by container.smartFeatures.cutoutState.collectAsState()
@@ -215,9 +240,50 @@ class MainActivity : ComponentActivity() {
                         status = cutout,
                         onCut = vm::cutOutSubject,
                         onStop = vm::stopCutout,
-                        onOpenSmartFeatures = { navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
+                        onOpenSmartFeatures = { com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.CUTOUT; navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
+                    )
+                    // The magic eraser: its two models, the one chosen and the run.
+                    val eraseVariant by container.smartFeatures.eraseVariant.collectAsState()
+                    val eraseFast by container.smartFeatures.eraseStores.getValue(com.cuscus.ffmpeggui.erase.EraseVariant.FAST).state.collectAsState()
+                    val erasePrecise by container.smartFeatures.eraseStores.getValue(com.cuscus.ffmpeggui.erase.EraseVariant.PRECISE).state.collectAsState()
+                    val eraseStatus by vm.erase.collectAsState()
+                    val magicErase = com.cuscus.ffmpeggui.erase.MagicEraseUi(
+                        variant = eraseVariant,
+                        ready = mapOf(
+                            com.cuscus.ffmpeggui.erase.EraseVariant.FAST to (eraseFast is SpeechModelStore.State.Ready),
+                            com.cuscus.ffmpeggui.erase.EraseVariant.PRECISE to (erasePrecise is SpeechModelStore.State.Ready),
+                        ),
+                        onChoose = container.smartFeatures::chooseErase,
+                        status = eraseStatus,
+                        refine = container.smartFeatures.refineEngine.takeIf { refineModel is SpeechModelStore.State.Ready },
+                        onErase = vm::magicErase,
+                        onStop = vm::stopErase,
+                        onDismiss = vm::dismissErase,
+                        onOpenSmartFeatures = { com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.ERASE; navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
                     )
                     val sourceLoudness by vm.sourceLoudnessLufs.collectAsState()
+                    // The voice set apart from the rest of the sound: its model, the run, the files done.
+                    val voiceModel by container.smartFeatures.voiceState.collectAsState()
+                    val voiceStatus by vm.voice.collectAsState()
+                    val voiceStems by vm.voiceStems.collectAsState()
+                    // Dubbing in the subtitles' language: its model and the run.
+                    val dubModel by container.smartFeatures.dubState.collectAsState()
+                    val dubStatus by vm.dub.collectAsState()
+                    val autoDubStatus by vm.autoDub.collectAsState()
+                    val piperVoices by container.smartFeatures.piperStore.voices.collectAsState()
+                    val dubSpeakers = remember(dubModel, piperVoices) {
+                        com.cuscus.ffmpeggui.dub.DubSpeaker.all(dubModel is SpeechModelStore.State.Ready, piperVoices)
+                    }
+                    val voiceEditing = VoiceEditing(
+                        modelReady = voiceModel is SpeechModelStore.State.Ready,
+                        status = voiceStatus,
+                        stems = voiceStems,
+                        onSeparate = vm::separateVoice,
+                        onStop = vm::stopVoiceSeparation,
+                        onDismissProblem = vm::dismissVoiceProblem,
+                        onLevels = vm::setVoiceLevels,
+                        onOpenSmartFeatures = { com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.VOICE; navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
+                    )
 
                     LaunchedEffect(Unit) {
                         // Only on a fresh launch: after a configuration change the view
@@ -236,7 +302,47 @@ class MainActivity : ComponentActivity() {
                         if (appSettings.onboarded || opening) Screen.Home.route else Screen.Welcome.route
                     }
 
-                    CompositionLocalProvider(LocalSubjectCut provides subjectCut) {
+                    val studioStore = container.commandStudio
+                    val studioCatalog by studioStore.catalog.collectAsState()
+                    val studioReading by studioStore.reading.collectAsState()
+                    val studioTopics by studioStore.topics.collectAsState()
+                    val studioHistory by studioStore.history.collectAsState()
+                    val studioFavourites by studioStore.favourites.collectAsState()
+                    val commandAliases by vm.commandAliases.collectAsState()
+                    val studioScope = rememberCoroutineScope()
+                    val commandStudio = com.cuscus.ffmpeggui.command.CommandStudioUi(
+                        catalog = studioCatalog,
+                        reading = studioReading,
+                        topics = studioTopics,
+                        aliases = commandAliases,
+                        files = s.commandFiles,
+                        history = studioHistory,
+                        favourites = studioFavourites,
+                        onNeedCatalog = studioStore::ensureCatalog,
+                        onRequestHelp = studioStore::requestHelp,
+                        onAddFiles = { uris ->
+                            studioScope.launch {
+                                val taken = commandAliases.map { it.alias }.toMutableSet()
+                                uris.forEach { uri ->
+                                    studioStore.importFile(uri, taken)?.let { file ->
+                                        taken += file.alias
+                                        vm.addCommandFile(file)
+                                    }
+                                }
+                            }
+                        },
+                        onRenameFile = vm::renameCommandFile,
+                        onRemoveFile = vm::removeCommandFile,
+                        onRemember = studioStore::remember,
+                        onForget = studioStore::forget,
+                        onFavourite = studioStore::setFavourite,
+                    )
+
+                    CompositionLocalProvider(
+                        LocalSubjectCut provides subjectCut,
+                        com.cuscus.ffmpeggui.erase.LocalMagicErase provides magicErase,
+                        com.cuscus.ffmpeggui.command.LocalCommandStudio provides commandStudio,
+                    ) {
                     NavHost(
                         navController = navController,
                         startDestination = startRoute,
@@ -278,8 +384,13 @@ class MainActivity : ComponentActivity() {
                                 onNewRecording = vm::newRecordingUri,
                                 onRecordingDiscarded = vm::discardRecording,
                                 onOpenSettings = { navController.navigate(Screen.Settings.route) },
-                                projects = if (appSettings.saveProjects) projectCards.orEmpty() else emptyList(),
+                                projects = if (appSettings.saveProjects) (projectCards.orEmpty() + drawingCards).sortedByDescending { it.editedAtMs } else emptyList(),
                                 onOpenProject = { project ->
+                                    if (project.drawing) {
+                                        svgEditor.openDrawing(project.id)
+                                        navController.navigate(Screen.SvgEditor.route)
+                                        return@HomeScreen
+                                    }
                                     vm.openProject(
                                         project.id,
                                         onOpened = {
@@ -293,8 +404,62 @@ class MainActivity : ComponentActivity() {
                                         },
                                     )
                                 },
-                                onDuplicateProject = { project -> projectStore.duplicate(project.id) { duplicateName.replace("%s", it) } },
-                                onDeleteProject = { project -> projectStore.delete(project.id) },
+                                onDuplicateProject = { project ->
+                                    if (project.drawing) {
+                                        drawingStore.duplicate(project.id) { duplicateName.replace("%s", it) }
+                                    } else {
+                                        projectStore.duplicate(project.id) { duplicateName.replace("%s", it) }
+                                    }
+                                },
+                                onDeleteProject = { project -> if (project.drawing) drawingStore.delete(project.id) else projectStore.delete(project.id) },
+                                onCompress = { navController.navigate(Screen.Compress.route) },
+                                onEditSvg = { uri ->
+                                    svgEditor.open(uri)
+                                    navController.navigate(Screen.SvgEditor.route)
+                                },
+                                onNewSvg = {
+                                    svgEditor.blank(1080, 1080, null, svgBlankName)
+                                    navController.navigate(Screen.SvgEditor.route)
+                                },
+                                blankPresets = blankPresets,
+                                onCreateBlank = { spec ->
+                                    blankScope.launch {
+                                        val made = withContext(Dispatchers.IO) { container.blankMaker.make(spec) }
+                                        if (made == null) {
+                                            android.widget.Toast.makeText(this@MainActivity, blankFailed, android.widget.Toast.LENGTH_SHORT).show()
+                                            return@launch
+                                        }
+                                        val sane = spec.sane()
+                                        vm.setInputUri(Uri.parse(made), sane.name.ifBlank { blankDefault.format(sane.width, sane.height) } + ".png")
+                                        navController.navigate(Screen.FormatPicker.route)
+                                    }
+                                },
+                                onSaveBlank = { spec -> container.blankPresets.save(spec.copy(name = spec.name.ifBlank { blankDefault.format(spec.width, spec.height) })) },
+                                onDeleteBlank = { spec -> container.blankPresets.delete(spec.name) },
+                            )
+                        }
+
+                        composable(Screen.SvgEditor.route) {
+                            val another = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                                if (uri != null) svgEditor.open(uri)
+                            }
+                            SvgEditorScreen(
+                                vm = svgEditor,
+                                onPickAnother = { another.launch(arrayOf("image/svg+xml")) },
+                                onBack = { navController.popBackStack() },
+                            )
+                        }
+
+                        composable(Screen.Compress.route) {
+                            CompressScreen(
+                                fileName = inputFileName,
+                                mediaInfo = mediaInfo,
+                                onPick = { vm.setInputUri(it) },
+                                onStart = { format, adjust ->
+                                    vm.selectFormat(format)
+                                    startExportOf(adjust)
+                                },
+                                onBack = { navController.popBackStack() },
                             )
                         }
 
@@ -304,7 +469,18 @@ class MainActivity : ComponentActivity() {
                                 mediaInfo = mediaInfo,
                                 onFormatSelected = { format ->
                                     vm.selectFormat(format)
+                                    val picture = s.source(EditorSource.MAIN_ID)?.takeIf { it.isStill }
                                     when {
+                                        // An SVG made of a picture is made in the SVG editor: an SVG opens as it is,
+                                        // any other picture is traced into shapes there.
+                                        format == com.cuscus.ffmpeggui.core.model.OutputFormat.SVG && inputFileName.endsWith(".svg", ignoreCase = true) && inputUri != null -> {
+                                            svgEditor.open(inputUri!!)
+                                            navController.navigate(Screen.SvgEditor.route)
+                                        }
+                                        format == com.cuscus.ffmpeggui.core.model.OutputFormat.SVG && (picture != null || mediaInfo?.isStill == true) -> {
+                                            svgEditor.trace(picture?.uri ?: inputUri!!, inputFileName)
+                                            navController.navigate(Screen.SvgEditor.route)
+                                        }
                                         // Listened to and shown beside the player, to be read through and corrected.
                                         format.isTranscript -> navController.navigate(Screen.Transcript.route)
                                         // A picture of a video: its exact frame is chosen first.
@@ -315,7 +491,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onBack = { navController.popBackStack() },
                                 transcriptReady = speechModel is SpeechModelStore.State.Ready,
-                                onOpenSmartFeatures = { navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
+                                onOpenSmartFeatures = { com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.SPEECH; navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
                             )
                         }
 
@@ -435,7 +611,14 @@ class MainActivity : ComponentActivity() {
                                     onReplaceOverlay = vm::replaceOverlay,
                                     onRemoveImageOverlay = vm::removeImageOverlay,
                                     onUpdateImage = vm::updateImage,
+                                    onReplacePicture = vm::replacePicture,
                                     onArrangeImage = vm::arrangeImage,
+                                    onPlaceLayer = vm::placeLayer,
+                                    onAddShape = vm::addShape,
+                                    onPictureCanvas = vm::setPictureCanvas,
+                                    onFitPictureOnCanvas = vm::fitPictureOnCanvas,
+                                    onUpdateShape = vm::updateShape,
+                                    onLandscapeLayout = { layout -> settingsRepository.update { it.copy(landscapeLayout = layout) } },
                                     onDuplicateOverlay = vm::duplicateOverlay,
                                     tags = s.tags,
                                     onTags = vm::updateTags,
@@ -490,7 +673,8 @@ class MainActivity : ComponentActivity() {
                                 onSplit = vm::setSplit,
                                 audioClips = s.audioClips,
                                 textOverlays = s.textOverlays,
-                                imageOverlays = s.imageOverlays,
+                                // The picture editor's own picture on its canvas is not a picture laid over the video.
+                                imageOverlays = s.imageOverlays.filter { !it.isPhoto },
                                 subtitles = SubtitleEditing(
                                     fileUri = s.subtitleUri,
                                     fileName = s.subtitleName,
@@ -516,7 +700,47 @@ class MainActivity : ComponentActivity() {
                                     onToTexts = vm::spokenSubtitlesToTexts,
                                     onEditLine = vm::editSpokenLine,
                                     srt = vm::spokenSubtitlesSrt,
-                                    onOpenSmartFeatures = { navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
+                                    onOpenSmartFeatures = { com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.SPEECH; navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
+                                    onLyrics = vm::lyricsFromSpeech,
+                                    dub = DubEditing(
+                                        speakers = dubSpeakers,
+                                        voiceModelReady = voiceModel is SpeechModelStore.State.Ready,
+                                        status = dubStatus,
+                                        guess = { withContext(Dispatchers.Default) { vm.dubLanguageGuess() } },
+                                        linesKey = Triple(s.subtitleUri, subtitleCues.size, s.spokenWords),
+                                        onDub = vm::dubSubtitles,
+                                        onStop = vm::stopDub,
+                                        onDismiss = vm::dismissDub,
+                                        onSample = { speaker, speed ->
+                                            runCatching { container.smartFeatures.dubber.sample(speaker, speaker.sample, speed) }.getOrNull()
+                                        },
+                                        onOpenModels = { com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.DUB; navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
+                                    ),
+                                    translation = SubtitleTranslationUi(
+                                        models = translationModels,
+                                        status = translation,
+                                        lines = vm::subtitleLines,
+                                        linesKey = Triple(s.subtitleUri, subtitleCues.size, s.spokenWords),
+                                        onTranslate = vm::translateSubtitles,
+                                        onStop = vm::stopTranslation,
+                                        onDismiss = vm::dismissTranslation,
+                                    ),
+                                ),
+                                voice = voiceEditing,
+                                autoDub = com.cuscus.ffmpeggui.dub.AutoDubUi(
+                                    speakers = dubSpeakers,
+                                    status = autoDubStatus,
+                                    hasSubtitles = remember(s.subtitleUri, s.spokenWords, s.playingClips) { vm.autoDubHasSubtitles() },
+                                    guess = { withContext(Dispatchers.Default) { vm.dubLanguageGuess() } },
+                                    linesKey = Triple(s.subtitleUri, subtitleCues.size, s.spokenWords),
+                                    speechReady = speechModel is SpeechModelStore.State.Ready,
+                                    voiceModelReady = voiceModel is SpeechModelStore.State.Ready,
+                                    separationNeeded = remember(s.playingClips, voiceStems, voiceStatus) { vm.autoDubNeedsSeparation() },
+                                    canTranslate = { from, to -> translationModels.isNotEmpty() && vm.canTranslate(from, to) },
+                                    onStart = vm::autoDub,
+                                    onStop = vm::stopAutoDub,
+                                    onDismiss = vm::dismissAutoDub,
+                                    onOpenModels = { com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.DUB; navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
                                 ),
                                 useStreamCopy = s.useStreamCopy,
                                 frameExtractionMode = s.frameExtractionMode,
@@ -556,6 +780,12 @@ class MainActivity : ComponentActivity() {
                                 onRemoveImageOverlay = vm::removeImageOverlay,
                                 onUpdateImage = vm::updateImage,
                                 onArrangeImage = vm::arrangeImage,
+                                onPlaceLayer = vm::placeLayer,
+                                onAddShape = vm::addShape,
+                                onAddEffect = vm::addEffect,
+                                onChangeEffect = vm::changeEffect,
+                                onUpdateShape = vm::updateShape,
+                                onLandscapeLayout = { layout -> settingsRepository.update { it.copy(landscapeLayout = layout) } },
                                 onSetOverlaySpan = vm::setOverlaySpan,
                                 onDuplicateOverlay = vm::duplicateOverlay,
                                 onSplitOverlay = vm::splitOverlay,
@@ -631,6 +861,16 @@ class MainActivity : ComponentActivity() {
                                 val cutoutVariant by smart.cutoutVariant.collectAsState()
                                 val speechVariants = smart.speechStores.mapValues { (_, store) -> store.state.collectAsState().value }
                                 val cutoutVariants = smart.cutoutStores.mapValues { (_, store) -> store.state.collectAsState().value }
+                                val translationModels by smart.translationStore.models.collectAsState()
+                                val translationImport by smart.translationStore.importing.collectAsState()
+                                val translatorLoaded by smart.translator.inMemory.collectAsState()
+                                val voiceLoaded by smart.voiceSeparator.inMemory.collectAsState()
+                                val voiceKept by smart.voiceSeparator.kept.collectAsState()
+                                val dubLoaded by smart.dubber.inMemory.collectAsState()
+                                val piperVoicesHere by smart.piperStore.voices.collectAsState()
+                                val piperImporting by smart.piperStore.importing.collectAsState()
+                                val fastKernels by smart.fastKernels.collectAsState()
+                                val eraseLoaded by smart.eraser.inMemory.collectAsState()
                                 val usage by produceState<ExportsUsage?>(null, usageRefresh) {
                                     value = withContext(Dispatchers.IO) { container.exportedFiles.usage() }
                                 }
@@ -674,6 +914,72 @@ class MainActivity : ComponentActivity() {
                                         onTest = smart::runTest,
                                         onStopTest = smart::stopTest,
                                         onUnload = smart.engine::unload,
+                                        translation = TranslationFeatureUi(
+                                            models = translationModels,
+                                            importing = translationImport,
+                                            loaded = translatorLoaded,
+                                            onImport = smart.translationStore::import,
+                                            onStopImport = smart.translationStore::stop,
+                                            onDismissImport = smart.translationStore::dismiss,
+                                            onDelete = { id ->
+                                                smart.translator.unload()
+                                                smart.translationStore.delete(id)
+                                            },
+                                            onVerify = { id -> withContext(Dispatchers.IO) { smart.translationStore.verify(id) } },
+                                            onUnload = smart.translator::unload,
+                                        ),
+                                        voice = VoiceFeatureUi(
+                                            model = voiceModel,
+                                            loaded = voiceLoaded,
+                                            // Not while the editor sets a voice apart with the model.
+                                            idle = voiceStatus !is VoiceStatus.Working,
+                                            keptFiles = voiceKept.files,
+                                            keptBytes = voiceKept.bytes,
+                                            onImport = smart.voiceStore::import,
+                                            onStopImport = smart.voiceStore::stop,
+                                            onVerify = smart.voiceStore::verify,
+                                            onDelete = smart::deleteVoiceModel,
+                                            onUnload = smart.voiceSeparator::unload,
+                                            onDeleteKept = smart.voiceSeparator::deleteAll,
+                                        ),
+                                        dub = DubFeatureUi(
+                                            model = dubModel,
+                                            loaded = dubLoaded,
+                                            // Not while the editor dubs a video with the model.
+                                            idle = dubStatus !is DubStatus.Speaking,
+                                            onImport = smart.dubStore::import,
+                                            onStopImport = smart.dubStore::stop,
+                                            onVerify = smart.dubStore::verify,
+                                            onDelete = smart::deleteDubModel,
+                                            onUnload = smart.dubber::unload,
+                                            piper = com.cuscus.ffmpeggui.dub.PiperFeatureUi(
+                                                voices = piperVoicesHere,
+                                                importing = piperImporting,
+                                                idle = dubStatus !is DubStatus.Speaking,
+                                                onImport = smart.piperStore::import,
+                                                onStopImport = smart.piperStore::stop,
+                                                onDismissImport = smart.piperStore::dismiss,
+                                                onDelete = smart::deletePiperVoice,
+                                                hasEspeak = remember(piperVoicesHere, dubModel) { smart.piperStore.espeakData() != null },
+                                            ),
+                                        ),
+                                        erase = com.cuscus.ffmpeggui.settings.EraseFeatureUi(
+                                            variant = eraseVariant,
+                                            variants = mapOf(
+                                                com.cuscus.ffmpeggui.erase.EraseVariant.FAST to eraseFast,
+                                                com.cuscus.ffmpeggui.erase.EraseVariant.PRECISE to erasePrecise,
+                                            ),
+                                            onChoose = smart::chooseErase,
+                                            loaded = eraseLoaded,
+                                            idle = eraseStatus !is com.cuscus.ffmpeggui.conversion.EraseStatus.Working,
+                                            onImport = { variant, uri -> smart.eraseStores.getValue(variant).import(listOf(uri)) },
+                                            onStopImport = { variant -> smart.eraseStores.getValue(variant).stop() },
+                                            onVerify = { variant -> smart.eraseStores.getValue(variant).verify() },
+                                            onDelete = smart::deleteEraseModel,
+                                            onUnload = smart.eraser::unload,
+                                        ),
+                                        fastKernels = fastKernels,
+                                        onFastKernels = smart::setFastKernels,
                                         cutout = CutoutFeatureUi(
                                             variant = cutoutVariant,
                                             variants = cutoutVariants,

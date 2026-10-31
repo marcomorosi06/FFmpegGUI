@@ -87,6 +87,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cuscus.ffmpeggui.conversion.SpeechProblem
 import com.cuscus.ffmpeggui.conversion.SpeechStatus
+import com.cuscus.ffmpeggui.translate.SubtitleTranslationUi
+import com.cuscus.ffmpeggui.translate.TranslateCard
 import com.cuscus.ffmpeggui.core.model.TextFont
 import com.cuscus.ffmpeggui.core.preview.SubtitleCue
 import com.cuscus.ffmpeggui.core.subtitles.SpokenWord
@@ -154,6 +156,12 @@ class SubtitleEditing(
     /** The spoken subtitles as a .srt file, timed like the export. */
     val srt: () -> String? = { null },
     val onOpenSmartFeatures: () -> Unit = {},
+    /** Fills the lyrics tag with what is sung: plain lines, or synced (LRC) with true. */
+    val onLyrics: (Boolean) -> Unit = {},
+    /** Translating them into another language. */
+    val translation: SubtitleTranslationUi = SubtitleTranslationUi(),
+    /** Dubbing the video in their language. */
+    val dub: com.cuscus.ffmpeggui.dub.DubEditing = com.cuscus.ffmpeggui.dub.DubEditing(),
 ) {
     /** The words the preview shows: those kept and those being found. */
     val shownWords: Map<String, List<SpokenWord>>
@@ -231,6 +239,12 @@ private fun SourcePage(subtitles: SubtitleEditing) {
         onRemove = { subtitles.onSetFile(null, "") },
     )
     if (subtitles.fileUri == null && subtitles.hasSpoken) PanelHint(stringResource(R.string.subtitle_file_replaces))
+    // Whatever they come from, they can be translated.
+    if ((subtitles.fileUri != null && subtitles.fileCues.isNotEmpty()) || subtitles.hasSpoken) {
+        TranslateCard(subtitles.translation, onOpenModels = subtitles.onOpenSmartFeatures)
+        // And said in their language by a voice, over the video.
+        com.cuscus.ffmpeggui.dub.DubCard(subtitles.dub)
+    }
 }
 
 /**
@@ -451,7 +465,7 @@ private fun SpeechCard(subtitles: SubtitleEditing) {
 }
 
 @Composable
-private fun stepText(working: SpeechStatus.Working): String = when (val step = working.step) {
+internal fun stepText(working: SpeechStatus.Working): String = when (val step = working.step) {
     is SpeechTranscriber.Step.Extracting -> stringResource(R.string.speech_step_sound)
     SpeechTranscriber.Step.Loading -> stringResource(R.string.speech_step_loading)
     is SpeechTranscriber.Step.Listening ->

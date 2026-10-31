@@ -138,11 +138,20 @@ private val REMOVE_COLOR = Color(0xFFC62828)
 private val LIGHT_COLOR = Color(0xFFFFA000)
 private val DARK_COLOR = Color(0xFF5C6BC0)
 
+/** The eraser's colour (what is painted with it is filled in). */
+private val ERASE_COLOR = Color(0xFFD81B60)
+
 /**
  * What the painted mask is for: a subject cut out of its picture (what is kept
  * shows, the rest goes), or where a look (the HDR one) is laid on the picture.
  */
-internal enum class MaskKind { CUTOUT, LIGHT }
+internal enum class MaskKind {
+    CUTOUT,
+    LIGHT,
+
+    /** What the magic eraser fills in: what is painted goes, the rest of the picture stays. */
+    ERASE,
+}
 
 /** How the picture is shown while it is corrected. */
 private enum class MaskView {
@@ -197,7 +206,7 @@ internal fun RefineMaskDialog(
     var shown by remember { mutableStateOf<ImageBitmap?>(null) }
     // The mask as a tint over the whole picture (what goes, or what is lit).
     var tint by remember { mutableStateOf<ImageBitmap?>(null) }
-    var view by remember { mutableStateOf(if (kind == MaskKind.LIGHT) MaskView.OVERLAY else MaskView.CUT) }
+    var view by remember { mutableStateOf(if (kind == MaskKind.CUTOUT) MaskView.CUT else MaskView.OVERLAY) }
     // Held down: the picture as it was, untouched.
     var comparing by remember { mutableStateOf(false) }
     // Where the finger paints (on the screen), for the cursor and the loupe.
@@ -338,7 +347,8 @@ internal fun RefineMaskDialog(
                 FilledIconButton(
                     onClick = {
                         val now = opened ?: return@FilledIconButton
-                        if (edits.isEmpty()) {
+                        // The eraser may start from a whole subject: nothing changed is still something to erase.
+                        if (edits.isEmpty() && kind != MaskKind.ERASE) {
                             currentOnDismiss()
                             return@FilledIconButton
                         }
@@ -367,8 +377,16 @@ internal fun RefineMaskDialog(
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
-            val keepColor = if (kind == MaskKind.LIGHT) LIGHT_COLOR else KEEP_COLOR
-            val removeColor = if (kind == MaskKind.LIGHT) DARK_COLOR else REMOVE_COLOR
+            val keepColor = when (kind) {
+                MaskKind.LIGHT -> LIGHT_COLOR
+                MaskKind.ERASE -> ERASE_COLOR
+                MaskKind.CUTOUT -> KEEP_COLOR
+            }
+            val removeColor = when (kind) {
+                MaskKind.LIGHT -> DARK_COLOR
+                MaskKind.ERASE -> KEEP_COLOR
+                MaskKind.CUTOUT -> REMOVE_COLOR
+            }
             val brushColor by animateColorAsState(
                 if (brush == MaskRefiner.Brush.KEEP) keepColor else removeColor,
                 MaterialTheme.motionScheme.defaultEffectsSpec(),
@@ -641,6 +659,12 @@ internal fun RefineMaskDialog(
                                 studying -> R.string.refine_studying
                                 saving -> R.string.refine_saving
                                 working && tool == MaskRefiner.Tool.MAGIC -> R.string.refine_working
+                                kind == MaskKind.ERASE -> when {
+                                    tool == MaskRefiner.Tool.MAGIC && brush == MaskRefiner.Brush.KEEP -> R.string.erase_hint_magic_add
+                                    tool == MaskRefiner.Tool.MAGIC -> R.string.erase_hint_magic_remove
+                                    brush == MaskRefiner.Brush.KEEP -> R.string.erase_hint_precise_add
+                                    else -> R.string.erase_hint_precise_remove
+                                }
                                 kind == MaskKind.LIGHT -> when {
                                     tool == MaskRefiner.Tool.MAGIC && brush == MaskRefiner.Brush.KEEP -> R.string.light_hint_magic_add
                                     tool == MaskRefiner.Tool.MAGIC -> R.string.light_hint_magic_remove
@@ -677,8 +701,28 @@ internal fun RefineMaskDialog(
                 }
                 // The brush: what it does, in its colour.
                 ConnectedPair(
-                    first = Choice(stringResource(if (kind == MaskKind.LIGHT) R.string.light_brush_add else R.string.refine_brush_keep), Icons.Rounded.Add, keepColor),
-                    second = Choice(stringResource(if (kind == MaskKind.LIGHT) R.string.light_brush_remove else R.string.refine_brush_remove), Icons.Rounded.Remove, removeColor),
+                    first = Choice(
+                        stringResource(
+                            when (kind) {
+                                MaskKind.LIGHT -> R.string.light_brush_add
+                                MaskKind.ERASE -> R.string.erase_brush_add
+                                MaskKind.CUTOUT -> R.string.refine_brush_keep
+                            },
+                        ),
+                        Icons.Rounded.Add,
+                        keepColor,
+                    ),
+                    second = Choice(
+                        stringResource(
+                            when (kind) {
+                                MaskKind.LIGHT -> R.string.light_brush_remove
+                                MaskKind.ERASE -> R.string.erase_brush_remove
+                                MaskKind.CUTOUT -> R.string.refine_brush_remove
+                            },
+                        ),
+                        Icons.Rounded.Remove,
+                        removeColor,
+                    ),
                     firstChosen = brush == MaskRefiner.Brush.KEEP,
                     onChoose = { keep ->
                         haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
@@ -794,11 +838,15 @@ private fun ConnectedPair(
 
 /** A tint the size of the picture: for a cut-out what goes in red, for a light mask what is lit in amber; [mask] 0..255. */
 private fun maskTint(mask: IntArray, width: Int, height: Int, kind: MaskKind): ImageBitmap {
-    val color = (if (kind == MaskKind.LIGHT) LIGHT_COLOR else REMOVE_COLOR).toArgb() and 0xFFFFFF
+    val color = when (kind) {
+        MaskKind.LIGHT -> LIGHT_COLOR
+        MaskKind.ERASE -> ERASE_COLOR
+        MaskKind.CUTOUT -> REMOVE_COLOR
+    }.toArgb() and 0xFFFFFF
     val pixels = IntArray(width * height)
     for (i in pixels.indices) {
         val m = mask[i].coerceIn(0, 255)
-        val share = if (kind == MaskKind.LIGHT) m else 255 - m
+        val share = if (kind == MaskKind.CUTOUT) 255 - m else m
         pixels[i] = color or ((share * TINT_ALPHA).toInt() shl 24)
     }
     return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888).asImageBitmap()

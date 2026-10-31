@@ -105,6 +105,7 @@ internal fun formatDescriptionRes(format: OutputFormat): Int = when (format) {
     OutputFormat.WEBP -> R.string.format_desc_webp
     OutputFormat.BMP -> R.string.format_desc_bmp
     OutputFormat.TIFF -> R.string.format_desc_tiff
+    OutputFormat.SVG -> R.string.format_desc_svg
     OutputFormat.TXT -> R.string.format_desc_txt
     OutputFormat.SRT -> R.string.format_desc_srt
     OutputFormat.CUSTOM -> R.string.format_desc_custom

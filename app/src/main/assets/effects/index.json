@@ -1,0 +1,200 @@
+[
+ {
+  "name": "sparks",
+  "file": "sparks.mp4",
+  "kind": "loop",
+  "frames": 120,
+  "fps": 30,
+  "sheet": {
+   "file": "sparks.jpg",
+   "frames": 60,
+   "columns": 8,
+   "fps": 15,
+   "width": 160,
+   "height": 90
+  }
+ },
+ {
+  "name": "fireworks",
+  "file": "fireworks.mp4",
+  "kind": "loop",
+  "frames": 180,
+  "fps": 30,
+  "sheet": {
+   "file": "fireworks.jpg",
+   "frames": 90,
+   "columns": 8,
+   "fps": 15,
+   "width": 160,
+   "height": 90
+  }
+ },
+ {
+  "name": "flames",
+  "file": "flames.mp4",
+  "kind": "loop",
+  "frames": 180,
+  "fps": 30,
+  "sheet": {
+   "file": "flames.jpg",
+   "frames": 90,
+   "columns": 8,
+   "fps": 15,
+   "width": 160,
+   "height": 90
+  }
+ },
+ {
+  "name": "smoke",
+  "file": "smoke.mp4",
+  "kind": "loop",
+  "frames": 180,
+  "fps": 30,
+  "sheet": {
+   "file": "smoke.jpg",
+   "frames": 90,
+   "columns": 8,
+   "fps": 15,
+   "width": 160,
+   "height": 90
+  }
+ },
+ {
+  "name": "snow",
+  "file": "snow.mp4",
+  "kind": "loop",
+  "frames": 180,
+  "fps": 30,
+  "sheet": {
+   "file": "snow.jpg",
+   "frames": 90,
+   "columns": 8,
+   "fps": 15,
+   "width": 160,
+   "height": 90
+  }
+ },
+ {
+  "name": "rain",
+  "file": "rain.mp4",
+  "kind": "loop",
+  "frames": 60,
+  "fps": 30,
+  "sheet": {
+   "file": "rain.jpg",
+   "frames": 30,
+   "columns": 8,
+   "fps": 15,
+   "width": 160,
+   "height": 90
+  }
+ },
+ {
+  "name": "confetti",
+  "file": "confetti.mp4",
+  "kind": "loop",
+  "frames": 150,
+  "fps": 30,
+  "sheet": {
+   "file": "confetti.jpg",
+   "frames": 75,
+   "columns": 8,
+   "fps": 15,
+   "width": 160,
+   "height": 90
+  }
+ },
+ {
+  "name": "dust",
+  "file": "dust.mp4",
+  "kind": "loop",
+  "frames": 180,
+  "fps": 30,
+  "sheet": {
+   "file": "dust.jpg",
+   "frames": 90,
+   "columns": 8,
+   "fps": 15,
+   "width": 160,
+   "height": 90
+  }
+ },
+ {
+  "name": "bokeh",
+  "file": "bokeh.mp4",
+  "kind": "loop",
+  "frames": 180,
+  "fps": 30,
+  "sheet": {
+   "file": "bokeh.jpg",
+   "frames": 90,
+   "columns": 8,
+   "fps": 15,
+   "width": 160,
+   "height": 90
+  }
+ },
+ {
+  "name": "hearts",
+  "file": "hearts.mp4",
+  "kind": "loop",
+  "frames": 150,
+  "fps": 30,
+  "sheet": {
+   "file": "hearts.jpg",
+   "frames": 75,
+   "columns": 8,
+   "fps": 15,
+   "width": 160,
+   "height": 90
+  }
+ },
+ {
+  "name": "fairy",
+  "file": "fairy.mp4",
+  "kind": "transition",
+  "frames": 96,
+  "fps": 30,
+  "cut": 1.18,
+  "sheet": {
+   "file": "fairy.jpg",
+   "frames": 48,
+   "columns": 8,
+   "fps": 15,
+   "width": 160,
+   "height": 90
+  }
+ },
+ {
+  "name": "explosion",
+  "file": "explosion.mp4",
+  "kind": "transition",
+  "frames": 78,
+  "fps": 30,
+  "cut": 0.3,
+  "sheet": {
+   "file": "explosion.jpg",
+   "frames": 39,
+   "columns": 8,
+   "fps": 15,
+   "width": 160,
+   "height": 90
+  }
+ },
+ {
+  "name": "flash",
+  "file": "flash.mp4",
+  "kind": "transition",
+  "frames": 30,
+  "fps": 30,
+  "cut": 0.3,
+  "sheet": {
+   "file": "flash.jpg",
+   "frames": 15,
+   "columns": 8,
+   "fps": 15,
+   "width": 160,
+   "height": 90
+  }
+ }
+]

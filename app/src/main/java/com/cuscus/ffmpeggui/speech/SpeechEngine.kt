@@ -183,7 +183,7 @@ class SpeechEngine(
                 tokens = tokens.absolutePath,
                 numThreads = threads,
                 debug = false,
-                provider = "cpu",
+                provider = AiKernels.provider,
                 modelType = "nemo_transducer",
             ),
             decodingMethod = "greedy_search",

@@ -760,6 +760,8 @@ internal fun AudioTagsContent(
     onTags: (String?, (MetadataTags) -> MetadataTags) -> Unit,
     /** A picture: only the tags EXIF holds (title, artist, copyright). */
     picture: Boolean = false,
+    /** Where the words heard come from, to fill the lyrics with what is sung; null hides that. */
+    lyrics: SubtitleEditing? = null,
 ) {
     val haptic = LocalHapticFeedback.current
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = panelModifier) {
@@ -769,6 +771,7 @@ internal fun AudioTagsContent(
             TagField(R.string.tag_artist, Icons.Rounded.Person, tags.artist, "artist", onTags) { t, v -> t.copy(artist = v) }
             if (!picture) {
                 TagField(R.string.tag_album, Icons.Rounded.Album, tags.album, "album", onTags) { t, v -> t.copy(album = v) }
+                TagField(R.string.tag_album_artist, Icons.Rounded.Groups, tags.albumArtist, "albumArtist", onTags) { t, v -> t.copy(albumArtist = v) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Column(modifier = Modifier.weight(0.42f)) {
                         val badYear = tags.year.isNotEmpty() && tags.year.length != 4
@@ -804,6 +807,10 @@ internal fun AudioTagsContent(
             }
             TagField(R.string.tag_copyright, Icons.Rounded.Copyright, tags.copyright, "copyright", onTags, last = true) { t, v -> t.copy(copyright = v) }
         }
+        // Lyrics belong to songs: shown for a sound file, or where some were read.
+        if (!picture && (lyrics != null || tags.lyrics.isNotBlank())) LyricsCard(tags.lyrics, onTags, lyrics)
+        // Every other tag of the file, grouped, with what takes them away.
+        AllTagsCard(tags, onTags, picture)
         PanelHint(stringResource(if (picture) R.string.picture_tags_hint else R.string.audio_tags_hint))
         if (tags.fromSource) PanelHint(stringResource(R.string.tags_from_source_hint))
     }

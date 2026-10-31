@@ -78,6 +78,18 @@ data class ConversionRequest(
      * `coverWriting` in the command package).
      */
     val cover: Boolean = false,
+    /**
+     * Where the picture lies on its canvas ([ImageEdit.canvas]), as a picture
+     * laid on it: place, size (a fraction of the canvas width), turn, opacity,
+     * look, layer among the texts and stickers, blend. Null: centred, as large
+     * as the canvas holds it whole.
+     */
+    val photoPlacement: ImagePlacement? = null,
+    /**
+     * Made by the compressor (see [Compression]): a video by x265 at a CRF or,
+     * to fit a size, in two passes; a picture or a sound squeezed as it says.
+     */
+    val compression: Compression? = null,
 ) {
     init {
         require(segments.isNotEmpty()) { "A request needs at least one segment" }
@@ -113,6 +125,19 @@ data class ConversionRequest(
             val first = sources.getOrNull(segments.first().source)
             val file = if (first != null && first.width > 0 && first.height > 0) first.width.toFloat() / first.height else DEFAULT_FRAME_RATIO
             return canvas.ratio ?: effects.frameRatio(file)
+        }
+
+    /**
+     * True when a picture file is made from a picture with transparent parts of
+     * its own, in a format that keeps them: they stay transparent (see
+     * [com.cuscus.ffmpeggui.core.image.withSourceAlpha]). Elsewhere (JPG, BMP, a
+     * video) the picture is read opaque, as before.
+     */
+    val keepsPictureAlpha: Boolean
+        get() {
+            if (!format.isImage || !format.holdsTransparency || frameExtraction != FrameExtraction.Disabled) return false
+            val source = sources.getOrNull(segments.first().source) ?: return false
+            return source.isStill && source.hasAlpha
         }
 
     /** True when the footage is cut from more than one range. */
@@ -164,6 +189,13 @@ data class SourceInfo(
     val hdr: VideoHdr = VideoHdr.NONE,
     /** Frames per second of its picture, 0 when unknown (a still, or not probed). */
     val frameRate: Float = 0f,
+    /** A picture with transparent parts of its own (a PNG with an alpha channel, say). */
+    val hasAlpha: Boolean = false,
+    /**
+     * Its sound separated into the voice and the rest (see VoiceStem): the
+     * four-channel file, on the file's own clock; null when not separated.
+     */
+    val voiceStem: String? = null,
 )
 
 /**
@@ -267,6 +299,8 @@ data class PlacedSound(
     val effects: AudioEffects = AudioEffects.NONE,
     /** How [volume] changes while it plays (see [Keyframes]; times from [startMs] on the video). */
     val keyframes: Keyframes = Keyframes.NONE,
+    /** The machine that made the voice in it (a dub), when one did: the output says so in its tags. */
+    val aiVoice: String? = null,
 ) {
     /** Playback rate, never zero or negative. */
     val rate: Float get() = if (speed > 0f) speed else 1f
@@ -334,6 +368,15 @@ data class ImagePlacement(
      * whole video): higher is on top (see [stackOrder]).
      */
     val layer: Int = 0,
+    /** How it mixes with what lies under it (see [LayerBlend]). */
+    val blend: LayerBlend = LayerBlend.NORMAL,
+    /**
+     * Fills the whole frame, its shape kept and the overflow cut (as a cover
+     * fill): [x], [y] and [widthFraction] are then not used (whole video only).
+     */
+    val cover: Boolean = false,
+    /** Its colours turned round the colour wheel by this many degrees (0 = untouched). */
+    val hueDegrees: Float = 0f,
 ) {
     /** True when the picture fades, which needs it as a stream of frames rather than one. */
     val fades: Boolean get() = clipId == null && (fadeInSeconds > 0f || (fadeOutSeconds > 0f && endMs != null))
@@ -346,6 +389,9 @@ data class ImagePlacement(
 
     /** True when its colours are changed. */
     val adjustsColor: Boolean get() = brightness != 0f || contrast != 1f || saturation != 1f
+
+    /** True when its colours are turned round the colour wheel. */
+    val turnsHue: Boolean get() = (((hueDegrees % 360f) + 360f) % 360f).let { it > 0.5f && it < 359.5f }
 
     companion object {
         /** Widest a picture is laid, a fraction of the frame: beyond 1 it fills the frame and is cut by it. */
@@ -360,8 +406,12 @@ data class ImagePlacement(
     }
 }
 
-/** The part of a video file that plays as an overlay, from [trimStartMs] to [trimEndMs] of the file. */
-data class OverlayVideo(val trimStartMs: Long = 0L, val trimEndMs: Long? = null)
+/**
+ * The part of a video file that plays as an overlay, from [trimStartMs] to
+ * [trimEndMs] of the file; with [loop], the whole file played over and over
+ * for as long as the overlay shows (the trim is then not used).
+ */
+data class OverlayVideo(val trimStartMs: Long = 0L, val trimEndMs: Long? = null, val loop: Boolean = false)
 
 sealed interface FrameExtraction {
     data object Disabled : FrameExtraction
@@ -412,23 +462,88 @@ data class MetadataTags(
     val comment: String = "",
     val genre: String = "",
     val copyright: String = "",
+    /** The artist of the whole album, when it is not the track's (a compilation, a featuring). */
+    val albumArtist: String = "",
+    /**
+     * The words of the song: plain lines, or synced lines in the LRC way
+     * ("[mm:ss.xx]line", see `core.subtitles.LyricsText`), which players that
+     * know it follow as the song plays. MP3 keeps them as USLT, M4A as its
+     * lyrics atom, FLAC, Ogg and Opus as LYRICS.
+     */
+    val lyrics: String = "",
     val fromSource: Boolean = false,
+    /**
+     * Every other tag, in order: the source's own (read with it, see
+     * [sourceKeys]) and those added by hand. FFmpeg keys for sound and video
+     * ("location", "com.android.model", "creation_time"...), EXIF names for
+     * pictures ("Model", "GPSLatitude", "DateTimeOriginal"...). See [TagKind].
+     */
+    val custom: List<CustomTag> = emptyList(),
+    /** Keys of [custom] the source had: one no longer there is removed from the file. */
+    val sourceKeys: Set<String> = emptySet(),
+    /** Remove every tag of the source, written or not here (`-map_metadata -1`): only these are written. */
+    val stripAll: Boolean = false,
+    /**
+     * Remove where the file was made and with what ([TagKind.sensitive]) even
+     * where it was not read: the usual keys of phones and cameras are removed.
+     */
+    val stripSensitive: Boolean = false,
 ) {
     /**
      * FFmpeg metadata keys mapped to their values, in a stable order: the non-blank
      * ones, and with [fromSource] the blank ones too (as empty values, which make
-     * FFmpeg drop the tag).
+     * FFmpeg drop the tag); then the other tags ([custom]), those of the source
+     * taken away (empty), and with [stripSensitive] the usual sensitive keys (empty).
      */
-    fun asMap(): Map<String, String> = linkedMapOf(
-        "title" to title,
-        "artist" to artist,
-        "album" to album,
-        "date" to year,
-        "genre" to genre,
-        "comment" to comment,
-        "copyright" to copyright,
-    ).mapValues { it.value.trim() }.filterValues { fromSource || it.isNotEmpty() }
+    fun asMap(): Map<String, String> {
+        val map = linkedMapOf(
+            "title" to title,
+            "artist" to artist,
+            "album" to album,
+            "date" to year,
+            "genre" to genre,
+            "comment" to comment,
+            "copyright" to copyright,
+            "album_artist" to albumArtist,
+            "lyrics" to lyrics,
+        ).mapValues { it.value.trim() }.filterValues { fromSource || it.isNotEmpty() }.toMutableMap()
+        val known = KNOWN_KEYS
+        for (tag in custom) {
+            val key = tag.key.trim()
+            if (key.isEmpty() || key in known) continue
+            val value = tag.value.trim()
+            if (value.isNotEmpty() || key in sourceKeys) map[key] = value
+        }
+        for (key in sourceKeys) if (key !in map && key !in known) map[key] = ""
+        if (stripSensitive) for (key in SENSITIVE_FFMPEG_KEYS) if (map[key].isNullOrEmpty()) map[key] = ""
+        return map
+    }
 
     /** True when there is nothing to write and nothing to remove. */
-    val isEmpty: Boolean get() = asMap().isEmpty()
+    val isEmpty: Boolean get() = !stripAll && asMap().isEmpty()
+
+    /** True when a tag of [custom] is not one every container knows (an MP4 then keeps it only when told to). */
+    val hasOwnTags: Boolean get() = custom.any { it.key.isNotBlank() && it.value.isNotBlank() && it.key.trim() !in KNOWN_KEYS }
+
+    /** These tags without where the file was made and with what ([TagKind.sensitive]), which are removed. */
+    fun withoutSensitive(): MetadataTags = copy(custom = custom.filter { !tagKind(it.key).sensitive }, stripSensitive = true)
+
+    /** No tag at all: every field empty and every tag of the source removed. */
+    fun cleared(): MetadataTags = MetadataTags(fromSource = fromSource, stripAll = true, stripSensitive = true)
+
+    companion object {
+        /** The keys of the fields above. */
+        val KNOWN_KEYS = setOf("title", "artist", "album", "date", "genre", "comment", "copyright", "album_artist", "lyrics")
+
+        /** Where and with what phones and cameras say a video or a sound was made. */
+        val SENSITIVE_FFMPEG_KEYS = listOf(
+            "location", "location-eng", "com.apple.quicktime.location.ISO6709",
+            "com.android.manufacturer", "com.android.model",
+            "com.apple.quicktime.make", "com.apple.quicktime.model", "com.apple.quicktime.software",
+            "make", "model",
+        )
+    }
 }
+
+/** A tag of the file besides the usual ones: [key] as the file names it, its [value]. */
+data class CustomTag(val key: String, val value: String)

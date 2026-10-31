@@ -13,6 +13,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,14 +49,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -66,6 +70,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -78,6 +83,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.cuscus.ffmpeggui.core.model.Transition
+import com.cuscus.ffmpeggui.effects.EffectInfo
+import com.cuscus.ffmpeggui.effects.EffectLibrary
 import com.cuscus.ffmpeggui.core.model.TransitionKind
 import com.cuscus.ffmpeggui.core.preview.MaskShape
 import com.cuscus.ffmpeggui.core.preview.PartLook
@@ -90,6 +97,8 @@ import com.cuscus.ffmpeggui.ui.expressive.PanelCard
 import com.cuscus.ffmpeggui.ui.expressive.PanelHint
 import com.cuscus.ffmpeggui.ui.expressive.ValueSlider
 import com.cuscus.ffmpeggui.ui.expressive.springPress
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.hypot
 
@@ -253,10 +262,14 @@ enum class TransitionFamily(@StringRes val labelRes: Int, val kinds: List<Transi
             TransitionKind.VERT_OPEN, TransitionKind.HORZ_OPEN, TransitionKind.RADIAL, TransitionKind.ZOOM_IN,
         ),
     ),
+
+    /** The app's own transition effects, laid over a cut (see Transition.effect). */
+    MAGIC(R.string.transition_family_magic, emptyList()),
     ;
 
     companion object {
-        fun of(kind: TransitionKind?): TransitionFamily = entries.firstOrNull { kind in it.kinds } ?: DISSOLVE
+        fun of(transition: Transition?): TransitionFamily =
+            if (transition?.isEffect == true) MAGIC else entries.firstOrNull { transition?.kind in it.kinds } ?: DISSOLVE
     }
 }
 
@@ -308,7 +321,9 @@ internal fun TransitionContent(
     onTransition: (Transition?) -> Unit,
     onApplyToAll: () -> Unit,
 ) {
-    var family by rememberSaveable { mutableStateOf(TransitionFamily.of(transition?.kind)) }
+    var family by rememberSaveable { mutableStateOf(TransitionFamily.of(transition)) }
+    val effectScope = rememberCoroutineScope()
+    val effectNames = effectLabels()
     val durationMs = transition?.durationMs ?: Transition.DEFAULT_MS
     // Every tile plays its transition at the length chosen, so that the slider is seen at once.
     val loop = rememberTransitionLoop(durationMs)
@@ -340,14 +355,35 @@ internal fun TransitionContent(
                 TransitionTile(
                     kind = kind,
                     label = stringResource(transitionLabel(kind)),
-                    selected = transition?.kind == kind,
+                    selected = transition?.isEffect != true && transition?.kind == kind,
                     enabled = hasNext,
                     loop = loop,
                     onClick = { onTransition(Transition(kind, durationMs)) },
                 )
             }
+            if (family == TransitionFamily.MAGIC) {
+                EffectLibrary.transitions.forEach { effect ->
+                    EffectTransitionTile(
+                        effect = effect,
+                        label = effectNames[effect.name] ?: effect.name,
+                        selected = transition?.effect == effect.name,
+                        enabled = hasNext,
+                        onClick = {
+                            // Its file is made ready for the preview and the export.
+                            effectScope.launch(Dispatchers.IO) { EffectLibrary.ensure(effect.name) }
+                            onTransition(Transition(durationMs = durationMs, effect = effect.name))
+                        },
+                    )
+                }
+            }
         }
-        PanelCard {
+        val effect = EffectLibrary.info(transition?.effect)
+        if (effect != null && hasNext) {
+            // An effect has its own length: nothing to set, the video keeps its length.
+            PanelCard {
+                PanelHint(stringResource(R.string.transition_effect_hint, decimal(effect.lengthMs / 1000f)))
+            }
+        } else PanelCard {
             ValueSlider(
                 label = stringResource(R.string.transition_duration),
                 valueText = stringResource(R.string.value_seconds_decimal, decimal(durationMs / 1000f)),
@@ -361,7 +397,7 @@ internal fun TransitionContent(
                 defaultValue = Transition.DEFAULT_MS / 1000f,
                 enabled = transition != null && hasNext,
             )
-            AnimatedVisibility(visible = transition != null && hasNext && effectiveMs < durationMs) {
+            AnimatedVisibility(visible = transition != null && !transition.isEffect && hasNext && effectiveMs < durationMs) {
                 PanelHint(
                     if (effectiveMs <= 0L) {
                         stringResource(R.string.transition_too_short)
@@ -487,6 +523,102 @@ private fun TransitionTile(
         )
     }
 }
+
+/**
+ * A transition effect as a tile: the two little pictures cut from one to the
+ * other under the effect, screened over them as on the video, in a loop. Chosen,
+ * it rounds off and a ring and a check pop in, as the other tiles.
+ */
+@Composable
+private fun EffectTransitionTile(
+    effect: EffectInfo,
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+    val motion = MaterialTheme.motionScheme
+    val scheme = MaterialTheme.colorScheme
+    val radius by animateDpAsState(if (selected) 22.dp else 12.dp, motion.defaultSpatialSpec(), label = "tileRadius")
+    val ring by animateColorAsState(if (selected) scheme.primary else Color.Transparent, motion.defaultEffectsSpec(), label = "tileRing")
+    val checkScale by animateFloatAsState(if (selected) 1f else 0f, motion.fastSpatialSpec(), label = "tileCheck")
+    val sheet = rememberSheet(effect.name)
+    val image = remember(sheet) { sheet?.bitmap?.asImageBitmap() }
+    val count = sheet?.about?.frames ?: 1
+    // At the effect's own speed, then a short rest on the second picture.
+    val playMs = (sheet?.lengthMs ?: effect.lengthMs).toInt().coerceAtLeast(1)
+    val loop = rememberInfiniteTransition(label = "effectTile")
+    val phase = loop.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(playMs + EFFECT_TILE_REST_MS, easing = LinearEasing), RepeatMode.Restart),
+        label = "effectTilePhase",
+    )
+    fun index(): Int = (phase.value * (playMs + EFFECT_TILE_REST_MS) / playMs * count).toInt().coerceIn(0, count - 1)
+    // The cut falls under the effect's brightest frame.
+    val cutIndex = if (effect.lengthMs > 0) (effect.cutMs * count / effect.lengthMs).toInt() else 0
+    val before by remember(count, cutIndex) { derivedStateOf { index() < cutIndex } }
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(TILE_WIDTH + 12.dp)
+            .springPress(interaction, pressedScale = 0.9f)
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.RadioButton) {
+                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                onClick()
+            }
+            .semantics { this.selected = selected }
+            .padding(vertical = 4.dp),
+    ) {
+        Box {
+            Box(
+                modifier = Modifier
+                    .size(TILE_WIDTH, TILE_HEIGHT)
+                    .border(3.dp, ring, RoundedCornerShape(radius + 4.dp))
+                    .padding(5.dp)
+                    .clip(RoundedCornerShape(radius)),
+            ) {
+                TileScene(first = before)
+                if (sheet != null && image != null) {
+                    Canvas(modifier = Modifier.matchParentSize().clipToBounds().graphicsLayer { blendMode = BlendMode.Screen }) {
+                        drawSheetFrame(sheet, image, index(), null)
+                    }
+                }
+            }
+            if (checkScale > 0f) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .graphicsLayer {
+                            scaleX = checkScale
+                            scaleY = checkScale
+                            alpha = checkScale.coerceIn(0f, 1f)
+                        }
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(scheme.primary),
+                ) {
+                    Icon(Icons.Rounded.Check, contentDescription = null, tint = scheme.onPrimary, modifier = Modifier.size(14.dp))
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = if (selected) MaterialTheme.typography.labelMediumEmphasized else MaterialTheme.typography.labelMedium,
+            color = if (selected) scheme.onSurface else scheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** How long a transition effect's tile rests on its second picture before it plays again. */
+private const val EFFECT_TILE_REST_MS = 700
 
 /** One of a tile's two pictures: a landscape in the primary tones, then a flower in the tertiary ones. */
 @Composable

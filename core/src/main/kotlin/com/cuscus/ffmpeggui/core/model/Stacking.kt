@@ -29,12 +29,22 @@ fun movedLayers(order: List<StackSlot>, position: Int, move: LayerMove): List<St
     if (position !in order.indices) return order
     val target = when (move) {
         LayerMove.TO_FRONT -> order.lastIndex
-        LayerMove.FORWARD -> (position + 1).coerceAtMost(order.lastIndex)
-        LayerMove.BACKWARD -> (position - 1).coerceAtLeast(0)
+        LayerMove.FORWARD -> position + 1
+        LayerMove.BACKWARD -> position - 1
         LayerMove.TO_BACK -> 0
     }
+    return movedLayersTo(order, position, target)
+}
+
+/**
+ * The order with the item at [position] of [order] (bottom first) put at
+ * [target] (bottom first too, kept inside the stack), the others keeping
+ * their order: what a drag in a list of layers does.
+ */
+fun movedLayersTo(order: List<StackSlot>, position: Int, target: Int): List<StackSlot> {
+    if (position !in order.indices) return order
     val list = order.toMutableList()
     val item = list.removeAt(position)
-    list.add(target, item)
+    list.add(target.coerceIn(0, list.size), item)
     return list
 }

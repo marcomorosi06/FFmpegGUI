@@ -12,6 +12,7 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import com.cuscus.ffmpeggui.core.audio.AudioStage
 import com.cuscus.ffmpeggui.core.audio.EffectsChain
+import com.cuscus.ffmpeggui.core.voice.VoiceStem
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicInteger
@@ -117,9 +118,52 @@ internal class AudioEffectsProcessor(
     }
 }
 
-/** A player whose sound goes through [processor] on its way to the speaker (as 16-bit samples). */
+/**
+ * Mixes the four channels of a voice's stems (see VoiceStem: the voice's left
+ * and right, then the rest's) down to stereo, the voice at [levels]' first
+ * gain and the rest at its second, read for every buffer. Any other sound
+ * passes untouched.
+ */
 @OptIn(UnstableApi::class)
-internal fun processingPlayer(context: Context, processor: AudioProcessor): ExoPlayer {
+internal class StemMixProcessor(private val levels: () -> Pair<Float, Float>) : BaseAudioProcessor() {
+
+    override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        if (inputAudioFormat.channelCount != VoiceStem.CHANNELS) return AudioProcessor.AudioFormat.NOT_SET
+        val encoding = inputAudioFormat.encoding
+        if (encoding != C.ENCODING_PCM_16BIT && encoding != C.ENCODING_PCM_FLOAT) {
+            throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
+        }
+        return AudioProcessor.AudioFormat(inputAudioFormat.sampleRate, 2, encoding)
+    }
+
+    override fun queueInput(inputBuffer: ByteBuffer) {
+        val input = inputBuffer.order(ByteOrder.nativeOrder())
+        val float = inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT
+        val bytesPerSample = if (float) 4 else 2
+        val frames = input.remaining() / (bytesPerSample * VoiceStem.CHANNELS)
+        val (voice, rest) = levels()
+        val output = replaceOutputBuffer(frames * 2 * bytesPerSample)
+        val frame = FloatArray(VoiceStem.CHANNELS)
+        val mixed = FloatArray(2)
+        for (n in 0 until frames) {
+            for (c in 0 until VoiceStem.CHANNELS) frame[c] = if (float) input.float else input.short / 32768f
+            VoiceStem.mixFrame(frame, 0, voice, rest, mixed, 0)
+            for (c in 0 until 2) {
+                if (float) {
+                    output.putFloat(mixed[c])
+                } else {
+                    output.putShort((mixed[c] * 32768f).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort())
+                }
+            }
+        }
+        input.position(input.limit())
+        output.flip()
+    }
+}
+
+/** A player whose sound goes through [processors], in order, on its way to the speaker (as 16-bit samples). */
+@OptIn(UnstableApi::class)
+internal fun processingPlayer(context: Context, vararg processors: AudioProcessor): ExoPlayer {
     val renderers = object : DefaultRenderersFactory(context) {
         override fun buildAudioSink(
             context: Context,
@@ -129,7 +173,7 @@ internal fun processingPlayer(context: Context, processor: AudioProcessor): ExoP
             // Processors only run on 16-bit output; float output would skip them.
             .setEnableFloatOutput(false)
             .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
-            .setAudioProcessors(arrayOf(processor))
+            .setAudioProcessors(arrayOf(*processors))
             .build()
     }
     return ExoPlayer.Builder(context, renderers).build()

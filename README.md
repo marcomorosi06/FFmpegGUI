@@ -42,7 +42,7 @@
 
 - **Private by design.** The app has no internet permission, and no storage, media, camera or microphone permission either: files come only through the system's picker or a share, one at a time. The build fails if a dependency ever tries to add one of them. No ads, no trackers, no account: nothing you open leaves the phone.
 - **What you see is what you get.** Every edit shows in the editor before anything is rendered. The preview runs ports of the same FFmpeg filters the export uses, so the file comes out as you saw it.
-- **FFmpeg, not a black box.** The generated command is always in view and can be edited by hand before converting, or replaced by your own.
+- **FFmpeg, not a black box.** The generated command is always in view and can be edited by hand before converting, or replaced by your own. The command studio helps write it: suggestions from what the bundled FFmpeg knows (only ever offered, taken with a tap or Tab), its own docs at the cursor, a checker, recipes, a history with favourites, and extra files of your own.
 - **Made for the phone.** Video is encoded by the phone's own video chip, exports keep running in the background, and the whole interface follows Material 3 Expressive: springy motion, shape-morphing controls, colours from your wallpaper or the app's own teal. Every screen also lays itself out for a phone on its side, a tablet or a monitor: two panes side by side, and in the editors the timeline across the bottom with a tool's panel beside the preview.
 
 ## Features
@@ -53,6 +53,8 @@
 - **Transitions** between clips, as in CapCut: 25 of them (dissolves, dips to black or white, slides, covers, reveals, wipes, soft wipes, circles, iris, box, doors, shutter, clock, zoom), each with its own length; every choice plays in a loop on its tile, the joins between clips are buttons on the timeline, and the preview draws them live with the same math as the export (`xfade` and `acrossfade`)
 - Colour, fades and **keyframes**: clips zoom, pan and change colour and volume; texts and pictures move, grow, turn and fade; each keyframe moves on to the next with an easing (linear, smooth, ease in / out, overshoot, bounce, elastic, hold) or a curve drawn by hand
 - **Texts** and **pictures or videos laid over the video**, each on its own row of the timeline: crop, rounded or round shape, outline, shadow or glow, blur, layers and ready-made animations in and out
+- **Shapes** laid over the video, **blend modes** for pictures, videos and shapes, and a **layers** list to reorder them by dragging
+- **Effects** on their own lane, as in CapCut: sparks, fireworks, flames, smoke, snow, rain, confetti, dust in the light, bokeh and hearts, looping for as long as they last, with their strength and colour; and **magic transitions**: a fairy's wand, an explosion, a flash, the cut hidden under them. All drawn by the project's own script, light on black, screened over the video
 - **Chroma key and colour key** on clips, the whole video and overlays, with spill removal and transparency
 - **Sounds** on their own rows, with their real waveform: volume, speed (keeping the pitch or not), pitch shift, fades, equaliser, repeat
 - Burned-in subtitles (`.srt`, `.ass`), undo and redo of every edit
@@ -63,9 +65,13 @@
 - **Subtitles from speech**: the video is listened to on the phone (25 European languages) and the words appear on the preview as they are found. Presets, colours, outline or box, the word being said lit up, lines to correct, export as `.srt`
 - **Transcripts**: any audio or video file written down as `.txt` or `.srt`, read beside the player and corrected line by line
 - **Subject cut-out** without a green screen, on photos, stickers and pictures laid over the video; FFmpeg merges the mask in (`movie`, `alphamerge`)
+- **Subtitles translated** into other languages on the phone with Opus-MT, each line keeping its time: a `.srt` or `.ass` file becomes a new file in the new language, spoken subtitles get the new words. The language is found by itself; between two languages with no model of their own the way goes through English. Any language pair can be added
+- **Dubbing in the subtitles' language**: a natural voice (Kokoro, 54 voices in English, Italian, Spanish, French, Portuguese, Hindi and Chinese, each one heard first) says every line of the subtitles where it is shown, a little faster where a line would not fit, and the dub becomes a sound of its own on the timeline. The video's own voice can be kept, lowered or taken out (it is set apart from the music first). With the translation, a video in one language is dubbed into another on the phone, in one tap with the editor's **Dub** tool: it listens to the video, translates it, sets the original voice apart (taken out or lowered) and lays the dub, each step shown as it goes and undone on its own. Besides Kokoro, Piper voices are picked from a list of 125 in 34 languages, the best first, downloaded in the browser and imported (any other one too: a sherpa-onnx `vits-piper` archive, or Piper's `.onnx` and `.onnx.json`, one trained at home too): many times quicker on a phone. Each line is said in one breath (no seams between its sentences), a voice whose licence forbids commercial use (or that is for research only, or whose licence is not known) is marked and asked about before every dub, and every dub, and every file exported with one, is marked as AI-generated in its tags (AI Act, Article 50)
+- **Voice and the rest apart**: the voice of a video or a song is set apart from the music and the noise on the phone (Spleeter), then each one gets its own level: the voice alone, no voice (karaoke), the voice up front for dialogue, the voice lower, or any mix. In the editor per clip, heard live in the preview. A file is done once, for every project; the export mixes the two with FFmpeg (`pan`)
+- **Magic eraser**, in the picture editor and on pictures laid over the video: paint over what should go (the magic brush finds the whole of it, or start from the subject the cut-out finds) and it is filled in with what should be behind it, by MI-GAN (quick) or LaMa (precise), on the phone
 - **Cut-out corrected with two brushes**, as in a magic editor: green keeps, red removes. With the magic tool a tap or a rough stroke is enough: a light Segment Anything finds the whole thing, only what the stroke touches is taken and its edge is brought to the picture's own edges (guided filter). The precise brush changes exactly what it covers; two fingers zoom in for the fine parts; undo and redo stroke by stroke
 
-The models are not in the app and are never downloaded by it: the browser downloads them once, the app imports them and checks every file against its pinned SHA-256 (Settings > Smart features). Two models are offered for each feature:
+The models are not in the app and are never downloaded by it: the browser downloads them once, the app imports them and checks every file against its pinned SHA-256 (Settings > Smart features); a translation pair, which can be any Opus-MT model, has its files' SHA-256 taken when it is imported and checked again on request. Two models are offered for each feature:
 
 | Feature | Model | Notes |
 |---|---|---|
@@ -74,6 +80,14 @@ The models are not in the app and are never downloaded by it: the browser downlo
 | Cut-out | U2-NetP | Fast, about 5 MB |
 | Cut-out | IS-Net (general use) | Precise, about 170 MB |
 | Cut-out correction | SlimSAM-77 (ONNX by Xenova) | Optional, about 40 MB |
+| Translation | Opus-MT, one per language pair (ONNX by Xenova) | Any number of pairs, about 100 MB each |
+| Voice separation | Spleeter 2stems, int8 (ONNX by sherpa-onnx) | One archive from GitHub, about 50 MB |
+| Dubbing | Kokoro-82M v1.0, float32, multi-language (sherpa-onnx) | One archive from GitHub, about 350 MB (400 MB unpacked) |
+| Dubbing, quick | Any Piper voice (VITS) | One archive or two files each, 20 to 120 MB |
+| Magic eraser | MI-GAN (pipeline ONNX) | Quick, about 28 MB |
+| Magic eraser | LaMa big-lama (ONNX by Carve) | Precise, about 210 MB |
+
+Every model runs on the phone's processor, with ONNX Runtime's XNNPACK kernels where they help (one switch for all; the phone's GPU and NPU cannot be used by ONNX Runtime on Android for these networks).
 
 ### Audio
 - A dedicated editor with a large waveform of the exported sound, heard live as you edit
@@ -89,7 +103,10 @@ The models are not in the app and are never downloaded by it: the browser downlo
 - Exposure, brightness, contrast, highlights, shadows, warmth, tint, hue and more
 - Twelve filters with intensity and effects (blur, pixels, glitch, duotone, sketch...)
 - Texts, stickers, drawing and borders
+- **Layers**: every text, sticker and shape in a list, dragged into their order
+- **Shapes** (rectangle, ellipse, star, heart, Material's expressive shapes...) with solid or gradient fill and outline, and **blend modes** (multiply, screen, overlay, difference...) for stickers and shapes
 - Background removal by colour or by subject, kept transparent in PNG, WEBP and TIFF
+- **SVG editor**: shapes, texts, curves drawn with the pen, lines point by point (curves, zig-zags, waves), connectors that follow the shapes, a paint bucket, snapping and layers; several picked at once to **combine** (union, subtract, intersect, exclude, divide, as in Blender or Illustrator), line up, space out, mirror, group, make into paths, a stroke into a shape or a text into letters, and to place by numbers. **Live symmetry** (left and right, four quarters, 2 to 24 turns, kaleidoscope): draw on one side and it shows on all of them; a grid to snap to; repeat in a row, a grid or round the centre; mirrored copies; simplify, smooth, reverse, break apart and join paths; lock; align on the page. Any picture can be traced into one
 - **HDR look, saved as an Ultra HDR JPG** (the picture plus a gain map, readable by every viewer, brighter on HDR screens): worked out of the picture's light or, for an Ultra HDR photo, the camera's own, with its intensity, everywhere, on the subject, on the background or where it is painted. On an HDR screen (Android 14 and later) the editor shows it as it will be; on any screen it can tint the zones it brightens. Texts, stickers, the drawing and the border are left as they are
 
 ### GIF
@@ -253,12 +270,13 @@ Releases are reproducible: [IzzyOnDroid](https://izzyondroid.org/docs/reproducib
 | Library | Version | Purpose |
 |---|---|---|
 | FFmpegKitNext (built from source) | 6.1.1 | FFmpeg engine (FFmpeg 6.1.6) |
-| Jetpack Compose + Material 3 | BOM 2026.06.01 | UI |
+| Jetpack Compose + Material 3 | BOM 2026.09.00 (Compose 1.12.1), Material 3 1.5.0-beta01 | UI |
 | Navigation Compose | 2.9.8 | Screen navigation |
 | Media3 ExoPlayer | 1.10.1 | Media preview |
 | AndroidX Core Splashscreen | 1.2.0 | Splash screen |
 | sherpa-onnx (with ONNX Runtime) | 1.13.8 | Speech recognition (release AAR in `app/libs`) |
 | ONNX Runtime (Java API) | 1.28.0 | Subject cut-out |
+| AndroidSVG | 1.4 | Opening SVG files, drawing parts of SVGs in the SVG editor |
 
 ## Architecture
 
@@ -284,11 +302,19 @@ FFmpeg GUI is made by one person, in spare time, and will stay free and open sou
   - libass, dav1d, FreeType, HarfBuzz, Fontconfig, Opus, Vorbis, Ogg, zimg, Expat, libpng and cpu_features (permissive licences)
 - [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache 2.0) and [ONNX Runtime](https://onnxruntime.ai) (MIT)
 - [Jetpack Compose](https://developer.android.com/compose), [AndroidX](https://developer.android.com/jetpack/androidx) and [Media3](https://developer.android.com/media/media3) (Apache 2.0)
+- [AndroidSVG](https://github.com/BigBadaboom/androidsvg) by Cave Rock Software (Apache 2.0)
 - [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) by NVIDIA (CC BY 4.0), downloaded by the user; its token list ships with the app
 - [IS-Net](https://github.com/xuebinqin/DIS) and [U2-Net](https://github.com/xuebinqin/U-2-Net) by Xuebin Qin et al. (Apache 2.0), as converted by [rembg](https://github.com/danielgatis/rembg) (MIT)
+- [Opus-MT](https://github.com/Helsinki-NLP/Opus-MT) by the University of Helsinki (CC BY 4.0), as converted to ONNX by [Xenova](https://huggingface.co/Xenova), downloaded by the user
+- [Spleeter](https://github.com/deezer/spleeter) by Deezer (MIT), as converted to ONNX and quantised by [sherpa-onnx](https://k2-fsa.github.io/sherpa/onnx/source-separation/models.html), downloaded by the user; its spectrogram and masks are computed as sherpa-onnx does, in the app's own Kotlin
+- [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) by hexgrad (Apache 2.0), in the multi-language build of [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models), with [eSpeak NG](https://github.com/espeak-ng/espeak-ng)'s data (GPL 3.0), downloaded by the user
+- [Piper](https://github.com/rhasspy/piper) voices (the format: MIT; each voice under its own licence, see its card), as published on [Hugging Face](https://huggingface.co/rhasspy/piper-voices) or packed by [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models), downloaded by the user
+- [MI-GAN](https://github.com/Picsart-AI-Research/MI-GAN) by Picsart AI Research (MIT) and [LaMa](https://github.com/advimman/lama) by Samsung AI Center (Apache 2.0, ONNX by [Carve](https://huggingface.co/Carve/LaMa-ONNX)), downloaded by the user
 - [SlimSAM](https://github.com/czg1225/SlimSAM) by Zigeng Chen et al. (Apache 2.0), a pruned [Segment Anything](https://github.com/facebookresearch/segment-anything), as converted to ONNX by [Xenova](https://huggingface.co/Xenova/slimsam-77-uniform)
 - [anti-vocale](https://github.com/RisorseArtificiali/anti-vocale) (Apache 2.0), where the idea of on-device transcription and the way to run the model come from
 - [Google Sans Flex](https://fonts.google.com/specimen/Google+Sans+Flex) (SIL Open Font License)
+
+The video effects are made by the project's own `scripts/generate-effects.py` and are part of FFmpeg GUI, under its licence.
 
 Each component stays under its own licence.
 

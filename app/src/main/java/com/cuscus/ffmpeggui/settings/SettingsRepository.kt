@@ -67,6 +67,7 @@ class SettingsRepository(context: Context) {
             themeMode = this[THEME]?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } } ?: defaults.themeMode,
             dynamicColor = this[DYNAMIC_COLOR] ?: defaults.dynamicColor,
             pureBlack = this[PURE_BLACK] ?: defaults.pureBlack,
+            monochrome = this[MONOCHROME] ?: defaults.monochrome,
             haptics = this[HAPTICS] ?: defaults.haptics,
             saveCopies = this[SAVE_COPIES] ?: defaults.saveCopies,
             liveUpdates = this[LIVE_UPDATES] ?: defaults.liveUpdates,
@@ -74,6 +75,8 @@ class SettingsRepository(context: Context) {
             cpuSpeed = this[CPU_SPEED]?.let { name -> CpuEncoderSpeed.entries.firstOrNull { it.name == name } } ?: defaults.cpuSpeed,
             saveProjects = this[SAVE_PROJECTS] ?: defaults.saveProjects,
             projectsLimit = this[PROJECTS_LIMIT]?.takeIf { it in AppSettings.PROJECTS_LIMITS } ?: defaults.projectsLimit,
+            clipWaveforms = this[CLIP_WAVEFORMS] ?: defaults.clipWaveforms,
+            landscapeLayout = this[LANDSCAPE_LAYOUT]?.let { name -> LandscapeLayout.entries.firstOrNull { it.name == name } } ?: defaults.landscapeLayout,
             onboarded = this[ONBOARDED] ?: defaults.onboarded,
         )
     }
@@ -82,6 +85,7 @@ class SettingsRepository(context: Context) {
         this[THEME] = settings.themeMode.name
         this[DYNAMIC_COLOR] = settings.dynamicColor
         this[PURE_BLACK] = settings.pureBlack
+        this[MONOCHROME] = settings.monochrome
         this[HAPTICS] = settings.haptics
         this[SAVE_COPIES] = settings.saveCopies
         this[LIVE_UPDATES] = settings.liveUpdates
@@ -89,6 +93,8 @@ class SettingsRepository(context: Context) {
         this[CPU_SPEED] = settings.cpuSpeed.name
         this[SAVE_PROJECTS] = settings.saveProjects
         this[PROJECTS_LIMIT] = settings.projectsLimit
+        this[CLIP_WAVEFORMS] = settings.clipWaveforms
+        this[LANDSCAPE_LAYOUT] = settings.landscapeLayout.name
         this[ONBOARDED] = settings.onboarded
     }
 
@@ -96,6 +102,7 @@ class SettingsRepository(context: Context) {
         val THEME = stringPreferencesKey("theme_mode")
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val PURE_BLACK = booleanPreferencesKey("pure_black")
+        val MONOCHROME = booleanPreferencesKey("monochrome")
         val HAPTICS = booleanPreferencesKey("haptics")
         val SAVE_COPIES = booleanPreferencesKey("save_copies")
         val LIVE_UPDATES = booleanPreferencesKey("live_updates")
@@ -103,6 +110,8 @@ class SettingsRepository(context: Context) {
         val CPU_SPEED = stringPreferencesKey("cpu_speed")
         val SAVE_PROJECTS = booleanPreferencesKey("save_projects")
         val PROJECTS_LIMIT = intPreferencesKey("projects_limit")
+        val CLIP_WAVEFORMS = booleanPreferencesKey("clip_waveforms")
+        val LANDSCAPE_LAYOUT = stringPreferencesKey("landscape_layout")
         val ONBOARDED = booleanPreferencesKey("onboarded")
     }
 }

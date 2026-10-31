@@ -6,6 +6,14 @@ import com.cuscus.ffmpeggui.core.model.CpuEncoderSpeed
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 /**
+ * How the editors lay themselves out on a screen wider than it is tall: as
+ * the window's size suggests (side by side on a phone, the timeline across
+ * the bottom on a tablet), or always side by side with the player on the left
+ * or on the right of the tools.
+ */
+enum class LandscapeLayout { AUTO, PLAYER_LEFT, PLAYER_RIGHT }
+
+/**
  * What the user chose in the settings. The defaults are what a fresh install
  * gets: wallpaper colours, the system's theme, vibration on, a copy of every
  * export in the phone's own folders, Live Updates where Android has them,
@@ -15,6 +23,11 @@ data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     /** Colours from the wallpaper (Android 12+); off, the teal of the app's icon. */
     val dynamicColor: Boolean = true,
+    /**
+     * Greys only, for every screen: no colour to take the eye off the work. It
+     * takes the place of the wallpaper's colours or the teal while it is on.
+     */
+    val monochrome: Boolean = false,
     /** Black backgrounds in the dark theme, for OLED screens. */
     val pureBlack: Boolean = false,
     /** Light taps under buttons, sliders and the timeline. */
@@ -34,6 +47,10 @@ data class AppSettings(
     val saveProjects: Boolean = true,
     /** How many recent projects are kept; the oldest goes when there are more. */
     val projectsLimit: Int = DEFAULT_PROJECTS_LIMIT,
+    /** The video editor's timeline draws each clip's own sound along the bottom of its frames. */
+    val clipWaveforms: Boolean = true,
+    /** Where the player goes when the screen is wider than it is tall. */
+    val landscapeLayout: LandscapeLayout = LandscapeLayout.AUTO,
     /** The welcome has been gone through (or skipped to its end): it shows on the first launch only. */
     val onboarded: Boolean = false,
 ) {

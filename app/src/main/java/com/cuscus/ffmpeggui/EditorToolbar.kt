@@ -46,8 +46,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.ViewWeek
 import androidx.compose.material.icons.rounded.Animation
+import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.Contrast
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Gesture
 import androidx.compose.material.icons.rounded.WbShade
 import androidx.compose.material.icons.rounded.BorderOuter
@@ -62,6 +66,7 @@ import androidx.compose.material.icons.rounded.SurroundSound
 import androidx.compose.material.icons.rounded.Compress
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.Piano
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MusicOff
 import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material.icons.rounded.ZoomOutMap
@@ -129,6 +134,8 @@ enum class EditorTool(@StringRes val labelRes: Int, val icon: ImageVector, val f
     CLIP_TRIM(R.string.tool_trim, Icons.Rounded.Straighten, ToolFamily.PICTURE),
     AUDIO(R.string.tool_audio, Icons.Rounded.GraphicEq, ToolFamily.SOUND),
     VOLUME(R.string.tool_volume, Icons.Rounded.VolumeUp, ToolFamily.SOUND),
+    // The voice set apart from the rest of the sound, each at its own level.
+    VOICE_SPLIT(R.string.tool_voice_split, Icons.Rounded.Mic, ToolFamily.SOUND),
     // Tools of a selected sound.
     SOUND_TRIM(R.string.tool_trim, Icons.Rounded.Straighten, ToolFamily.SOUND),
     SOUND_VOLUME(R.string.tool_volume, Icons.Rounded.VolumeUp, ToolFamily.SOUND),
@@ -147,11 +154,22 @@ enum class EditorTool(@StringRes val labelRes: Int, val icon: ImageVector, val f
     OVERLAY_ROTATE(R.string.tool_rotate, Icons.Rounded.RotateRight, ToolFamily.OVERLAY),
     OVERLAY_ADJUST(R.string.tool_adjust, Icons.Rounded.Tune, ToolFamily.OVERLAY),
     OVERLAY_KEY(R.string.tool_key, Icons.Rounded.Colorize, ToolFamily.OVERLAY),
+    // What is painted over a picture goes, filled in with what should be behind it.
+    OVERLAY_ERASE(R.string.tool_magic_erase, Icons.Rounded.AutoFixHigh, ToolFamily.OVERLAY),
     OVERLAY_VOLUME(R.string.tool_volume, Icons.Rounded.VolumeUp, ToolFamily.OVERLAY),
     OVERLAY_CROP(R.string.tool_overlay_crop, Icons.Rounded.Crop, ToolFamily.OVERLAY),
     OVERLAY_BORDER(R.string.tool_border, Icons.Rounded.BorderOuter, ToolFamily.OVERLAY),
     OVERLAY_SHADOW(R.string.tool_shadow, Icons.Rounded.WbShade, ToolFamily.OVERLAY),
     OVERLAY_ANIMATE(R.string.tool_animate, Icons.Rounded.Animation, ToolFamily.OVERLAY),
+    // How a picture, a video or a shape laid over the video mixes with it.
+    OVERLAY_BLEND(R.string.tool_blend, Icons.Rounded.Contrast, ToolFamily.OVERLAY),
+    // What a selected shape is.
+    OVERLAY_SHAPE(R.string.tool_shape, Icons.Rounded.Category, ToolFamily.OVERLAY),
+    // Which of the app's effects a selected effect is, and how it shows.
+    EFFECT(R.string.tool_effect, Icons.Rounded.AutoAwesome, ToolFamily.OVERLAY),
+    EFFECT_LOOK(R.string.tool_effect_look, Icons.Rounded.Palette, ToolFamily.OVERLAY),
+    // Every text, picture, video and shape of the whole video, in their stacking order.
+    LAYERS(R.string.image_tool_layers, Icons.Rounded.Layers, ToolFamily.OVERLAY),
     // How the keyframe at the playhead moves on to the next (opened from the control row).
     EASING(R.string.tool_easing, Icons.Rounded.Gesture, ToolFamily.OVERLAY),
     // Tools of an audio file's final sound.
@@ -181,6 +199,8 @@ enum class EditorTool(@StringRes val labelRes: Int, val icon: ImageVector, val f
     TRANSITION(R.string.tool_transition, Icons.Rounded.AutoAwesomeMotion, ToolFamily.PICTURE),
     CANVAS(R.string.tool_canvas, Icons.Rounded.AspectRatio, ToolFamily.PICTURE),
     SUBTITLE(R.string.tool_subtitle, Icons.Rounded.ClosedCaption, ToolFamily.OVERLAY),
+    // The dub in one go: what is said, translated and said again by another voice.
+    AUTO_DUB(R.string.tool_auto_dub, Icons.Rounded.RecordVoiceOver, ToolFamily.SOUND),
     EXTRACT(R.string.tool_extract, Icons.Rounded.PhotoCamera, ToolFamily.OUTPUT),
     REMUX(R.string.tool_remux, Icons.Rounded.Sync, ToolFamily.OUTPUT),
     COMMAND(R.string.tool_command, Icons.Rounded.Terminal, ToolFamily.OUTPUT),

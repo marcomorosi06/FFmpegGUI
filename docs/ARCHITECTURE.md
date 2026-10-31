@@ -261,6 +261,17 @@ project's own texts and pictures (whole video, no clock). In order:
    then sharpen (`convolution`), vignette and grain (`noise`);
 5. texts (`drawtext`), stickers (`overlay`), then the drawing;
 6. the border (`pad`) and the output size (`scale`, never larger).
+7. rounded corners (`ImageEdit.corners`, `core/image/RoundCorners.kt`): one
+   `geq` over the whole picture at its output size, from square (0) to half
+   the shorter side (1: a square picture becomes a circle), its edge smoothed
+   over a pixel; the cut-off parts of the colour chosen (`ImageEdit.cornerColor`,
+   `cornerFillFor`): by default transparent in PNG, WEBP and TIFF, black in JPG
+   and BMP. A colour in a format with transparency is mixed in RGBA, so the rest
+   of the picture keeps its own (FFmpeg 6.1's rgba to gbrap conversion may move
+   a half-transparent pixel's alpha by one). `i=nearest`, since geq's bilinear reading takes the last row
+   and column from the ones before. `roundCorners` is its exact port (checked
+   against FFmpeg pixel for pixel); the editor shows it as a rounded clip of
+   the stage (with white behind it for a format without transparency).
 
 `core/image` turns it into `ImageStage`s, each both an FFmpeg filter and a
 Kotlin port of that filter's C code (`ImageStages.kt`), so the editor shows the
@@ -282,16 +293,218 @@ are bit for bit equal; perspective, blur and vignette differ by at most one
 level on some pixels; grain is FFmpeg's random noise, so the preview shows
 noise of the same strength, not the same grains.
 
+The Layers tool (`LayerPanels.kt`; the video editor has it too, for the
+texts, pictures, videos and shapes of the whole video) lists every text and
+sticker of the picture, the one in front at the top (the reverse of `stackOrder`), each with
+its picture (or its text in its own colour and font) in a MaterialShapes badge.
+A row dragged by its handle follows the finger while the others make way with
+the theme's spatial springs; dropped, `placeLayer` puts it at that place of the
+stack (`movedLayersTo`) and numbers every layer again, as one undo step. A tap
+selects the layer on the picture too, and the selected row opens its own
+actions (to the front, up, down, to the back, duplicate, delete); TalkBack gets
+the moves as custom actions of the row.
+
 The drawing (`ImageEdit.strokes`: free strokes, lines, arrows, boxes, ovals,
 eraser) is drawn by `StrokePainter` (`:media`) on the screen and, at export,
 into a transparent PNG (`DrawingRenderer`) that the export lays over the
 picture like a sticker, the whole picture wide.
+
+**A canvas of its own** (`ImageEdit.canvas`, `PictureCanvas`: a size, a fill
+colour or none). The file is then the canvas and the picture one of its
+layers: in the editor it is the image overlay `PHOTO_LAYER_ID`, kept among the
+stickers so that it is dragged, pinched, turned, given a border, a shadow, an
+opacity or a blend and stacked in Layers exactly as they are, but drawn from
+the edited picture (`StackedOverlays(pictures = ...)`) and never a file laid
+over: `footage()` leaves it out of the pictures and the request carries it as
+`ConversionRequest.photoPlacement`. The export makes the canvas with `color`
+(transparent `black@0`, or white where the format holds no transparency),
+makes the picture as always into the link `photo`, and stacks it with the
+captions and stickers by its layer (`overlayGraph`, whose overlays are read
+from a stream or a link), mixed in RGB; border, output size and corners then
+apply to the canvas. `editedSize` is the canvas (the frame texts and the
+drawing lie on), `pictureSize` the picture itself (the crop works on it; while
+cropping the picture shows alone). Ultra HDR is not offered on a canvas.
+
+Two fingers on the canvas zoom it (1x to 8x, around the fingers) and move it
+(`StageZoom.kt`): a `graphicsLayer` scales the whole canvas (picture, texts,
+stickers, drawing, crop frame), so every touch keeps landing in the canvas's
+own coordinates and drawing zoomed in is exact. The stage's detector only
+takes fingers nothing on the canvas took: once a layer consumed a move of the
+gesture (a sticker or text dragged, pinched or turned, the crop frame), the
+gesture is the layer's to the end, a second finger beside it included; and the
+zoom starts only past 1.6 times the layers' slop, so a layer under the fingers
+always claims them first (it sees every move before the stage). A stroke under way when a second finger lands is
+dropped (`DrawingLayer`). The zoom pill springs it back to fit. Zoom is a view
+of the canvas only: nothing of it reaches the project or the export.
+
+Texts, stickers, shapes and the drawing are clipped to the picture on screen,
+as the export clips them: a layer moved partly off the picture is cut at its
+edge and never covers the editor (the file name, the tools).
 
 The bundled FFmpeg has no WebP encoder: for WEBP the engine has FFmpeg write a
 PNG in its working directory and `ImageRecoder` (`AndroidImageRecoder`,
 `Bitmap.compress`) writes the WebP from it (lossless at quality 100 on Android
 11 and later). JPG uses `mjpeg` (full-range 4:4:4), PNG, BMP and TIFF (deflate)
 their native encoders.
+
+### SVG
+
+**Opening one.** FFmpeg cannot read an SVG: when the probe fails, the file is
+tried as a picture the phone draws (`openPictureAsMain`); `AndroidStillMaker`
+recognises an SVG (its type, name or first bytes) and draws it with AndroidSVG
+(Apache 2.0) at 2048 px on its longer side, transparency kept, into the usual
+PNG still. From then on it is a picture like any other.
+
+**Saving one** (`OutputFormat.SVG`). FFmpeg makes the picture as a PNG, as for
+a WEBP; the engine reads it (`ImageRecoder.read`) and traces it
+(`core/vector/VectorTracer.kt`, `ImageEdit.trace`):
+
+1. at most `maxSide` px on its longer side (box filtered, colours weighed by
+   their opacity); pixels below half opacity stay empty;
+2. a few colours: k-means (k-means++ with a fixed seed, so the same picture
+   always traces the same) on a sample, the green weighed more; or, in black
+   and white, the dark side of Otsu's threshold;
+3. each colour followed along the pixel edges into closed outlines, with
+   their holes (filled even-odd), turning right where two pixels touch by a
+   corner so that they stay apart; specks below `speckle` px dropped;
+4. each outline simplified (Ramer-Douglas-Peucker, 2.2 to 0.8 px by the
+   detail) and, smooth, drawn as quadratic curves through the middles of its
+   sides, turns sharper than about 70 degrees kept as corners;
+5. colours laid largest first, each stroked with itself by half a pixel so
+   that no hairline shows between neighbours.
+
+The shapes tool previews it over the stage (`VectorPreview`, the same path
+steps) while it is open. Shared copies of an SVG go to Download (not every
+gallery takes one).
+
+### The SVG editor
+
+A screen of its own (`app/.../svgedit/`), for what is inside an SVG rather
+than the picture it makes. It opens from home (an SVG picked, or an empty
+drawing) and when SVG is picked as the format of a picture: an SVG opens as
+it is, any other picture is traced into it (`SvgEditorViewModel.trace`, the
+same `VectorTracer`, one path per colour named after it) with a card to
+change how until its shapes are edited. A video's frame saved as an SVG
+still goes through the picture editor. The toolbar adds shapes (a gallery
+of basic ones, lines and every Material shape as an exact path), texts, and
+curves drawn with the pen (`smoothStroke`: simplified, then Catmull-Rom
+cubics); a sheet changes the selection's look; a tour shows the gestures the
+first time.
+
+**Finer tools** (`SvgShaping.kt`). The side handles stretch a node one way in
+its own units (`resizeOwn`): a shape's geometry takes it (a circle becomes an
+ellipse, a path is moved point by point), so its outline keeps its width.
+A moved box snaps to the edges and middles of the page and of the other
+nodes (`snapTargets`, `snapBox`); turning rests on every 15 degrees. A
+connector is a line with `data-connect-from` / `data-connect-to` naming the
+shapes it holds (ids are made up for shapes that had none); after every
+change `reroute` puts its ends where the line between the shapes' middles
+leaves their boxes, or on the anchor it was dropped on
+(`data-connect-from-at`: fractions of the shape's own box, so it turns and
+sizes with the shape); a connector may run straight, in square turns or as a
+curve, leaving and reaching the shapes square to their sides, with chevron
+arrows (`data-connect-style`, `data-connect-arrows`; a path connector keeps
+its free ends in `data-connect-ends`).
+
+**Points** (`SvgPathEdit.kt`). Any outline is edited as its points and the
+pieces joining them (`EditPath`): straight, a cubic curve (its controls
+dragged, or bent symmetrically), a zig-zag or a wave (how many, how tall),
+written into the path as the lines and curves they make, how they were made
+kept in `data-ffg-path` (dropped when another program changed the path). A
+tap on a piece adds a point there (a curve split where it is); the points
+of a new line are placed one tap each.
+
+**Several at once** (`SvgArrange.kt`). "Pick several" makes a tap add a
+node to the selection or take it out (`SvgEditorViewModel.also`, next to the
+one picked first); they move, size and turn together by their bodies
+(`transformAll` on the outermost of them, snapping to everything else), and
+the look sheet changes them all. The "More tools" sheet (`SvgActions.kt`)
+lines them up on the box around them (one alone: on the page), spaces them
+out, mirrors and turns them, groups them (where the top one was, each keeping
+its place on the drawing) or takes a group apart, makes a basic shape a path,
+copies a look and pastes it, and places them by numbers.
+
+**Booleans** (`SvgBooleans.kt`). Union, subtract (the top ones out of the
+bottom one), intersect, exclude and divide, as in Blender or Illustrator: each
+node's area on the drawing (its fill; for an outline with nothing inside, the
+band its stroke paints, `Paint.getFillPath`; a text as its letters,
+`Paint.getTextPath`; a group as everything in it) goes through Skia's
+`Path.op`, and the result is read back as lines and curves (`PathIterator`,
+conics as quadratics) into a path that takes the place of what was picked, in
+the look of the bottom one (`replaceWithOutlines`: where the top one was, in
+its units). Divide gives every piece the outlines cut, each in the look of
+the top one over it, bits apart as shapes of their own. The same reading back
+makes a stroke a shape ("Stroke to shape") and a text its letters ("Text to
+shapes").
+
+**Professional tools** (`SvgPro.kt`, tested; `SvgSymmetry.kt`, `SvgActions.kt`).
+- *Live symmetry.* A group marked `data-ffg-symmetry="kind;count;cx;cy"`
+  holds a source group and copies of it (`data-ffg-copy`), mirrored left and
+  right, top and bottom, in four quarters, turned 2 to 24 times, or turned
+  and mirrored (a kaleidoscope), about the page's centre. Whatever the editor
+  adds goes into the source; after every change (live gestures too) the view
+  model makes the copies again from it, only when the source changed, each
+  copy keeping its keys where its tree has the same shape (the renderer's
+  cache is by key). Copies are real SVG content (the file looks right in any
+  viewer) but are skipped by `hits`, so only the source is picked; the
+  layers leave them out. The stage draws the axes and the centre, and the
+  pen's stroke on every side as it is drawn. Turned off, the copies are kept
+  as ordinary groups or taken away.
+- *Grid.* A number of squares across the shorter side; drawn on the page
+  (every fourth line stronger) and, when asked, its lines added to the snap
+  targets of a move (`SnapTargets.withGrid`).
+- *Locking.* `data-ffg-locked="1"`: skipped by `hits` and by select all;
+  unlocked from the layers' padlock.
+- *Repeat.* In a row (across or down, a gap between the boxes), in a grid,
+  or turned round the page's centre: each copy duplicated from the last and
+  placed from the original's place, so the stack stays in order.
+- *Mirrored copy*: a copy flipped and laid beside the original.
+- *Paths.* Simplify (each piece flattened, thinned within 0.4 % of the
+  page by Ramer-Douglas-Peucker, smooth curves laid through), smooth (every
+  corner a Catmull-Rom curve), reverse (each piece end to start, a curve's
+  controls swapped), break apart (each piece a shape), join (several shapes
+  one even-odd path, in the first one's units and style).
+- *Align on the page*, for several, as well as on their box.
+
+**Continue editing** (`SvgDrawingStore`). A moment after each change (and
+when the editor is left) the drawing is kept in `files/drawings/<id>/`
+(`drawing.svg`, `name.txt`, `thumb.png`) when the app keeps projects; its
+cards (`ProjectCard.drawing`) join the recent projects on the home screen,
+newest first, and open, copy and delete as they do.
+
+**Paint bucket** (`core/vector/RegionFill.kt`). The drawing is drawn into a
+picture (at most 1400 px), the space under the finger flood-filled up to any
+other colour, gaps closed by growing the borders and growing the space back,
+then traced (mono) into an even-odd path laid just above what is filled
+there.
+
+**The drawing** (`core/vector/svg/`). `Xml.kt` reads and writes the file by
+hand (a doctype is skipped, its entities never expanded: nothing outside the
+file is read). `SvgDocument` holds it as the editor sees it: groups, basic
+shapes and paths, texts, pictures, each with its transform and its style;
+definitions, styles, metadata and every element the editor does not know
+(`SvgOther`: a use, a clip path...) are kept and written back as they were.
+Styles are read as CSS orders them (presentation attributes, then the file's
+simple class, tag and id rules, then the inline style) and written back
+inline, so that what the editor changes wins over the file's rules.
+`SvgGeometry.kt` has the transforms (`Affine`, SVG's matrix) and the whole
+path grammar (relative commands, shorthand curves, arcs made into cubics).
+
+**Editing** (`SvgEdits.kt`). Nothing changes in place: every change (move,
+size, turn, hide, duplicate, delete, reorder) gives a new drawing, and undo
+keeps the old one (`SvgEditorViewModel`, a step per gesture). A transform of
+the drawing's pixels is laid on a node's own transform through what its
+groups and the view box do (`transformInWorld`), so a node moves under the
+finger whatever it sits in. A tap finds the node on top there (`hits`: filled
+by the non-zero or even-odd rule, or near its outline); a tap on the
+selection reaches the one under it.
+
+**Drawing it** (`SvgRenderer`). From the editor's own model, onto the
+stage's canvas, so that a change shows at once: outlines, solid colours,
+gradients, dashes, opacity, texts and embedded pictures are drawn there;
+`SvgOther` nodes and texts placed piece by piece are drawn by AndroidSVG
+within the same transforms. Clip paths, masks and filters are not drawn while
+editing (they stay in the file).
 
 ### GIF
 
@@ -318,8 +531,14 @@ DataStore by `SettingsRepository` (a `StateFlow` that is null until read; the
 splash screen waits for it so that the first frame has the chosen colours).
 Where each one acts:
 
-- theme, wallpaper colours, pure black: `FFmpegGUITheme` and the editors'
-  `EditorTheme` (`ui/theme/Theme.kt`: `appColorScheme`, `onBlack`). Without
+- theme, wallpaper colours, monochrome, pure black: `FFmpegGUITheme` and the
+  editors' `EditorTheme` (`ui/theme/Theme.kt`: `appColorScheme`, `onBlack`).
+  The Appearance page picks the palette on three tiles, each drawn with its own
+  accents: the wallpaper's (Android 12+), the icon's teal, or monochrome
+  (`MonochromeLightColorScheme` / `MonochromeDarkColorScheme` in
+  `ui/theme/Color.kt`: greys only, built like Material's monochrome scheme, the
+  tool families apart by tone, errors still red). Monochrome changes the app's
+  colours, not its launcher icon. Without
   wallpaper colours (or before Android 12) the app wears the tonal-spot scheme
   of the icon's teal #00897B, generated with material-color-utilities
   (`ui/theme/Color.kt`). The icon follows too (`ui/theme/AppIcon.kt`): in the
@@ -340,6 +559,22 @@ Where each one acts:
 - Live Updates: `AndroidExportNotifier` asks for promotion only when on;
 - recent projects: see "Recent projects" below. Turning them off asks first,
   then deletes every project kept.
+- with the screen on its side (Editor): `LandscapeLayout`. As it fits (the
+  default) the editors lay themselves out by the window's size, as before; with
+  the player on the left or on the right, a window wider than it is tall always
+  puts the player beside the tools, half the width each, whatever the video's
+  shape (the largest preview for a vertical one). `SideBySide`
+  (`LayoutChoice.kt`) lays the two out without building the player again when it
+  changes side (it would start over): the halves slide across with the
+  theme's spatial spring. On a landscape screen the editors' top bar has the
+  switch (`SwapSidesButton`) that moves the player to the other side and keeps
+  the choice;
+- the sound of the clips (Editor): the video editor's timeline draws each
+  clip's own sound along the bottom of its frames (`drawClipSoundBand` in
+  `EditorTimeline.kt`, from the same `WaveformCache` the placed sounds use: the
+  peaks of the clip's part of its file, growing up from the bottom over a dark
+  band, faint when the clip is muted). Not for a GIF, a picture or a file without
+  sound; an audio file's clips are their waveform already.
 
 The pages (`SettingsScreens.kt`, `SettingsUi.kt`) are grouped lists in the
 Material 3 Expressive style: the rows of a group touch, very round at the
@@ -356,6 +591,21 @@ the name in the display face; the motto ("Why would a video editing app need
 internet permission?"); FFmpeg's version from FFmpegKit (`media/FfmpegInfo.kt`);
 the licences (the typeface's OFL text from the assets). Links open in the
 browser: the app itself never goes online.
+
+**Smart features** (`SmartHub.kt`, `SmartShowcase.kt`, `SmartSettings.kt`).
+Not one long page but a hub and a page per feature. The hub: a hero (the
+features' badges going round a turning shape, a ring of how many are ready,
+the privacy promise, the speed switch for every model with a little gauge),
+then a tile per feature (speech, translation, cut-out, eraser, voice apart,
+dubbing), two by two, each playing its own small film drawn by the app in
+the theme's colours (the welcome's art where there is one: the spoken words,
+the cut-out), with a line and a status pill (ready and its size, not set
+up, importing, needs a look); last, the models' licences. A tile opens the
+feature's page: its film large, its badge blooming in, a line, its status,
+and only its own cards. Pages come in sliding and growing, and back goes to
+the hub (`BackHandler`). Screens that send the user to set something up name
+the page (`SmartPageRequest`), so "Get the eraser model" lands on the
+eraser's page.
 
 ## Recent projects
 
@@ -395,6 +645,28 @@ them). Only the newest `projectsLimit` projects are kept; a project the user
 deleted is never brought back by a late save. The settings page lists every
 project with its size, missing files and copies, and deletes one or all.
 
+## Frame by frame
+
+Beside play / pause two arrows move the playhead one frame back or forward
+(`FrameStepButtons.kt`), for cutting exactly where a finger on the timeline
+would glide past; held, they step again and again, faster the longer they are.
+`FrameStep` (`core/preview`, unit tested) counts the frames in each clip's own
+file at its own rate (`MediaInfo.frameRate`, 30 a second when not known): a
+step lands in the middle of the part of the next (or previous) frame the clip
+shows, so that the preview's exact seek shows that very frame; past a clip's
+end it goes on to the first frame of the next clip, before its start to the
+last frame of the one before, and stops at either end of the video.
+A tap is an exact seek; the steps of a hold are scrubs (see "Live preview"),
+so the picture follows them frame by frame, and the frame it stops on is then
+shown exactly.
+
+The row under the preview never lets two controls overlap (`ControlRow` in
+`ConfigScreen.kt`): the right group (the curve button of a keyframe, which
+grows out of the diamond, the diamond, undo, redo) is laid first, play / pause
+with its arrows stays in the middle while it fits and moves left when it does
+not, and the clock takes what is left: on one line, on two (the time above the
+length) or the time alone (`AdaptiveClock`).
+
 ## Live preview
 
 The editor shows every setting before anything is rendered. No FFmpeg run is
@@ -431,6 +703,16 @@ the export lives in `:core`, package `preview`, and is unit tested:
 | placed sounds               | a player per sound, kept in sync with the output clock (place, trim, volume, fades, speed, pitch, repeats, equaliser, levelling) |
 | sound effects (final sound, each placed sound) | sample-exact ports of the FFmpeg filters in an `AudioProcessor` of every player; pitch as the players' pitch; the waveform view drawn from the output's outline |
 | stream copy, frame extraction | filters are ignored, exactly as the export ignores them              |
+
+Dragging the timeline asks the preview for a frame about 20 times a second.
+Plain exact seeks would each start over before the one before had shown
+anything, so the picture stood still until the finger stopped; instead the
+timeline's seeks are scrubs (`PreviewSeek.scrubbing`,
+`EditorPreviewPlayer.scrubMediaFrame`): the main player goes into Media3's
+scrubbing mode (`ExoPlayer.setScrubbingModeEnabled`, Media3 1.8 and later),
+which shows each frame as soon as it can, and leaves it once no frame has been
+asked for 180 ms, showing the last one exactly. A tap, a frame step or a seek
+from the media notification stays a plain exact seek.
 
 What a live preview cannot be: reversed *audio* is not audible (muted), loudness
 normalisation is a constant gain rather than loudnorm's dynamic processing, and
@@ -474,9 +756,18 @@ only); see `core/command/KeyFilters.kt`. Where it goes:
   multiplies them the same way (`ColorKeying.apply(keepAlpha = true)`, the
   integer `a * b / 255` of blend);
 - a photo: last of its steps (`ImageStage.Key`), before texts and stickers.
-  The photo's steps run on rgb24, so a transparent PNG opened as a photo is
-  opaque from the start, in the export and in the editor alike
-  (`Raster.opaque()`, `keepAlpha = false`); the stickers laid on it keep their
+  The photo's steps run on rgb24, so they read a transparent picture opaque
+  (`Raster.opaque()`, `keepAlpha = false`). A picture with an alpha channel of
+  its own (`MediaInfo.hasAlpha`, told by the probe from a small decoded copy)
+  saved as PNG, WEBP or TIFF keeps its transparency all the same
+  (`ConversionRequest.keepsPictureAlpha`): the export splits its alpha off at the
+  start (`alphaextract`), puts it through the same geometry as the picture
+  (mirrors, turn, keystone, straighten, crop) and multiplies it back into the
+  alpha the steps left (a key's, 255 without one) at the end
+  (`blend=all_mode=multiply`, `alphamerge`); the editor does the same in Kotlin
+  (`alphaOf`, `shapeAlpha`, `mergeAlpha` in `core/image/ImageEditing.kt`, in
+  `PictureRenderer`) and shows the checkerboard through it. Saved as JPG or BMP
+  the picture stays opaque, as before. The stickers laid on it keep their
   transparency as overlays do. PNG, WEBP and TIFF keep the cut transparent
   (`-pix_fmt rgba`, `overlay` with `format=auto` so the stickers keep it), or
   show a fill colour at an opacity (`ColorKey.backgroundOpacity`,
@@ -537,6 +828,172 @@ laid over the video), with the result on a checkerboard:
   the fill: transparent (the default where the output keeps transparency) or
   a colour, with its opacity where the result can hold it (a photo saved as
   PNG, WEBP or TIFF); a line says what the output does with it.
+
+## Blend modes
+
+A picture, a video or a shape laid over the picture or the video can mix with
+what lies under it instead of covering it (`ImagePlacement.blend`,
+`LayerBlend` in `core/model`): multiply, screen, overlay, darken, lighten,
+colour dodge and burn, hard light, difference, exclusion, add. They are the
+separable modes of the W3C compositing spec, which Android draws too.
+
+**Export.** `layOver` (`CommandBuilder.kt`) lays a NORMAL picture with
+`overlay` as before. A blended one is first laid on a see-through copy of the
+frame (`colorchannelmixer=aa=0`, `overlay=...:format=rgb` with its own place,
+time window, turn and fades, so it moves exactly as it would); the two are
+mixed by `blend=all_mode=...` in planar RGB (`gbrap`), the picture as the top
+input, and the mix is kept only where the picture is (`alphaextract`,
+`alphamerge`, then `overlay` on the frame): the frame times (1 - alpha) plus
+the mix times alpha, which is how Android composites a layer with a blend
+mode. FFmpeg's `hardlight` tests its bottom input, so it is the spec's overlay,
+and its `overlay` is the spec's hard light (`LayerBlend.ffmpegMode`). Soft light
+is left out: FFmpeg's formula is not the spec's.
+
+**Preview.** The picture's layer in `ImageOverlaysLayer` gets the mode as its
+`blendMode` (`composeMode()`, `BlendPanels.kt`), drawn over the photo or the
+video's `TextureView`. Texts are always laid normally (`drawtext` cannot blend).
+
+**Panel.** `ImageBlendPanel`: the chosen mode large, in a badge that morphs into
+the mode's own shape, and every mode on a tile that shows itself (a warm-to-cold
+backdrop with a disc mixed onto it by that mode). In the picture editor it is a
+tool of a sticker or a shape, in the video editor of a picture, a video or a
+shape laid over it.
+
+## Video effects
+
+Sparks, fireworks, flames, smoke, snow, rain, confetti, dust in the light,
+bokeh and hearts loop over the video for as long as they are laid; the fairy's
+wand, an explosion and a flash are transitions laid over the cut between two
+clips. None comes from elsewhere: `scripts/generate-effects.py` draws every
+frame (numpy, scipy, fixed seeds) and encodes them with FFmpeg into
+`app/src/main/assets/effects/` (H.264, 1280x720, 30 fps, about 8 MB in all),
+with `index.json` saying what each is (`kind` loop or transition, `frames`,
+`fps`, for a transition the second of the `cut`, under its brightest frame,
+and its `sheet`: a JPEG of small frames, 160x90 at 15 fps, eight a row). The
+script is only run to make them again (`--index-only` makes the sheets and the
+index from the videos there); the build uses the files.
+
+**Light on black.** Each effect is drawn as light on black and laid with the
+screen blend (`LayerBlend.SCREEN`): black disappears and the light adds up, so
+no transparency is needed and every phone decodes the files. A looping effect
+loops seamlessly: every particle has a phase in the loop, falling things cross
+a whole number of frame heights per loop, and the noise of flames and smoke is
+periodic in time.
+
+**Library.** `EffectLibrary` (`app/.../effects/`) reads the index when the app
+starts and copies each file into `files/effects/` (players and FFmpeg read a
+file, not an asset), again when a new version brings a different one. Projects
+keep these copies' URIs as they are (`ProjectStore.keep`, `EffectLibrary.owns`).
+The gallery, the effect's panels, the layers list and the transition tiles never
+decode a video: they draw the effect's sheet (`EffectLibrary.sheet`, read once,
+RGB 565), one frame after the other at the effect's own speed, in the drawing
+phase only (`EffectFrames`, `drawSheetFrame`), so they show at once.
+
+**An effect laid over the video** is an `ImageOverlay` with `effect` (its name)
+and `hue` (degrees), full frame, screened, on the effects lane of the timeline
+(`LaneKind.EFFECT`, the first lane, as effects lie on top) and above everything
+placed later (`effectLayer` leaves a thousand layers under it). Its tools are
+which effect (`EffectChoiceContent`), its look (strength and colour,
+`EffectLookContent`), fades and timing; it is added from the gallery
+(`EffectPickerSheet`), every tile playing its own frames, opened from the tool
+row ("Effects") or from the effects lane.
+
+**Export.** `toPlacement` makes it an `ImagePlacement` with `cover`,
+`hueDegrees` and `OverlayVideo(loop = true)`: the input is read with
+`-stream_loop -1` (and `-t` for as long as it shows), moved to its start
+(`setpts`), turned round the colour wheel (`hue=h=`), scaled to fill the frame
+and cut (`coverScale`, from `wholeFrameSize`), then laid by `layOver` with its
+opacity and fades.
+
+**Preview.** `EffectsLayer` (`EffectOverlays.kt`), inside `StackedOverlays` in
+the stacking order: a silent ExoPlayer per effect on screen, repeating, kept at
+(now - start) modulo the loop's length; its `TextureView` fills the frame as
+the export's cover does, with the hue as a colour matrix (`hueColorMatrix` in
+`core/preview`, the chroma of BT.601 YUV turned as `hue` turns it) and
+`BlendMode.Screen`.
+
+**Transitions.** A `Transition` with an `effect` joins its clips with a cut
+(`transitionLengths` gives it no overlap, so the preview and the export cut
+there). `transitionEffects` (`app/.../effects/TransitionEffects.kt`) makes, for
+each, an overlay of the whole video playing the effect once, its cut on the
+cut (`OutputClock.cutOutputMs`): `footage()` in `RequestMapping` adds them to
+the pictures the export lays, and the preview adds them to the pictures of the
+whole video, so the two always agree and the editor never keeps them. The
+transitions panel shows them as a "Magic" family, each tile cutting between its
+two pictures under the effect's own frames.
+
+## Shape layers
+
+A shape (rectangle, ellipse, triangle, diamond, pentagon, hexagon, star, heart,
+arrow, and Material's sun, cookie, clover, flower and burst) is a sticker whose
+picture the app draws: `ImageOverlay.shape` (`ShapeLayer`, `ShapeLayers.kt`)
+says what it is, how it is filled (a colour, a gradient at an angle, or none),
+its outline, its proportions and how round its corners are, and its `uri` is a
+transparent PNG `ShapeRenderer` draws with the stills (`CacheJanitor.newStill`,
+1600 px on its longer side). So the export, the preview and every tool of a
+picture (place, size, turn, opacity, blend, the outline and shadow of its look,
+keyframes, fades, timing, layers) work on it as they are; it has no crop,
+colours, key or Replace, since it is drawn as asked.
+
+The view model draws the picture again whenever the shape changes
+(`updateShape`, `syncShapes`): one drawing at a time per layer, the newest shape
+asked for when it is done, so a slider dragged on every frame draws only a few.
+The picture follows the shape as a change of its own (`mutate(record = false)`),
+so undo always finds a shape and the picture drawn for it; a step undone or
+redone before its picture was drawn has it drawn then. Projects keep the PNGs
+like the stills, and their shapes trust them when opened. The panel
+(`ShapeLayerPanel`) draws the shape live with the very path the PNG is made
+from (`ShapePaths`), so it changes under the finger while the picture follows.
+
+Both editors add a shape from the tool row ("Shape") and list it among the
+layers; in the video editor it is laid at the playhead, like a picture.
+
+## Starting from nothing
+
+"Create from scratch" on the home screen, under the recent projects
+(`BlankPanels.kt`): a new blank, then the user's own starting points. A blank
+(`BlankSpec`, `core/model/Blank.kt`) is a size (a shape among square, post,
+story, wide, photo, 4:3, A4, banner, this screen, or any size typed; its
+longer side 1080, 2160 or 3840 px, sides even, at most 3840 as a still) and a
+fill (`BlankFill`: transparent, a colour at any opacity, a linear gradient at
+an angle across the picture's extent along it, or a radial one from the middle
+to the corners, each colour with its own opacity). `AndroidBlankMaker` draws
+it into a PNG still, row by row as `BlankFill.row` works it out (the sheet's
+preview draws the same with Compose brushes), and it opens as a picture named
+after the blank; its file type is picked afterwards, as for any file. The
+presets are neither settings nor projects: `BlankPresetStore` keeps them in a
+JSON file of their own (`BlankPresetsJson`), newest first, one per name; a tap
+makes one at once, a long press edits or forgets it. Beside the new blank, ready ones
+(transparent, a few colours, a gradient; a square of 1080 px) open at once,
+or held, in the sheet to change them first.
+
+Every row of colour swatches (`ColorSwatchRow`) ends with a colour wheel that
+takes any colour by its hex code (`HexColorDialog`, `parseHexColor`); a colour
+chosen that way shows chosen at the end of the row.
+
+## Compressor
+
+A tool of its own from home (`CompressScreen`): a file picked there is opened
+as usual (`setInputUri`) and exported at once with `ConversionSettings.compression`
+set for that export only (never saved). `Compression` (`core/model`) is a level
+(same quality, balanced, smallest) or a size to fit:
+
+- a video becomes an MP4 with HEVC by x265 (`-tag:v hvc1`, `+faststart`), never
+  the phone's encoder: at CRF 24 / 28 / 32, or, to fit a size, in two passes
+  (`buildFirstPass`: the same command with `-x265-params pass=1:stats=...` into
+  `-f null`, then `pass=2` at the bitrate that fills the size, 3 % kept for the
+  container, the AAC sound at most a fifth of it, 64 to 128 kbit/s); a lower
+  resolution is the usual `Resolution`;
+- a JPG at the level's quality, or fitted by the engine (`fitted`): made again
+  at half the quality range [FIT_STEPS] times, the best that fits kept;
+- a PNG with `-compression_level 9 -pred mixed`, or brought to 256 colours
+  (`palettegen` / `paletteuse` dithered, transparency kept, `pal8`, unfiltered
+  rows); a WEBP at the level's quality; a longer side as `ImageOutput.maxSide`;
+- a sound in its own lossy format (a lossless one becomes M4A) at a lower
+  bitrate (`Compression.audioKbps`), or the one that fills the size;
+- with "without place and device", the tags go through `withoutSensitive`.
+
+All of it was checked against FFmpeg 6.1 (x265's two passes, the palette).
 
 ## Background playback
 
@@ -602,6 +1059,16 @@ later ask for the notification permission at the first export.
 | an effect of an audio file (and its preview) | `core/audio/` (`AudioMastering.kt`, `AudioStage.kt`, `Dsp.kt`) |
 | an edit of a picture (and its preview)      | `core/image/` (`ImageEditing.kt`, `ImageStages.kt`)  |
 | the picture editor                          | `app/.../ImageEditorScreen.kt`, `app/.../ImagePanels.kt` |
+| the layers of a picture (texts, stickers)   | `app/.../LayerPanels.kt`, `core/model/Stacking.kt`   |
+| blend modes (export and preview)            | `core/model/LayerBlend.kt`, `layOver` in `CommandBuilder.kt`, `app/.../BlendPanels.kt` |
+| shape layers                                | `app/.../ShapeLayers.kt`, `app/.../ShapePanels.kt`, `updateShape` in the view model |
+| the video effects and effect transitions    | `scripts/generate-effects.py`, `app/.../effects/`, `app/.../EffectPanels.kt`, `app/.../EffectOverlays.kt` |
+| the SVG editor                              | `core/vector/svg/`, `app/.../svgedit/`               |
+| subtitle translation (models, text, UI)     | `core/translate/`, `app/.../translate/`              |
+| dubbing in the subtitles' language          | `core/dub/`, `app/.../dub/`                          |
+| the voice set apart from the rest           | `core/voice/`, `app/.../voice/`, `app/.../VoicePanels.kt`, `app/.../VoiceScreen.kt` |
+| SVG booleans, aligning, grouping            | `app/.../svgedit/SvgBooleans.kt`, `core/vector/svg/SvgArrange.kt`, `app/.../svgedit/SvgActions.kt` |
+| the command studio (suggestions, checker)   | `core/command/studio/`, `app/.../command/`           |
 | codecs, quality mapping, containers         | `core/command/EncoderArguments.kt`                   |
 | inputs, stream mapping, the filter graph    | `core/command/CommandBuilder.kt`                     |
 | output file names and directories           | `core/output/OutputPlanner.kt`                       |
@@ -637,7 +1104,7 @@ Adding a setting end to end: field in `ConversionSettings` -> setter in
 ## Tests
 
 `./gradlew :core:test` runs on a plain JVM (no emulator). It covers command
-generation for every mode, command-line quoting, the manual command resolver,
+generation for every mode, command-line quoting, the manual command resolver, the command studio (help parsing, suggestions, checker, recipes),
 output naming, duration math, progress parsing, the timeline operations, the
 preview math, subtitle re-timing, the project files (`ProjectJsonTest`: every
 field of every model, filled with random values, must come back from the
@@ -743,6 +1210,265 @@ the partial file and runs the same request again with x264; it says so with
 `ConversionEvent.Encoder`, the processing screen shows who encodes, and the
 done screen says which one made the file (`VideoEncoderUse`).
 
+## Subtitle translation
+
+Subtitles translated on the phone with Opus-MT (University of Helsinki, CC BY
+4.0), as converted to ONNX for transformers.js by Xenova: one model per
+language pair (or from many languages to English, or from English to many),
+four files each (`vocab.json`, `source.spm`, the quantised encoder and
+decoder; `config.json` is read when given, else the vocabulary's "</s>" and
+"<pad>" say what it would, `MarianConfig.fromVocab`). The user's browser downloads them; any number of pairs
+can be on the phone (`app/.../translate/`).
+
+**Import** (`TranslationModelStore`). The files are picked at once and
+known by their names (a browser's "vocab (1).json", or a .json saved as .txt); the import is put
+together apart and takes its place only once the settings read as a Marian
+model's, the vocabulary and the SentencePiece model parse and both ONNX files
+open. Its languages come from its name on Hugging Face (given in the sheet, or
+the settings' `_name_or_path`); a model that writes many languages lists them
+by the ">>ita<<" tokens of its vocabulary. Unlike the other models, whose
+files are pinned, any pair can be added, so each file's SHA-256 is taken at
+import and checked again on request.
+
+**Text** (`core/translate/`, pure Kotlin, tested). `SentencePiece.kt` reads
+the .spm file (a protocol buffer, by hand) and cuts text as the unigram model
+does (NFKC, spaces as "\u2581", Viterbi over the pieces' scores);
+`MarianTokenizer` looks the pieces up in the vocabulary, puts the target's
+token first for a model that writes many and the end of the sentence last,
+and turns ids back into words. `GreedyDecoder` writes the likeliest id each
+time, never the padding, until the end of the sentence (or a word stuck
+four times).
+
+**Running** (`TranslationEngine`). ONNX Runtime on the processor: each line is
+encoded once, then the decoder (the one without a cache: subtitles are short)
+is run for every id it writes, its last row of scores read. At most two
+models in memory (the way through English needs two), let go of two minutes
+after the last line.
+
+**Which models** (`TranslationRoute`). A model that reads the subtitles'
+language and writes the one asked; else two, through English. The language is
+guessed (`LanguageGuess`): the alphabet first (Cyrillic, Arabic, CJK...), then
+which language's commonest words the lines are made of; the user can change
+it.
+
+**What changes** (`ConversionViewModel.translateSubtitles`). Every line keeps
+its time. A file (`SubtitleTranslation`) keeps everything but its words: a
+SubRip file its numbers and times, a SubStation Alpha file its header, styles,
+every field of its dialogue lines and the override tags that start a line;
+long lines are broken near their middle; it becomes a new file in the app's
+files (the project copies it), one step of undo. Spoken subtitles get, line by
+line (as the subtitles show them), the translated words spread over the
+line's time.
+
+## Voice and the rest
+
+The voice of a file set apart from everything else (music, noise), then the
+two at their own levels: Spleeter's two-stem model (Deezer, MIT), as
+converted to ONNX and quantised to int8 by sherpa-onnx. One archive from
+sherpa-onnx's releases on GitHub (the browser downloads it); both networks
+are pinned by their SHA-256 and kept like the speech model's files
+(`VoiceModel`, `SpeechModelStore`).
+
+**Separation** (`core/voice/VoiceSeparation.kt`, pure Kotlin, tested). As
+sherpa-onnx computes it: 44.1 kHz stereo, a short-time Fourier transform
+(4096-point periodic Hann window, hop 1024, not centred; `Fft` is the app's
+own radix-2), the magnitudes of the first 1024 bins of both channels shown to
+both networks 512 frames at a time (`x`, 2 x 1 x 512 x 1024), and the voice's
+share of every bin v^2 / (v^2 + a^2). Two differences:
+
+- the networks see each window with 32 frames past both ends of what is kept
+  of it (448 frames, about 10.4 s), so that no mask is cut at a window's edge,
+  and the frames are added back over each other across windows; however long
+  the file, memory stays the same;
+- above the networks' 1024 bins (about 11 kHz) nothing is voice, and the rest
+  is exactly the sound minus the voice: the two always add up to the
+  original (sherpa-onnx drops the top end from both).
+
+The sound is padded with N - hop zeros in front, so that every sample lies
+under four frames (their squared windows add up to 1.5).
+
+**Files** (`VoiceSeparator`). FFmpeg takes the sound out (`s16le`, two
+channels, sample 0 at the file's time 0), the separation writes a WAV of four
+channels (the voice's left and right, then the rest's: `VoiceStem`), FFmpeg
+packs it into FLAC in `files/voice-stems/`, one per media file by its
+address: a file is separated once, for every project. The settings say how
+many are kept and remove them all.
+
+**Export** (`CommandBuilder.footage`). A clip whose `Effects.voiceLevel` or
+`backgroundLevel` is not 1 takes its sound from its file's stems
+(`SourceInfo.voiceStem`, filled in by `withVoiceStems`), an input of its own
+seeked like the clip (`-ss`, `-t`), made stereo again at the two levels
+(`pan=stereo|c0=v*c0+b*c2|c1=v*c1+b*c3`) before the clip's own sound chain.
+Without stems the clip keeps its file's sound.
+
+**Preview** (`previewStemSounds`). Such a clip's own sound is off and its
+part of the stems plays on a player of its own, where the clip is on the
+output clock (as the placed sounds do, `SoundVoices`); `StemMixProcessor`
+mixes the four channels down at the two levels for every buffer, so a slider
+is heard at once.
+
+**Where.** The editor's Voice tool, per clip or for every clip.
+
+## Dubbing
+
+The subtitles said by a voice in their language, over the video: Kokoro-82M
+v1.0 (hexgrad, Apache 2.0) in sherpa-onnx's multi-language float32 build (on
+a phone's processor more than twice as fast as the int8 one, whose quantised
+convolutions ONNX Runtime runs slowly, and less metallic), run by
+sherpa-onnx's own text-to-speech (already in the app for speech recognition).
+
+**Model** (`DubModel`, `DubModelStore`). One archive from sherpa-onnx's
+releases; unlike the other models it is unpacked whole, folders kept
+(eSpeak NG's data is a few hundred files), into `files/dub/`. The archive is
+hashed as it is read and the main files (the network, the voices, the token
+list, the lexicons, eSpeak NG's phoneme table) are pinned by their SHA-256.
+Its state reads like the other models' (`SpeechModelStore.State`), so the
+settings show it with the same card.
+
+**Languages and voices** (`core/dub/DubVoices.kt`). The model's 54 voices in
+its own order (their speaker ids); a name says the language and whether the
+voice is a woman's or a man's. Each language is said through its eSpeak NG
+voice, English through its lexicons first, Chinese through its lexicons,
+jieba's dictionaries and the rules for numbers and dates. Japanese is left
+out (its kanji are read as Chinese).
+
+**Lines** (`ConversionViewModel.dubLines`). The subtitles as they are shown
+on the edit: a file's cues moved onto the timeline (`onTimeline`), or the
+spoken words laid out in lines (`SubtitleLayout`), then on the output clock
+(divided by the whole video's speed). `DubTiming.spoken` keeps what can be
+said (no tags, no "[music]").
+
+**Timing** (`DubTiming`, pure Kotlin, tested). A line may take the time until
+the next one starts (and never past the end of the video); a voice that
+needs more is said again faster (the voice's own speed, up to 1.5 times),
+and what still does not fit is made to fit (`DubFit`): its long pauses
+shortened to 140 ms, then the whole line faster without a higher voice
+(`TimeStretch`, WSOLA: 30 ms Hann frames, each moved up to 10 ms to where its
+waveform best goes on; up to 1.6 times), and only past that its end cut,
+faded. Nothing pushes the next lines later: every line starts with its
+subtitle, so the dub cannot drift from them nor outlast the video. How
+fast the voice speaks is learnt line after line (`DubPace`, characters a
+second), so that a long line is said fast enough the first time: a line is
+said a second time only when that was still not enough. Every line has its
+silence cut at both ends and its ends faded (`DubAudio`): it starts when its
+subtitle does, without a click.
+
+In the preview a placed sound a little off its place (a long one, such as a
+dub, drifts) is brought back by playing it 4 % faster or slower until it is
+(`SoundVoices.nudge`), rather than by a seek, which is heard.
+
+**Result** (`DubEngine`). Every line, at its place, in one mono WAV at 24 kHz
+in `files/dubs/`, laid on the video as a placed sound (`AudioClip`): it is
+moved, trimmed and levelled like any other, and a project keeps its own copy.
+A new dub takes the place of the one made before. With "lower" or "take
+out", every clip's `voiceLevel` is set (see "Voice and the rest"): the files
+without stems are separated first, in the same run.
+
+**In one go** (`ConversionViewModel.autoDub`, `AutoDubSectionContent`, the
+editor's "Dub" tool). The language, the voice and what becomes of the
+video's own voice (taken out or lowered) are picked; one button runs the
+editor's own steps one after the other, each awaited: listening
+(`generateSubtitles`, skipped when the video has subtitles), translating
+(`translateSubtitles`, from the language guessed in what was heard; skipped
+when it is the dub's already), then `dubSubtitles` (which sets the voice
+apart first where it is not yet, then dubs). Each step shows in its own
+place as it goes and keeps its own undo; the tool shows the four as a group
+of rows that tick off, with the running one's progress read from that
+step's own status. What can be known to be missing (the speech model, the
+voice model, a translation model once the language is known, the voice) is
+said before anything starts; a translation model for a language heard only
+then stops the run after the listening, which stays.
+
+**One breath** (`DubTiming.oneBreath`). For eSpeak NG languages sherpa-onnx
+cuts a text at every `.`, `!`, `?` (and `;`), says each piece on its own and
+glues them: the seams are heard, the voice stops and starts again. So inside
+a line those marks become commas (CJK ones the full-width comma) before it is
+said, its own end kept: one line, one run of the network, one intonation.
+Numbers ("3.5") and abbreviations without a space after them are left.
+
+**Piper voices** (`core/dub/PiperVoice.kt`, `PiperVoiceStore`, `DubSpeaker`).
+Any Piper voice (VITS, many times quicker than Kokoro on a phone's processor:
+about 0.05 of real time against 0.35 on two desktop cores) is imported as
+published: a sherpa-onnx `vits-piper-*.tar.bz2` archive, or Piper's own
+`.onnx` and `.onnx.json` (a voice trained at home comes out so). sherpa-onnx
+wants facts Piper keeps in the settings inside the network (its metadata:
+`model_type=vits`, `comment=piper`, the eSpeak voice, the rate, the speakers)
+and the phoneme table as a token list: `PiperVoiceConfig` makes both from the
+settings, and `OnnxMetadata` appends the metadata to the file as more of the
+protocol buffer (ModelProto's field 14), without reading the network into
+memory. eSpeak NG's data is kept once for every voice in `files/dub/
+espeak-ng-data` (from the first archive, or copied from Kokoro's), so the
+voices outlive the Kokoro model. Nothing is pinned (a voice can be any
+one): its SHA-256 and card are shown. `DubSpeaker` is one voice to dub with,
+Kokoro's or a Piper speaker; `DubEngine` keeps one network loaded (Kokoro
+for one language, or one Piper voice).
+
+**The list** (`core/dub/PiperCatalog.kt`, `PiperAddSheet`). Adding a voice is
+picking it: the language (the phone's first), its voices the best first,
+with their quality, speakers and size, and a search across all of them. A
+voice opens into its two steps: its sherpa-onnx archive to download in the
+browser (or Piper's own three files on Hugging Face, once eSpeak NG's data is
+on the phone), then the import. The list is Piper's voices.json (123 voices,
+the one whose name is not ASCII left out) and OpenVoiceOS's two Italian
+"high" voices that sherpa-onnx packs; the app never goes online for it.
+
+**Licences** (`core/dub/VoiceLicence.kt`, `DubLicenceDialog`). A Piper voice
+inherits the licence of its recordings, which its card states. On the phone
+the card is read for it (tested): research only (the Blizzard licence and
+the like), not for commercial use (CC BY-NC...), free (CC0, CC BY, public
+domain, Apache, MIT...), or not known, which is treated as not free. A voice
+that is not free shows a gavel on its chip and a tinted note under it, and
+before every dub with it a dialog says what its licence allows, what counts
+as earning from a video, that keeping to it is up to whoever publishes it,
+and offers its card, a voice free to use, or the dub. Kokoro is Apache 2.0.
+
+**Speed.** The network runs on the processor's cores; a phone's GPU or NPU
+cannot be used: ONNX Runtime's Android build has no GPU provider, and NNAPI
+takes only fixed shapes, which these networks are not. ONNX Runtime's XNNPACK
+kernels are tried by default for every model (`AiKernels`: one switch at the
+top of the smart features, read by each engine when it loads; the ONNX
+Runtime sessions get the XNNPACK provider with its own threads and ONNX
+Runtime's left not spinning, the sherpa-onnx ones the "xnnpack" provider);
+where they cannot run, the plain kernels are used, and a change lets go of
+every model in memory. A dub says how long it took.
+
+**Marked as AI-generated** (AI Act, Article 50(2)). The dub's WAV carries a
+LIST INFO comment (`WavWriter`) naming the engine and voice; the clip keeps
+it (`AudioClip.aiVoice`, in the project), the request carries it
+(`PlacedSound.aiVoice`), and an export where a dub is heard gets the tags
+`AI_GENERATED` and `DIGITAL_SOURCE_TYPE` (IPTC
+`compositeWithTrainedAlgorithmicMedia`), in MP4 and M4A with
+`use_metadata_tags`. FFmpeg keeps only the last `-movflags`, so the command
+gives them once, all together (`CommandBuilder.oneMovFlags`).
+
+## Magic eraser
+
+What is painted over a picture goes, filled in with what should be behind
+it: in the picture editor (the picture itself, `ImageTool.ERASE`, and its
+stickers) and on pictures laid over the video (`EditorTool.OVERLAY_ERASE`).
+
+**Models** (`EraseModel`, two `SpeechModelStore`s, one chosen as the cut-out
+is). MI-GAN (Picsart, MIT), its ONNX pipeline taking bytes (the mask 255
+where the picture is kept); LaMa big-lama (Apache 2.0, ONNX by Carve), a
+fixed 512 square of floats (the mask 1 where it is filled). MI-GAN's file is
+pinned; LaMa's is published without a hash, so `FileCheck` takes an empty
+pin as "there" and the card shows what was found.
+
+**Choosing what goes** (`RefineMaskDialog`, `MaskKind.ERASE`). The cut-out's
+dialog with its two brushes: the magic one (SlimSAM) finds the whole of what
+is tapped or scribbled on, the precise one takes exactly what it covers;
+painted in raspberry, kept in green. It starts from a blank mask
+(`HdrSources.blankMask`), or from the subject the cut-out model finds.
+
+**Filling in** (`EraseEngine`, `core/erase/InpaintArea`, tested). The mask
+grown by the picture's side over 150 (an outline or a shadow goes too), a
+square around it of 2.2 times its size and at least 512 cut out and squeezed
+to the model's square, the model's picture squeezed back and laid only where
+the mask was, faded over the side over 220 outward; the picture's own alpha
+kept. A new PNG in `files/erased/` takes the old picture's place
+(`replacePicture` for the picture itself, the overlay's uri otherwise): one
+step of undo. Through `AiKernels`, like every model.
+
 ## Smart subtitles (speech)
 
 Subtitles made from what is said in the video, on the phone. The idea, the
@@ -832,6 +1558,34 @@ edit as the subtitles panel). Saving runs the export, which reuses the words
 already heard (and listens to any file not heard yet), moves them onto the edit
 and writes either paragraphs with their times (`TranscriptText`) or SubRip cues
 cut by the subtitle style (`SrtSubtitles`).
+
+**All the tags.** Besides the usual fields, `MetadataTags.custom` holds every
+other tag the file had (`AndroidMetadataReader`: FFprobe's tags of the file and
+of its first sound stream by the names the file gives them, without those that
+only describe the container; a picture's EXIF from the list `EXIF_TAGS`, not
+its size, orientation or thumbnail) and those added by hand, grouped by
+`tagKind` (place, device, date, camera settings, other; place and device are
+sensitive). `sourceKeys` remembers which were read: one taken away is written
+empty, which makes FFmpeg drop it. "Remove sensitive" (`withoutSensitive`)
+drops those groups and also blanks the keys phones and cameras use even when
+they were not read (`SENSITIVE_FFMPEG_KEYS`); "Remove all" (`cleared`) adds
+`-map_metadata -1` (with a cover in a tags file, only that file's tags are
+mapped). An MP4 or M4A keeps tags of its own only with `-movflags
++use_metadata_tags`, added when there are any. FFmpeg writes no EXIF: a
+picture gets what is listed (`AndroidPictureTagger`, by EXIF name), so a
+picture's GPS and camera now travel with it unless taken away.
+
+**Lyrics.** The tags of an audio file hold its album artist (`album_artist`:
+TPE2, aART, ALBUMARTIST) and its lyrics (`lyrics`: FFmpeg 6.1 writes it as an
+MP3's USLT frame, an M4A's lyrics atom, a LYRICS comment in FLAC, Ogg and
+Opus). The lyrics are typed, or written from what is sung
+(`ConversionViewModel.lyricsFromSpeech`): the files not heard yet are listened
+to as for subtitles, the words follow the edit onto the exported file's clock,
+and `LyricsText` (`core/subtitles`) makes short lines (a pause, a sentence, a
+comma once half full, 42 characters) and verses (3 s of silence), plain or
+synced the LRC way ("[mm:ss.xx]line", an empty timed line where a verse stops),
+which players that know LRC follow as the song plays. Read back from a file,
+FFmpeg's "lyrics-eng" (an USLT frame) counts as the lyrics.
 
 **Preview.** `StyledSubtitles.kt` draws the same blocks on the whole output
 frame (canvas included) with the same font file, as libass measures it: a line
@@ -928,6 +1682,49 @@ colour only.
 the still picture's uri (`subjectUri`); `LocalSubjectCut` (provided by
 `MainActivity`) carries the model's state, where the view model's
 `cutOutSubject` is, and the actions. A subject key keeps only the fill.
+
+## Command studio
+
+The full-screen editor for a hand-written command (`app/command`), opened from
+the command panel of every editor. Its rule: it never types for the user.
+Suggestions sit in a strip above the keyboard and only a tap, or Tab on a
+keyboard, takes one; whatever the studio changes on request (a recipe, a
+history entry, laying the command out, renaming a file) can be undone.
+
+- **What FFmpeg knows** (`core/command/studio/FfmpegCatalog.kt`): the bundled
+  FFmpeg's own answers to `-h full`, `-filters`, `-encoders`, `-muxers` and
+  `-pix_fmts`, read by `FfmpegHelpParser` into options (with their AVOption
+  values, defaults and ranges), filters, encoders, formats and pixel formats.
+  `-h filter=x`, `-h encoder=x` and `-h muxer=x` are asked when needed. The
+  answers are kept in `files/ffmpeg_help/<install time>/`, so FFmpeg is asked
+  once per installed version; nothing goes online. Before the first answer a
+  built-in list of everyday options (`FfmpegCatalog.COMMON`) is used, which
+  also ranks the suggestions.
+- **Reading the command** (`CommandReading`): `spanCommandLine` splits it as a
+  shell would and keeps where every argument is; each one is the program, an
+  option, an option's value or a file on its own. A backslash before a line
+  break joins two lines, so a command laid out on several lines runs as is.
+- **Suggestions** (`CommandAssist`): for the word at the cursor, by context:
+  options (the everyday ones first, then FFmpeg's), stream specifiers, the
+  value an option takes (encoders of the right kind, formats, pixel formats,
+  AVOption constants, flags with a `+`, usual sizes, rates and bitrates),
+  inside a filtergraph the filters of the right kind, their options and the
+  values of those, labels and inputs, then the project's file names. With
+  nothing typed: what usually comes next. `applySuggestion` replaces exactly
+  the word the suggestion names.
+- **Checker** (`CommandLint`): unclosed quotes and brackets, options missing
+  their value, unknown options, filters and encoders (only once FFmpeg has
+  been read), inputs that do not exist (`-map 3`, `[2:v]`), files that are not
+  the project's, no input, no output. It marks; a fix (the missing output) is
+  offered, never applied.
+- **Recipes** (`CommandRecipes.kt`): ready commands filled with the project's
+  files; one needing an encoder this FFmpeg lacks says so.
+- **Files**: besides the project's own names, files added in the studio are
+  copied into `files/command_files/` and named for the command
+  (`CommandFile`, kept with the project). `CommandMode.Manual` carries them
+  and the engine stages them like any source before `ManualCommandResolver`
+  swaps their names for paths (a name of the project's wins).
+- **History and favourites**: `CommandStudioStore`, in the app's preferences.
 
 ## FFmpeg runtime
 
@@ -1100,14 +1897,17 @@ Next steps, which have to move together:
 
 ## Known limitations (backend)
 
-- There are no transitions between clips (cross-fades); a fade to black at
-  the end of one clip and from black at the start of the next is the closest.
+- Transitions between clips (`xfade` and `acrossfade`, see
+  `core/model/Transition.kt` and `transitionJoin` in `CommandBuilder.kt`) need
+  the clips re-encoded: stream copy ignores them, as it ignores every filter.
 - `reverse` keeps a whole clip in memory while it is reversed: very long
   reversed clips can exhaust it on a phone.
 - Stream copy can only cut and split on key frames, and with several clips it
   needs them to share codec and resolution (concat demuxer).
 - The preview switches clips through the player's playlist, so a cut can show
   a short pause that the exported file does not have.
-- Stabilization, denoise, sharpen, blur, vignette, film grain, splitting and
-  metadata tags are implemented and tested in `:core` and have view model
-  setters, but the editor has no controls for them yet.
+- Stabilization, denoise, and the video's sharpen, blur, vignette and film
+  grain are implemented and tested in `:core` and have view model setters,
+  but the video editor has no controls for them yet (the photo editor has its
+  own sharpen, blur, vignette and grain, see "Image files"; splitting and tags
+  have their panels, see "Audio files").

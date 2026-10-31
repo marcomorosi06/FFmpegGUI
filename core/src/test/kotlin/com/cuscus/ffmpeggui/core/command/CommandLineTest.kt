@@ -51,4 +51,20 @@ class CommandLineTest {
         )
         assertEquals(tricky, tokenizeCommandLine(renderCommandLine(tricky)))
     }
+
+    @Test
+    fun `a backslash before a line break joins the lines`() {
+        assertEquals(listOf("-i", "in.mp4", "-c", "copy", "out.mkv"), tokenizeCommandLine("-i in.mp4 \\\n  -c copy \\\n  out.mkv"))
+        assertEquals(listOf("ab"), tokenizeCommandLine("a\\\nb"))
+    }
+
+    @Test
+    fun `spans say where each argument is`() {
+        val line = "-vf \"scale=1:2\" 'open"
+        val spans = spanCommandLine(line)
+        assertEquals(listOf(0 to 3, 4 to 15, 16 to 21), spans.map { it.start to it.end })
+        assertEquals("scale=1:2", spans[1].value)
+        assertEquals(null, spans[1].openQuote)
+        assertEquals('\'', spans[2].openQuote)
+    }
 }

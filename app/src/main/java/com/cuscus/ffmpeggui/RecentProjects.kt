@@ -129,7 +129,7 @@ internal fun RecentProjectsSection(
 }
 
 /** The display face for the titles of the home screen's sections. */
-private val HomeSectionTitle = SettingsGroupTitle.copy(fontSize = 24.sp, lineHeight = 28.sp)
+internal val HomeSectionTitle = SettingsGroupTitle.copy(fontSize = 24.sp, lineHeight = 28.sp)
 
 @Composable
 private fun ProjectsCarousel(projects: List<ProjectCard>, onOpen: (ProjectCard) -> Unit, onActions: (ProjectCard) -> Unit) {
@@ -301,11 +301,19 @@ private fun ProjectActionsSheet(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = listOf(
-                            project.format.extension.uppercase(Locale.ROOT).ifEmpty { stringResource(R.string.format_custom) },
-                            pluralStringResource(R.plurals.projects_clip_count, project.clips, project.clips),
-                            clock(project.durationMs),
-                        ).joinToString(" \u00B7 "),
+                        text = if (project.drawing) {
+                            // A drawing of the SVG editor: its elements, no clips or length.
+                            listOf(
+                                project.format.extension.uppercase(Locale.ROOT),
+                                pluralStringResource(R.plurals.svg_elements, project.clips, project.clips),
+                            ).joinToString(" \u00B7 ")
+                        } else {
+                            listOf(
+                                project.format.extension.uppercase(Locale.ROOT).ifEmpty { stringResource(R.string.format_custom) },
+                                pluralStringResource(R.plurals.projects_clip_count, project.clips, project.clips),
+                                clock(project.durationMs),
+                            ).joinToString(" \u00B7 ")
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = scheme.onSurfaceVariant,
                     )

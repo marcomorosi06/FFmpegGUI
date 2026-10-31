@@ -34,7 +34,8 @@ object PublicCopies {
         val (collection: Uri, directory: String) = when {
             mime.startsWith("video/") -> MediaStore.Video.Media.getContentUri(volume) to Environment.DIRECTORY_MOVIES
             mime.startsWith("audio/") -> MediaStore.Audio.Media.getContentUri(volume) to Environment.DIRECTORY_MUSIC
-            mime.startsWith("image/") -> MediaStore.Images.Media.getContentUri(volume) to Environment.DIRECTORY_PICTURES
+            // (Not every gallery takes an SVG: it goes with the downloads.)
+            mime.startsWith("image/") && mime != "image/svg+xml" -> MediaStore.Images.Media.getContentUri(volume) to Environment.DIRECTORY_PICTURES
             else -> MediaStore.Downloads.getContentUri(volume) to Environment.DIRECTORY_DOWNLOADS
         }
         val folder = "$directory/$FOLDER"

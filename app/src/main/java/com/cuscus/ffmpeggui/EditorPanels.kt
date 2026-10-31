@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -1595,6 +1596,14 @@ internal fun CommandSectionContent(
         animationSpec = motion.defaultSpatialSpec(),
         label = "commandChevron",
     )
+    var studioOpen by remember { mutableStateOf(false) }
+    if (studioOpen) {
+        com.cuscus.ffmpeggui.command.CommandStudioDialog(
+            initial = if (isManualMode) manualCommand else commandPreview,
+            onTextChange = onManualCommandChange,
+            onDismiss = { studioOpen = false },
+        )
+    }
 
     PanelCard {
         Row(
@@ -1655,6 +1664,12 @@ internal fun CommandSectionContent(
             exit = shrinkVertically(motion.fastEffectsSpec()) + fadeOut(motion.fastEffectsSpec()),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (com.cuscus.ffmpeggui.command.LocalCommandStudio.current != null) {
+                    OpenStudioButton(onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        studioOpen = true
+                    })
+                }
                 TerminalBox(
                     text = if (isManualMode) manualCommand else commandPreview,
                     editable = true,
@@ -1667,6 +1682,39 @@ internal fun CommandSectionContent(
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
+            }
+        }
+    }
+}
+
+/** The way into the command studio: big, round, and with a shape that wakes up on press. */
+@Composable
+private fun OpenStudioButton(onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    androidx.compose.material3.Surface(
+        onClick = onClick,
+        color = scheme.tertiaryContainer,
+        contentColor = scheme.onTertiaryContainer,
+        shape = RoundedCornerShape(28.dp),
+        interactionSource = interaction,
+        modifier = Modifier.fillMaxWidth().springPress(interaction, pressedScale = 0.96f),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(14.dp)) {
+            MorphingContainer(
+                from = MaterialShapes.Cookie9Sided,
+                to = MaterialShapes.SoftBurst,
+                morphed = pressed,
+                color = scheme.tertiary,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(Icons.Rounded.Terminal, contentDescription = null, tint = scheme.onTertiary, modifier = Modifier.size(24.dp))
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.studio_open), style = MaterialTheme.typography.titleMediumEmphasized)
+                Text(stringResource(R.string.studio_open_hint), style = MaterialTheme.typography.labelMedium)
             }
         }
     }

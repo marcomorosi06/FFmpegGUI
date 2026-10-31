@@ -1,6 +1,8 @@
 package com.cuscus.ffmpeggui.conversion
 
 import com.cuscus.ffmpeggui.core.model.movedLayers
+import com.cuscus.ffmpeggui.core.model.movedLayersTo
+import com.cuscus.ffmpeggui.core.model.StackSlot
 import com.cuscus.ffmpeggui.core.model.stackOrder
 import com.cuscus.ffmpeggui.core.model.Transition
 import android.net.Uri
@@ -14,9 +16,17 @@ import com.cuscus.ffmpeggui.AudioClip
 import com.cuscus.ffmpeggui.ConversionSettings
 import com.cuscus.ffmpeggui.ConversionState
 import com.cuscus.ffmpeggui.EditorSource
+import com.cuscus.ffmpeggui.core.voice.VoiceStem
+import com.cuscus.ffmpeggui.core.dub.DubTiming
+import com.cuscus.ffmpeggui.core.preview.onTimeline as cuesOnTimeline
+import com.cuscus.ffmpeggui.core.translate.LanguageGuess
+import com.cuscus.ffmpeggui.dub.DubEngine
+import com.cuscus.ffmpeggui.dub.DubSpeaker
+import com.cuscus.ffmpeggui.voice.VoiceSeparator
 import com.cuscus.ffmpeggui.LayerMove
 import com.cuscus.ffmpeggui.FfmpegGuiApp
 import com.cuscus.ffmpeggui.ImageOverlay
+import com.cuscus.ffmpeggui.ShapeLayer
 import com.cuscus.ffmpeggui.core.command.CommandBuilder
 import com.cuscus.ffmpeggui.core.command.MediaPaths
 import com.cuscus.ffmpeggui.core.engine.ConversionEngine
@@ -49,10 +59,17 @@ import com.cuscus.ffmpeggui.core.model.Effects
 import com.cuscus.ffmpeggui.core.model.FrameExtractionMode
 import com.cuscus.ffmpeggui.core.model.GifSettings
 import com.cuscus.ffmpeggui.core.image.editedSize
+import com.cuscus.ffmpeggui.core.image.fittedPhoto
+import com.cuscus.ffmpeggui.core.image.pictureSize
+import com.cuscus.ffmpeggui.core.model.PictureCanvas
+import com.cuscus.ffmpeggui.core.model.ImagePlacement
+import com.cuscus.ffmpeggui.PHOTO_LAYER_ID
+import com.cuscus.ffmpeggui.isPhoto
 import com.cuscus.ffmpeggui.core.model.ImageEdit
 import com.cuscus.ffmpeggui.core.model.Stroke
 import com.cuscus.ffmpeggui.core.model.Framerate
 import com.cuscus.ffmpeggui.core.model.KeyMode
+import com.cuscus.ffmpeggui.core.model.LayerBlend
 import com.cuscus.ffmpeggui.core.model.MediaInfo
 import com.cuscus.ffmpeggui.core.model.OutputFormat
 import com.cuscus.ffmpeggui.core.model.Resolution
@@ -64,14 +81,17 @@ import com.cuscus.ffmpeggui.core.timeline.Clip
 import com.cuscus.ffmpeggui.core.timeline.LaneSpan
 import com.cuscus.ffmpeggui.core.timeline.SoundSpan
 import com.cuscus.ffmpeggui.core.timeline.TimeSpan
+import com.cuscus.ffmpeggui.effects.EffectLibrary
 import com.cuscus.ffmpeggui.span
 import com.cuscus.ffmpeggui.withSpan
 import com.cuscus.ffmpeggui.core.timeline.Timeline
+import com.cuscus.ffmpeggui.core.time.expectedOutputDurationMs
 import com.cuscus.ffmpeggui.core.preview.SubtitleRetimer
 import com.cuscus.ffmpeggui.core.subtitles.SpokenWord
 import com.cuscus.ffmpeggui.core.subtitles.SrtSubtitles
 import com.cuscus.ffmpeggui.core.subtitles.SourceWords
 import com.cuscus.ffmpeggui.core.subtitles.TranscriptText
+import com.cuscus.ffmpeggui.core.subtitles.LyricsText
 import com.cuscus.ffmpeggui.core.output.OutputPlanner
 import com.cuscus.ffmpeggui.core.subtitles.SubtitleLayout
 import com.cuscus.ffmpeggui.core.subtitles.SubtitleStyle
@@ -82,6 +102,12 @@ import com.cuscus.ffmpeggui.cutout.SubjectCutter
 import com.cuscus.ffmpeggui.preview.ofSounds
 import com.cuscus.ffmpeggui.preview.soundWordsKey
 import com.cuscus.ffmpeggui.speech.SmartFeatures
+import com.cuscus.ffmpeggui.translate.TranslationEngine
+import com.cuscus.ffmpeggui.translate.TranslationProblem
+import com.cuscus.ffmpeggui.translate.TranslationStatus
+import com.cuscus.ffmpeggui.core.translate.Languages
+import com.cuscus.ffmpeggui.core.translate.SubtitleTranslation
+import com.cuscus.ffmpeggui.core.translate.TranslationRoute
 import com.cuscus.ffmpeggui.speech.SpeechEngine
 import com.cuscus.ffmpeggui.speech.SpeechTranscriber
 import com.cuscus.ffmpeggui.work.WorkReports
@@ -90,6 +116,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -143,6 +172,8 @@ class ConversionViewModel(
     private val outputDirectory: () -> String = { "" },
     /** Shows subtitles being made and subjects being cut out outside the app; null shows nothing. */
     private val work: WorkReports? = null,
+    /** Draws a shape layer into a picture (see ShapeRenderer), off the main thread; null draws none. */
+    private val shapeRenderer: ((ShapeLayer) -> String?)? = null,
     private val subtitleParser: SubtitleParser = SubtitleParser(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
@@ -180,6 +211,10 @@ class ConversionViewModel(
     private val _commandPreview = MutableStateFlow("")
     val commandPreview: StateFlow<String> = _commandPreview.asStateFlow()
 
+    /** The file names a hand-written command may use: the project's, the added ones, the output last. */
+    private val _commandAliases = MutableStateFlow<List<com.cuscus.ffmpeggui.core.command.CommandAlias>>(emptyList())
+    val commandAliases: StateFlow<List<com.cuscus.ffmpeggui.core.command.CommandAlias>> = _commandAliases.asStateFlow()
+
     // ---------------------------------------------------------------------
     // Data for the live preview
     // ---------------------------------------------------------------------
@@ -216,6 +251,30 @@ class ConversionViewModel(
 
     private var cutoutJob: Job? = null
 
+    private val _dub = MutableStateFlow<DubStatus>(DubStatus.Idle)
+
+    /** Where dubbing the video is. */
+    val dub: StateFlow<DubStatus> = _dub.asStateFlow()
+
+    private var dubJob: Job? = null
+
+    private val _voice = MutableStateFlow<VoiceStatus>(VoiceStatus.Idle)
+
+    /** Where setting the voice of the video's files apart is. */
+    val voice: StateFlow<VoiceStatus> = _voice.asStateFlow()
+
+    private var voiceJob: Job? = null
+    private var voiceStopped = false
+
+    private val _voiceStems = MutableStateFlow<Map<String, Uri>>(emptyMap())
+
+    /**
+     * The separated voice of the project's files (see VoiceSeparator), by
+     * source id: their four-channel stems, what the preview plays and the
+     * export reads for a clip whose voice and rest are set apart.
+     */
+    val voiceStems: StateFlow<Map<String, Uri>> = _voiceStems.asStateFlow()
+
     /** The run was stopped by hand: its end has nothing to say. */
     private var speechStopped = false
     private var cutoutStopped = false
@@ -235,6 +294,28 @@ class ConversionViewModel(
                 }
             }
             viewModelScope.launch {
+                var before: DubStatus = DubStatus.Idle
+                _dub.collect { now ->
+                    val working = now is DubStatus.Speaking || now is DubStatus.Separating
+                    when {
+                        working -> reports.dub(now, ::stopDub)
+                        before is DubStatus.Speaking || before is DubStatus.Separating ->
+                            reports.dubOver(if (now is DubStatus.Failed) false else if (now is DubStatus.Done) true else null)
+                    }
+                    before = now
+                }
+            }
+            viewModelScope.launch {
+                var before: VoiceStatus = VoiceStatus.Idle
+                _voice.collect { now ->
+                    when {
+                        now is VoiceStatus.Working -> reports.voice(now, ::stopVoiceSeparation)
+                        before is VoiceStatus.Working -> reports.voiceOver(if (now is VoiceStatus.Failed) false else if (voiceStopped) null else true)
+                    }
+                    before = now
+                }
+            }
+            viewModelScope.launch {
                 var before: CutoutStatus = CutoutStatus.Idle
                 _cutout.collect { now ->
                     when {
@@ -243,6 +324,23 @@ class ConversionViewModel(
                     }
                     before = now
                 }
+            }
+        }
+    }
+
+    init {
+        // Which of the project's files have their voice set apart: again whenever the files change
+        // or a separation is made or removed.
+        smart?.voiceSeparator?.let { separator ->
+            // Every request made from the settings finds the files' separated voice there.
+            VoiceStemLookup.of = ::voiceStemOf
+            viewModelScope.launch {
+                combine(_settings.map { s -> s.sources.map { it.id to it.uri } }.distinctUntilChanged(), separator.kept) { files, _ -> files }
+                    .collect { files ->
+                        _voiceStems.value = withContext(ioDispatcher) {
+                            files.mapNotNull { (id, uri) -> separator.existing(uri)?.let { id to Uri.fromFile(it) } }.toMap()
+                        }
+                    }
             }
         }
     }
@@ -286,6 +384,12 @@ class ConversionViewModel(
     /** The save waiting for the edits to rest (see [scheduleSave]). */
     private var saveJob: Job? = null
 
+    // Shape layers: the shape each picture made was made for (main thread only), the shape
+    // each layer waits for, and the drawing under way for it (see syncShapes).
+    private val renderedShapes = HashMap<Uri, ShapeLayer>()
+    private val shapeWanted = HashMap<String, ShapeLayer>()
+    private val shapeJobs = HashMap<String, Job>()
+
     private val _canUndo = MutableStateFlow(false)
     val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
 
@@ -296,7 +400,8 @@ class ConversionViewModel(
     // Input selection
     // ---------------------------------------------------------------------
 
-    fun setInputUri(uri: Uri) {
+    /** Opens the file at [uri] as a new project; [name] shown (and naming the exports) instead of its own. */
+    fun setInputUri(uri: Uri, name: String? = null) {
         // The previous project is gone: an export of it still running is stopped (its
         // result would have nowhere to go), then the recordings it was made of are deleted.
         conversion?.cancel()
@@ -304,7 +409,7 @@ class ConversionViewModel(
         closeProject(keep = uri)
         startProject(projects?.newId(), System.currentTimeMillis(), touched = false)
         _inputUri.value = uri
-        _inputFileName.value = mediaProbe.displayName(uri.toString()) ?: DEFAULT_INPUT_NAME
+        _inputFileName.value = name ?: mediaProbe.displayName(uri.toString()) ?: DEFAULT_INPUT_NAME
         _mediaInfo.value = null
         _subtitleCues.value = emptyList()
         _sourceLoudnessLufs.value = null
@@ -346,6 +451,12 @@ class ConversionViewModel(
             val info = withContext(ioDispatcher) { mediaProbe.describe(uri.toString()) }
             // Ignore the answer if the user picked another file in the meantime.
             if (_inputUri.value != uri) return@launch
+            // FFmpeg cannot read it: it may still be a picture the phone draws (an SVG). If the
+            // phone cannot either, the clip stays unreadable as before.
+            if (info == null) {
+                openPictureAsMain(uri)
+                return@launch
+            }
             if (info?.isStill == true) {
                 // Known at once, so that the format list leaves out what a picture cannot become.
                 _mediaInfo.value = info
@@ -435,7 +546,16 @@ class ConversionViewModel(
         settings.audioClips.forEach { clip -> clip.loudnessLufs?.let { knownLoudness[clip.uri] = it } }
         refreshHistory()
         _settings.value = settings
+        // A kept shape's picture is the one drawn for it.
+        settings.imageOverlays.forEach { overlay ->
+            val shape = overlay.shape
+            val uri = overlay.uri
+            if (shape != null && uri != null) renderedShapes[uri] = shape
+        }
         projects?.inUse = ProjectJson.uris(settings).toSet()
+        // The app's effects it uses are copied out of the app, if they are not yet.
+        val effects = (settings.imageOverlays.mapNotNull { it.effect } + settings.timeline.clips.mapNotNull { it.effects.transition?.effect }).distinct()
+        if (effects.isNotEmpty()) viewModelScope.launch(Dispatchers.IO) { effects.forEach(EffectLibrary::ensure) }
         loadSubtitleCues(settings.subtitleUri)
         if (settings.normalizeAudio) measureSourceLoudness()
         // Files saved before they had been inspected are inspected now.
@@ -601,6 +721,18 @@ class ConversionViewModel(
         it.copy(isManualMode = false, manualCommandOverride = "")
     }
 
+    /** A file added to the command studio's tray (already kept by the app). */
+    fun addCommandFile(file: com.cuscus.ffmpeggui.core.command.CommandFile) = mutate {
+        it.copy(commandFiles = it.commandFiles.filter { f -> f.alias != file.alias } + file)
+    }
+
+    /** Gives an added file another name; the command itself is the studio's to change. */
+    fun renameCommandFile(alias: String, newAlias: String) = mutate { s ->
+        s.copy(commandFiles = s.commandFiles.map { if (it.alias == alias) it.copy(alias = newAlias) else it })
+    }
+
+    fun removeCommandFile(alias: String) = mutate { s -> s.copy(commandFiles = s.commandFiles.filter { it.alias != alias }) }
+
     // The picture of an image file
 
     /**
@@ -683,7 +815,7 @@ class ConversionViewModel(
                         if (clip.id != id) return@map clip
                         val span = clip.span.copy(fileDurationMs = info.durationMs)
                             .withFileRange(0L, clip.span.rangeMs.coerceAtMost(info.durationMs))
-                        clip.copy(uri = uri, name = name, span = span, loudnessLufs = knownLoudness[uri])
+                        clip.copy(uri = uri, name = name, span = span, loudnessLufs = knownLoudness[uri], aiVoice = null)
                     },
                 )
             }
@@ -958,6 +1090,41 @@ class ConversionViewModel(
     }
 
     /**
+     * Lays effect [name] of the app's library over the whole video from
+     * [atOutputMs], for [EFFECT_LENGTH_MS], above everything (see effectLayer);
+     * [onAdded] gets its id.
+     */
+    fun addEffect(name: String, atOutputMs: Long, onAdded: (String) -> Unit = {}) {
+        val project = _inputUri.value
+        viewModelScope.launch {
+            val ready = withContext(Dispatchers.IO) { EffectLibrary.ensure(name) }
+            val uri = EffectLibrary.uri(name)
+            if (!ready || uri == null || _inputUri.value != project) return@launch
+            val overlay = ImageOverlay(
+                uri = uri,
+                fileName = "$name.mp4",
+                x = 0f,
+                y = 0f,
+                scaleW = 1f,
+                blend = LayerBlend.SCREEN,
+                effect = name,
+            ).withSpan(TimeSpan(0L, EFFECT_LENGTH_MS).movedTo(atOutputMs))
+            mutate { it.copy(imageOverlays = it.imageOverlays + overlay.copy(layer = it.effectLayer())) }
+            onAdded(overlay.id)
+        }
+    }
+
+    /** Makes effect [id] another of the library's, [name]: it keeps its time, strength and colour. */
+    fun changeEffect(id: String, name: String) {
+        viewModelScope.launch {
+            val ready = withContext(Dispatchers.IO) { EffectLibrary.ensure(name) }
+            val uri = EffectLibrary.uri(name)
+            if (!ready || uri == null) return@launch
+            updateImage(id, null) { if (it.isEffect) it.copy(uri = uri, fileName = "$name.mp4", effect = name) else it }
+        }
+    }
+
+    /**
      * Puts another picture or video in an overlay's place: it keeps its place,
      * size, look and timing (a video as far as its file allows).
      */
@@ -978,7 +1145,7 @@ class ConversionViewModel(
                         val span = overlay.span
                         // A subject cut out of the old picture does not fit the new one.
                         val key = overlay.key?.takeIf { it.mode != KeyMode.SUBJECT }
-                        val renamed = overlay.copy(uri = uri, fileName = name, key = key)
+                        val renamed = overlay.copy(uri = uri, fileName = name, key = key, shape = null)
                         if (info.isVideo && !info.isStill && info.durationMs > 0L) {
                             renamed.copy(aspect = info.frameAspect(), hasAudio = info.hasAudio)
                                 .withVideo(SoundSpan.wholeFile(span.startMs, info.durationMs).withFileRange(0L, span.lengthMs))
@@ -991,8 +1158,152 @@ class ConversionViewModel(
         }
     }
 
+    /**
+     * Lays a new shape over the picture (a rectangle, then changed in its panel),
+     * on top of everything, from [atOutputMs]; [onAdded] gets its id once its
+     * picture has been drawn.
+     */
+    fun addShape(atOutputMs: Long, onAdded: (String) -> Unit = {}) {
+        val renderer = shapeRenderer ?: return
+        val project = _inputUri.value
+        val shape = ShapeLayer()
+        viewModelScope.launch {
+            val uri = withContext(Dispatchers.Default) { renderer(shape) }?.let(Uri::parse) ?: return@launch
+            if (_inputUri.value != project) {
+                scratch.discard(uri.toString())
+                return@launch
+            }
+            renderedShapes[uri] = shape
+            val overlay = ImageOverlay(uri = uri, x = 0.5f, y = 0.5f, scaleW = NEW_SHAPE_WIDTH, aspect = shape.shownAspect, shape = shape)
+                .withSpan(TimeSpan(0L, TimeSpan.DEFAULT_LENGTH_MS).movedTo(atOutputMs))
+            mutate { it.copy(imageOverlays = it.imageOverlays + overlay.copy(layer = it.topLayer(null))) }
+            onAdded(overlay.id)
+        }
+    }
+
+    /**
+     * Changes the shape of layer [id]; [stepKey] as for [updateText]. Its picture
+     * is drawn again a moment later (see [syncShapes]).
+     */
+    fun updateShape(id: String, stepKey: String?, change: (ShapeLayer) -> ShapeLayer) {
+        updateImage(id, stepKey?.let { "shape:$it" }) { overlay ->
+            val shape = overlay.shape ?: return@updateImage overlay
+            val changed = change(shape)
+            overlay.copy(shape = changed, aspect = changed.shownAspect)
+        }
+        syncShapes()
+    }
+
+    /**
+     * Has every shape layer whose picture was not made for its shape drawn
+     * again: one drawing at a time per layer, the newest shape asked for when it
+     * is done (a slider being dragged asks on every frame).
+     */
+    private fun syncShapes() {
+        val renderer = shapeRenderer ?: return
+        for (overlay in _settings.value.imageOverlays) {
+            val shape = overlay.shape ?: continue
+            val uri = overlay.uri
+            if (uri != null && renderedShapes[uri] == shape) {
+                shapeWanted.remove(overlay.id)
+                continue
+            }
+            shapeWanted[overlay.id] = shape
+            if (shapeJobs[overlay.id]?.isActive == true) continue
+            shapeJobs[overlay.id] = viewModelScope.launch { drawShapes(overlay.id, renderer) }
+        }
+    }
+
+    /** Draws what layer [id] waits for until it waits for nothing, then gives it the last picture. */
+    private suspend fun drawShapes(id: String, renderer: (ShapeLayer) -> String?) {
+        while (true) {
+            val wanted = shapeWanted[id] ?: return
+            val uri = withContext(Dispatchers.Default) { renderer(wanted) }?.let(Uri::parse)
+            if (uri != null) renderedShapes[uri] = wanted
+            if (shapeWanted[id] != wanted) {
+                // Changed meanwhile: this one is of no use, the newest is drawn.
+                uri?.let { scratch.discard(it.toString()) }
+                continue
+            }
+            shapeWanted.remove(id)
+            if (uri == null) return
+            // Not a step of its own: the picture follows the shape the step changed.
+            mutate(record = false) { settings ->
+                settings.copy(imageOverlays = settings.imageOverlays.map { if (it.id == id && it.shape == wanted) it.copy(uri = uri) else it })
+            }
+            return
+        }
+    }
+
     fun removeImageOverlay(id: String) = mutate {
+        // The picture on its canvas goes only with the canvas (see setPictureCanvas).
+        if (id == PHOTO_LAYER_ID) return@mutate it
         it.copy(imageOverlays = it.imageOverlays.filter { overlay -> overlay.id != id })
+    }
+
+    /**
+     * Gives the picture a canvas of its own ([canvas]), or takes it away (null),
+     * as one undo step. With a canvas, the picture becomes a layer on it (see
+     * [PHOTO_LAYER_ID]): new, it lies under every text and sticker, centred and
+     * as large as the canvas holds it whole; a canvas that only changes keeps it
+     * where it is. Without one, the picture is the canvas again.
+     */
+    fun setPictureCanvas(canvas: PictureCanvas?) = mutate { settings ->
+        val others = settings.imageOverlays.filter { !it.isPhoto }
+        if (canvas == null) return@mutate settings.copy(imageEdit = settings.imageEdit.copy(canvas = null), imageOverlays = others)
+        val sane = canvas.sane()
+        val existing = settings.imageOverlays.firstOrNull { it.isPhoto }
+        val photo = existing ?: run {
+            val clip = settings.playingClips.firstOrNull()
+            val source = clip?.let { settings.source(it.sourceId) }
+            val (w, h) = pictureSize(
+                settings.imageEdit,
+                settings.wholeEffects,
+                source?.info?.width?.takeIf { it > 0 } ?: DEFAULT_PICTURE_SIDE,
+                source?.info?.height?.takeIf { it > 0 } ?: DEFAULT_PICTURE_SIDE,
+            )
+            val fit = fittedPhoto(sane, w, h)
+            // Under everything already laid on the picture.
+            val bottom = ((settings.textOverlays.filter { it.clipId == null }.map { it.layer } + others.filter { it.clipId == null }.map { it.layer }).minOrNull() ?: 0) - 1
+            ImageOverlay(
+                id = PHOTO_LAYER_ID,
+                uri = source?.uri,
+                fileName = source?.fileName.orEmpty(),
+                x = fit.x,
+                y = fit.y,
+                scaleW = fit.widthFraction,
+                aspect = fit.aspect,
+                layer = bottom,
+            )
+        }
+        // An Ultra HDR picture is the picture itself: not one on a canvas.
+        settings.copy(imageEdit = settings.imageEdit.copy(canvas = sane, hdr = null), imageOverlays = others + photo)
+    }
+
+    /**
+     * The picture on its canvas, centred: as large as the canvas holds it whole
+     * ([fill] false), or covering the whole canvas ([fill] true, its edges cut).
+     */
+    fun fitPictureOnCanvas(fill: Boolean) = mutate { settings ->
+        val canvas = settings.imageEdit.canvas?.sane() ?: return@mutate settings
+        val photo = settings.imageOverlays.firstOrNull { it.isPhoto } ?: return@mutate settings
+        val source = settings.playingClips.firstOrNull()?.let { settings.source(it.sourceId) }
+        val (w, h) = pictureSize(
+            settings.imageEdit,
+            settings.wholeEffects,
+            source?.info?.width?.takeIf { it > 0 } ?: DEFAULT_PICTURE_SIDE,
+            source?.info?.height?.takeIf { it > 0 } ?: DEFAULT_PICTURE_SIDE,
+        )
+        val fit = fittedPhoto(canvas, w, h)
+        // Covering: as wide as needed for its height to fill the canvas too.
+        val pictureRatio = w.toFloat() / h.coerceAtLeast(1)
+        val canvasRatio = canvas.width.toFloat() / canvas.height
+        val width = if (fill) maxOf(1f, canvasRatio / pictureRatio).coerceAtMost(ImagePlacement.MAX_WIDTH) else fit.widthFraction
+        settings.copy(
+            imageOverlays = settings.imageOverlays.map {
+                if (it.isPhoto) it.copy(x = 0.5f, y = 0.5f, scaleW = width, rotationDegrees = 0f, aspect = pictureRatio) else it
+            },
+        )
     }
 
     /** Changes one picture; [stepKey] as for [updateText]. */
@@ -1009,14 +1320,28 @@ class ConversionViewModel(
      * the whole video), as one undo step: every one of them is numbered again,
      * bottom first, so that the order is the one seen (see stackOrder).
      */
-    fun arrangeLayer(id: String, move: LayerMove) = mutate { settings ->
+    fun arrangeLayer(id: String, move: LayerMove) = restack(id) { order, position -> movedLayers(order, position, move) }
+
+    /**
+     * Puts caption or picture [id] at [position] among those of its clip (or of
+     * the whole video), counted from the bottom (0) up, as one undo step: a drag
+     * in the list of layers. The others keep their order.
+     */
+    fun placeLayer(id: String, position: Int) = restack(id) { order, from -> movedLayersTo(order, from, position) }
+
+    /**
+     * Gives the captions and pictures laid with [id] the order [reorder] makes of
+     * their stack (bottom first) and of [id]'s place in it, numbering every one
+     * of them again from 0 so that the layers are the order seen (see stackOrder).
+     */
+    private fun restack(id: String, reorder: (List<StackSlot>, Int) -> List<StackSlot>) = mutate { settings ->
         val clipId = settings.textOverlays.firstOrNull { it.id == id }?.clipId
             ?: settings.imageOverlays.firstOrNull { it.id == id }?.clipId
         val (texts, images) = settings.stackOf(clipId)
         if (texts.none { it.id == id } && images.none { it.id == id }) return@mutate settings
         val order = stackOrder(texts.map { it.layer }, images.map { it.layer })
         val position = order.indexOfFirst { slot -> if (slot.isText) texts[slot.index].id == id else images[slot.index].id == id }
-        val moved = movedLayers(order, position, move)
+        val moved = reorder(order, position)
         if (moved == order) return@mutate settings
         val textLayers = mutableMapOf<String, Int>()
         val imageLayers = mutableMapOf<String, Int>()
@@ -1056,6 +1381,7 @@ class ConversionViewModel(
 
     /** Puts a copy of a text or picture right after it; returns the copy's id. */
     fun duplicateOverlay(id: String): String? {
+        if (id == PHOTO_LAYER_ID) return null
         val settings = _settings.value
         val newId = newId()
         settings.textOverlays.firstOrNull { it.id == id }?.let { text ->
@@ -1070,7 +1396,7 @@ class ConversionViewModel(
             } else {
                 picture.copy(id = newId).withSpan(picture.span.movedTo(picture.span.endMs))
             }
-            mutate { it.copy(imageOverlays = it.imageOverlays + copy.copy(layer = it.topLayer(copy.clipId))) }
+            mutate { it.copy(imageOverlays = it.imageOverlays + copy.copy(layer = if (copy.isEffect) it.effectLayer() else it.topLayer(copy.clipId))) }
             return newId
         }
         return null
@@ -1231,6 +1557,69 @@ class ConversionViewModel(
         }
     }
 
+    private val _erase = MutableStateFlow<EraseStatus>(EraseStatus.Idle)
+
+    /** Where the magic eraser is. */
+    val erase: StateFlow<EraseStatus> = _erase.asStateFlow()
+
+    private var eraseJob: Job? = null
+
+    /**
+     * Fills in what [maskPath] marks on the picture at [uri] with the magic
+     * eraser's model; [onDone] gets the new picture (on the main thread), to
+     * put in the place of the old one (one step of undo, there).
+     */
+    fun magicErase(uri: Uri, maskPath: String, onDone: (Uri) -> Unit) {
+        val features = smart ?: return
+        if (eraseJob?.isActive == true) return
+        eraseJob = viewModelScope.launch {
+            _erase.value = EraseStatus.Working(uri.toString())
+            _erase.value = try {
+                val file = features.eraser.erase(uri, maskPath)
+                onDone(Uri.fromFile(file))
+                EraseStatus.Idle
+            } catch (e: CancellationException) {
+                _erase.value = EraseStatus.Idle
+                throw e
+            } catch (e: com.cuscus.ffmpeggui.erase.EraseEngine.ModelMissing) {
+                EraseStatus.Failed(EraseProblem.NO_MODEL)
+            } catch (e: com.cuscus.ffmpeggui.erase.EraseEngine.NotEnoughMemory) {
+                EraseStatus.Failed(EraseProblem.NO_MEMORY)
+            } catch (e: com.cuscus.ffmpeggui.erase.EraseEngine.NothingToErase) {
+                EraseStatus.Failed(EraseProblem.NOTHING)
+            } catch (e: com.cuscus.ffmpeggui.erase.EraseEngine.Unreadable) {
+                EraseStatus.Failed(EraseProblem.UNREADABLE)
+            } catch (e: OutOfMemoryError) {
+                EraseStatus.Failed(EraseProblem.NO_MEMORY)
+            } catch (e: Exception) {
+                android.util.Log.w("ConversionViewModel", "Magic eraser failed", e)
+                EraseStatus.Failed(EraseProblem.FAILED)
+            }
+        }
+    }
+
+    /**
+     * Puts [uri] (a picture of the same size: the magic eraser's result) in the
+     * place of the file [sourceId]: its clips, look and masks stay. One step of undo.
+     */
+    fun replacePicture(sourceId: String, uri: Uri) {
+        mutate { settings ->
+            // The first file is kept: compare still shows the picture as it was opened.
+            settings.copy(sources = settings.sources.map { if (it.id == sourceId) it.copy(uri = uri, originalUri = it.originalUri ?: it.uri) else it })
+        }
+    }
+
+    /** Stops the magic eraser; the picture stays as it was. */
+    fun stopErase() {
+        eraseJob?.cancel()
+        eraseJob = null
+        _erase.value = EraseStatus.Idle
+    }
+
+    fun dismissErase() {
+        if (_erase.value is EraseStatus.Failed) _erase.value = EraseStatus.Idle
+    }
+
     /** Stops cutting a subject out. */
     fun stopCutout() {
         if (_cutout.value is CutoutStatus.Working) cutoutStopped = true
@@ -1250,6 +1639,400 @@ class ConversionViewModel(
     /** Puts away the message of a failed run. */
     fun dismissSpeechProblem() {
         if (_speech.value is SpeechStatus.Failed) _speech.value = SpeechStatus.Idle
+    }
+
+    // ---------------------------------------------------------------------
+    // The voice set apart from the rest of the sound
+    // ---------------------------------------------------------------------
+
+    /** The separated voice of [source]'s file, when there is one. */
+    private fun voiceStemOf(source: EditorSource): java.io.File? =
+        if (source.isStill) null else smart?.voiceSeparator?.existing(source.uri)
+
+    /**
+     * Sets the voice of the files of [sourceIds] (null: of every clip that
+     * plays) apart from the rest of their sound, the files not done yet one
+     * after the other. A file done once is done for every project.
+     */
+    fun separateVoice(sourceIds: Set<String>? = null) {
+        val features = smart ?: return
+        if (voiceJob?.isActive == true) return
+        val separator = features.voiceSeparator
+        if (!separator.ready) {
+            _voice.value = VoiceStatus.Failed(VoiceProblem.NO_MODEL)
+            return
+        }
+        val settings = _settings.value
+        val files = settings.playingClips.map { it.sourceId }.distinct()
+            .filter { sourceIds == null || it in sourceIds }
+            .mapNotNull(settings::source)
+            .filter { !it.isStill && it.info?.hasAudio != false && separator.existing(it.uri) == null }
+        if (files.isEmpty()) {
+            _voice.value = VoiceStatus.Idle
+            return
+        }
+        voiceStopped = false
+        voiceJob = viewModelScope.launch {
+            try {
+                files.forEachIndexed { index, file ->
+                    separator.separate(file.uri, file.durationMs) { step ->
+                        _voice.value = VoiceStatus.Working(step, index, files.size, file.fileName)
+                    }
+                }
+                _voice.value = VoiceStatus.Idle
+            } catch (e: CancellationException) {
+                if (_voice.value is VoiceStatus.Working) _voice.value = VoiceStatus.Idle
+                throw e
+            } catch (e: VoiceSeparator.ModelMissing) {
+                _voice.value = VoiceStatus.Failed(VoiceProblem.NO_MODEL)
+            } catch (e: VoiceSeparator.NotEnoughMemory) {
+                _voice.value = VoiceStatus.Failed(VoiceProblem.NO_MEMORY)
+            } catch (e: VoiceSeparator.NoSpace) {
+                _voice.value = VoiceStatus.Failed(VoiceProblem.NO_SPACE)
+            } catch (e: VoiceSeparator.NoSound) {
+                _voice.value = VoiceStatus.Failed(VoiceProblem.NO_SOUND)
+            } catch (e: Exception) {
+                android.util.Log.w("ConversionViewModel", "Voice separation failed", e)
+                _voice.value = VoiceStatus.Failed(VoiceProblem.FAILED)
+            }
+        }
+    }
+
+    /** Stops setting voices apart; the files already done keep theirs. */
+    fun stopVoiceSeparation() {
+        if (_voice.value is VoiceStatus.Working) voiceStopped = true
+        voiceJob?.cancel()
+        voiceJob = null
+        _voice.value = VoiceStatus.Idle
+    }
+
+    /** Puts away the message of a failed run. */
+    fun dismissVoiceProblem() {
+        if (_voice.value is VoiceStatus.Failed) _voice.value = VoiceStatus.Idle
+    }
+
+    /**
+     * The voice and the rest of the sound of clip [clipId] at [voice] and
+     * [background] (linear, 0..2); null sets them on every clip. [stepKey]
+     * groups a slide into one undo step.
+     */
+    fun setVoiceLevels(clipId: String?, voice: Float, background: Float, stepKey: String? = null) {
+        val v = voice.coerceIn(0f, VoiceStem.MAX_LEVEL)
+        val b = background.coerceIn(0f, VoiceStem.MAX_LEVEL)
+        mutate(stepKey = stepKey?.let { "voice:$clipId:$it" }) { settings ->
+            var timeline = settings.timeline
+            for (clip in timeline.clips) {
+                if (clipId == null || clip.id == clipId) timeline = timeline.updateEffects(clip.id) { it.copy(voiceLevel = v, backgroundLevel = b) }
+            }
+            settings.copy(timeline = timeline)
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Dubbing in the subtitles' language
+    // ---------------------------------------------------------------------
+
+    /**
+     * The lines of the subtitles (a file, or the spoken ones) on the output
+     * clock: where the dub says each one. Sorted by start.
+     */
+    private fun dubLines(settings: ConversionSettings): List<DubTiming.Line> {
+        val footage = settings.footage()
+        val request = settings.toRequest(_selectedFormat.value ?: OutputFormat.MP4, _inputFileName.value, footage)
+        val speed = settings.wholeEffects.effectiveSpeed.takeIf { it > 0f } ?: 1f
+        val timeline: List<Triple<Long, Long, String>> = if (settings.subtitleUri != null) {
+            val index = footage.mainFileIndex ?: return emptyList()
+            _subtitleCues.value.cuesOnTimeline(request.segments, index, request.effects.reversed).map { Triple(it.startMs, it.endMs, it.text) }
+        } else {
+            SubtitleLayout.ofWords(request.timedWords(), settings.subtitleStyle.copy(maxLines = 2), request.subtitleFrameRatio)
+                .map { Triple(it.startMs, it.endMs, it.text) }
+        }
+        return timeline.map { (start, end, text) ->
+            DubTiming.Line(Math.round(start / speed.toDouble()), Math.round(end / speed.toDouble()), text.replace('\n', ' '))
+        }.sortedBy { it.startMs }
+    }
+
+    /** The language the subtitles seem to be in (two letters), or null. */
+    fun dubLanguageGuess(): String? = LanguageGuess.guess(subtitleLines())?.language
+
+    /**
+     * Dubs the video with [speaker] at [speed]: every line of the
+     * subtitles said where it is shown, into one sound laid on the video (the
+     * dub made before, if any, gives way to it). With [originalVoice] the
+     * video's own voice is set to that level (0 = gone) under the dub: its
+     * files' voice is set apart first where it is not yet. One step of undo.
+     */
+    fun dubSubtitles(speaker: DubSpeaker, speed: Float, originalVoice: Float?) {
+        val features = smart ?: return
+        if (dubJob?.isActive == true) return
+        if (speaker is DubSpeaker.Kokoro && !features.dubStore.ready) {
+            _dub.value = DubStatus.Failed(DubProblem.NO_MODEL)
+            return
+        }
+        val project = _inputUri.value
+        val settings = _settings.value
+        val lines = dubLines(settings)
+        // The dub never runs past the end of the video.
+        val endMs = settings.toRequest(_selectedFormat.value ?: OutputFormat.MP4, _inputFileName.value, settings.footage())
+            .expectedOutputDurationMs()
+        if (lines.none { DubTiming.spoken(it.text).isNotEmpty() }) {
+            _dub.value = DubStatus.Failed(DubProblem.NOTHING)
+            return
+        }
+        dubJob = viewModelScope.launch {
+            try {
+                if (originalVoice != null) {
+                    // The video's voice is lowered from its stems: the files without them are done first.
+                    val separator = features.voiceSeparator
+                    val files = settings.playingClips.map { it.sourceId }.distinct().mapNotNull(settings::source)
+                        .filter { !it.isStill && it.info?.hasAudio != false && separator.existing(it.uri) == null }
+                    if (files.isNotEmpty()) {
+                        if (!separator.ready) {
+                            _dub.value = DubStatus.Failed(DubProblem.NO_SEPARATION)
+                            return@launch
+                        }
+                        _dub.value = DubStatus.Separating(null)
+                        files.forEachIndexed { index, file ->
+                            separator.separate(file.uri, file.durationMs) { step ->
+                                val inFile = VoiceStatus.Working(step, index, files.size, file.fileName).fraction
+                                _dub.value = DubStatus.Separating(inFile)
+                            }
+                        }
+                    }
+                }
+                _dub.value = DubStatus.Speaking(0, lines.size)
+                val made = features.dubber.dub(lines, speaker, speed, endMs) { done, total -> _dub.value = DubStatus.Speaking(done, total) }
+                if (_inputUri.value != project) return@launch
+                val dubName = "${speaker.label} (${speaker.languageCode.uppercase(java.util.Locale.ROOT)})"
+                val clip = AudioClip(
+                    uri = Uri.fromFile(made.file),
+                    name = dubName,
+                    span = com.cuscus.ffmpeggui.core.timeline.SoundSpan.wholeFile(made.startMs, made.lengthMs),
+                    aiVoice = speaker.aiName,
+                )
+                mutate { current ->
+                    var timeline = current.timeline
+                    if (originalVoice != null) {
+                        for (c in timeline.clips) timeline = timeline.updateEffects(c.id) { it.copy(voiceLevel = originalVoice.coerceIn(0f, VoiceStem.MAX_LEVEL)) }
+                    }
+                    // One dub at a time: the one made before gives way.
+                    current.copy(
+                        timeline = timeline,
+                        audioClips = current.audioClips.filter { !features.dubber.owns(it.uri.path) } + clip,
+                    )
+                }
+                _dub.value = DubStatus.Done(made.lines, made.lengthMs, made.tookMs)
+            } catch (e: CancellationException) {
+                if (_dub.value !is DubStatus.Failed) _dub.value = DubStatus.Idle
+                throw e
+            } catch (e: DubEngine.ModelMissing) {
+                _dub.value = DubStatus.Failed(DubProblem.NO_MODEL)
+            } catch (e: DubEngine.NotEnoughMemory) {
+                _dub.value = DubStatus.Failed(DubProblem.NO_MEMORY)
+            } catch (e: DubEngine.NothingToSay) {
+                _dub.value = DubStatus.Failed(DubProblem.NOTHING)
+            } catch (e: VoiceSeparator.ModelMissing) {
+                _dub.value = DubStatus.Failed(DubProblem.NO_SEPARATION)
+            } catch (e: Exception) {
+                android.util.Log.w("ConversionViewModel", "Dubbing failed", e)
+                _dub.value = DubStatus.Failed(DubProblem.FAILED)
+            }
+        }
+    }
+
+    /** Stops dubbing; nothing is changed. */
+    fun stopDub() {
+        dubJob?.cancel()
+        dubJob = null
+        _dub.value = DubStatus.Idle
+    }
+
+    /** Puts away the last run's message. */
+    fun dismissDub() {
+        if (_dub.value !is DubStatus.Speaking && _dub.value !is DubStatus.Separating) _dub.value = DubStatus.Idle
+    }
+
+    // -- The dub in one go -------------------------------------------------------------
+
+    private val _autoDub = MutableStateFlow<AutoDubStatus>(AutoDubStatus.Idle)
+
+    /** Where the dub in one go is (see [autoDub]). */
+    val autoDub: StateFlow<AutoDubStatus> = _autoDub.asStateFlow()
+
+    private var autoDubJob: Job? = null
+
+    /**
+     * Dubs the video into [target] with [speaker] in one go: what is said is
+     * written down (unless the video has subtitles), translated into [target]
+     * (unless it is in it already), the video's own voice set apart and set to
+     * [originalVoice] (0 = gone; null leaves it), and the dub laid on the
+     * video. Each step is the editor's own (its subtitles, translation and dub
+     * show as they go, each one step of undo); what is missing is said before
+     * anything starts, when it can be known then.
+     */
+    fun autoDub(target: String, speaker: DubSpeaker, originalVoice: Float?) {
+        val features = smart ?: return
+        if (autoDubJob?.isActive == true || dubJob?.isActive == true || speechJob?.isActive == true || translating?.isActive == true) return
+        val settings = _settings.value
+        val needsWords = settings.subtitleUri == null &&
+            (settings.spokenWords.isEmpty() || settings.listenedFiles().any { it.key !in settings.spokenWords })
+        val toSeparate = if (originalVoice == null) {
+            emptyList()
+        } else {
+            settings.playingClips.map { it.sourceId }.distinct().mapNotNull(settings::source)
+                .filter { !it.isStill && it.info?.hasAudio != false && features.voiceSeparator.existing(it.uri) == null }
+        }
+        when {
+            needsWords && !features.ready -> {
+                _autoDub.value = AutoDubStatus.Failed(AutoDubStep.TRANSCRIBE, AutoDubProblem.NO_SPEECH_MODEL)
+                return
+            }
+            toSeparate.isNotEmpty() && !features.voiceSeparator.ready -> {
+                _autoDub.value = AutoDubStatus.Failed(AutoDubStep.SEPARATE, AutoDubProblem.NO_VOICE_MODEL)
+                return
+            }
+            speaker is DubSpeaker.Kokoro && !features.dubStore.ready -> {
+                _autoDub.value = AutoDubStatus.Failed(AutoDubStep.DUB, AutoDubProblem.NO_DUB_MODEL)
+                return
+            }
+        }
+        val project = _inputUri.value
+        val skipped = mutableSetOf<AutoDubStep>()
+        if (!needsWords) skipped += AutoDubStep.TRANSCRIBE
+        if (toSeparate.isEmpty()) skipped += AutoDubStep.SEPARATE
+        autoDubJob = viewModelScope.launch {
+            var step = AutoDubStep.TRANSCRIBE
+            var from: String? = null
+            // Each step's own progress, as the editor shows it, read into the one of the whole.
+            val watcher = launch {
+                combine(_speech, _translation, _dub) { speech, translation, dub -> Triple(speech, translation, dub) }.collect { (speech, translation, dub) ->
+                    val now = _autoDub.value as? AutoDubStatus.Working ?: return@collect
+                    _autoDub.value = when (now.step) {
+                        AutoDubStep.TRANSCRIBE -> now.copy(fraction = (speech as? SpeechStatus.Working)?.fraction)
+                        AutoDubStep.TRANSLATE -> now.copy(fraction = (translation as? TranslationStatus.Working)?.fraction)
+                        AutoDubStep.SEPARATE, AutoDubStep.DUB -> when (dub) {
+                            is DubStatus.Separating -> now.copy(step = AutoDubStep.SEPARATE, fraction = dub.fraction)
+                            is DubStatus.Speaking -> now.copy(step = AutoDubStep.DUB, fraction = dub.fraction)
+                            else -> now
+                        }
+                    }
+                }
+            }
+            fun working(at: AutoDubStep) {
+                step = at
+                _autoDub.value = AutoDubStatus.Working(at, null, skipped.toSet(), from)
+            }
+            fun failed(at: AutoDubStep, problem: AutoDubProblem) {
+                _autoDub.value = AutoDubStatus.Failed(at, problem, from)
+            }
+            try {
+                if (needsWords) {
+                    working(AutoDubStep.TRANSCRIBE)
+                    generateSubtitles()
+                    speechJob?.join()
+                    when ((_speech.value as? SpeechStatus.Failed)?.problem) {
+                        null -> Unit
+                        SpeechProblem.NO_MODEL -> return@launch failed(AutoDubStep.TRANSCRIBE, AutoDubProblem.NO_SPEECH_MODEL)
+                        SpeechProblem.NO_MEMORY -> return@launch failed(AutoDubStep.TRANSCRIBE, AutoDubProblem.NO_MEMORY)
+                        else -> return@launch failed(AutoDubStep.TRANSCRIBE, AutoDubProblem.FAILED)
+                    }
+                    if (speechStopped || _inputUri.value != project) {
+                        _autoDub.value = AutoDubStatus.Idle
+                        return@launch
+                    }
+                }
+                val lines = subtitleLines()
+                if (lines.none { DubTiming.spoken(it).isNotEmpty() }) return@launch failed(AutoDubStep.TRANSCRIBE, AutoDubProblem.NOTHING_SAID)
+                from = withContext(Dispatchers.Default) { LanguageGuess.guess(lines)?.language }?.let(Languages::normalize)
+                if (from != Languages.normalize(target)) {
+                    working(AutoDubStep.TRANSLATE)
+                    val abilities = features.translationStore.models.value.map { it.ability }
+                    if (TranslationRoute.plan(abilities, from, target) == null) {
+                        return@launch failed(AutoDubStep.TRANSLATE, AutoDubProblem.NO_TRANSLATION_MODEL)
+                    }
+                    translateSubtitles(from, target)
+                    translating?.join()
+                    when (val t = _translation.value) {
+                        is TranslationStatus.Done -> Unit
+                        is TranslationStatus.Failed -> return@launch failed(
+                            AutoDubStep.TRANSLATE,
+                            when (t.problem) {
+                                TranslationProblem.NO_MODEL -> AutoDubProblem.NO_TRANSLATION_MODEL
+                                TranslationProblem.NOTHING -> AutoDubProblem.NOTHING_SAID
+                                TranslationProblem.NO_MEMORY -> AutoDubProblem.NO_MEMORY
+                                else -> AutoDubProblem.FAILED
+                            },
+                        )
+                        // Stopped by hand.
+                        else -> {
+                            _autoDub.value = AutoDubStatus.Idle
+                            return@launch
+                        }
+                    }
+                    if (_inputUri.value != project) return@launch
+                } else {
+                    skipped += AutoDubStep.TRANSLATE
+                }
+                working(if (AutoDubStep.SEPARATE in skipped) AutoDubStep.DUB else AutoDubStep.SEPARATE)
+                dubSubtitles(speaker, 1f, originalVoice)
+                dubJob?.join()
+                when (val d = _dub.value) {
+                    is DubStatus.Done -> _autoDub.value = AutoDubStatus.Done(d.lines, d.lengthMs, d.tookMs, skipped.toSet(), from)
+                    is DubStatus.Failed -> when (d.problem) {
+                        DubProblem.NO_MODEL -> failed(AutoDubStep.DUB, AutoDubProblem.NO_DUB_MODEL)
+                        DubProblem.NO_MEMORY -> failed(step, AutoDubProblem.NO_MEMORY)
+                        DubProblem.NOTHING -> failed(AutoDubStep.DUB, AutoDubProblem.NOTHING_SAID)
+                        DubProblem.NO_SEPARATION -> failed(AutoDubStep.SEPARATE, AutoDubProblem.NO_VOICE_MODEL)
+                        DubProblem.FAILED -> failed(step, AutoDubProblem.FAILED)
+                    }
+                    else -> _autoDub.value = AutoDubStatus.Idle
+                }
+            } catch (e: CancellationException) {
+                _autoDub.value = AutoDubStatus.Idle
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("ConversionViewModel", "The dub in one go failed", e)
+                failed(step, AutoDubProblem.FAILED)
+            } finally {
+                watcher.cancel()
+            }
+        }
+    }
+
+    /** The video has subtitles already: a file, or every file listened to. */
+    fun autoDubHasSubtitles(): Boolean {
+        val settings = _settings.value
+        return settings.subtitleUri != null ||
+            (settings.spokenWords.isNotEmpty() && settings.listenedFiles().none { it.key !in settings.spokenWords })
+    }
+
+    /** Some file of the video has no voice set apart yet. */
+    fun autoDubNeedsSeparation(): Boolean {
+        val features = smart ?: return true
+        val settings = _settings.value
+        return settings.playingClips.map { it.sourceId }.distinct().mapNotNull(settings::source)
+            .any { !it.isStill && it.info?.hasAudio != false && features.voiceSeparator.existing(it.uri) == null }
+    }
+
+    /** The translation models bring a text in [from] (null: not known) to [to]. */
+    fun canTranslate(from: String?, to: String): Boolean {
+        val features = smart ?: return false
+        return TranslationRoute.plan(features.translationStore.models.value.map { it.ability }, from, to) != null
+    }
+
+    /** Stops the dub in one go, at whatever step it is; what is done stays. */
+    fun stopAutoDub() {
+        autoDubJob?.cancel()
+        autoDubJob = null
+        stopSpeech()
+        stopTranslation()
+        stopDub()
+        _autoDub.value = AutoDubStatus.Idle
+    }
+
+    /** Puts away the last run's message. */
+    fun dismissAutoDub() {
+        if (_autoDub.value !is AutoDubStatus.Working) _autoDub.value = AutoDubStatus.Idle
     }
 
     /** Takes the spoken subtitles away (an undo brings them back). */
@@ -1274,6 +2057,117 @@ class ConversionViewModel(
             val kept = words.filter { it !in inside }
             settings.copy(spokenWords = settings.spokenWords + (sourceId to (kept + replacement).sortedBy { it.startMs }))
         }
+    }
+
+    // -- Translating the subtitles ------------------------------------------------------
+
+    private val _translation = MutableStateFlow<TranslationStatus>(TranslationStatus.Idle)
+
+    /** Where translating the subtitles is. */
+    val translation: StateFlow<TranslationStatus> = _translation.asStateFlow()
+
+    private var translating: Job? = null
+
+    /** The words of the subtitles, one line each: of the file, or of what was said. */
+    fun subtitleLines(): List<String> {
+        val settings = _settings.value
+        return if (settings.subtitleUri != null) {
+            _subtitleCues.value.map { it.text.replace('\n', ' ') }
+        } else {
+            settings.spokenWords.values.flatMap { words -> spokenLines(words, settings.subtitleStyle).map { it.third } }
+        }
+    }
+
+    /** The lines of spoken [words] as the subtitles show them: start, end and words, on their file's clock. */
+    private fun spokenLines(words: List<SpokenWord>, style: SubtitleStyle): List<Triple<Long, Long, String>> =
+        SubtitleLayout.ofWords(words, style.copy(maxLines = 2), 16f / 9f).map { block ->
+            Triple(block.startMs, block.endMs, block.words.joinToString(" ") { it.text })
+        }
+
+    /**
+     * Translates the subtitles from [from] (null: whatever they are in, which only
+     * a model that reads any language takes) into [to], with the models on the
+     * phone, one line at a time, each keeping its time. A file becomes a new file
+     * in the new language (its times, numbers and styles as they were); spoken
+     * subtitles get the new words, each line in its time. One step of undo.
+     */
+    fun translateSubtitles(from: String?, to: String) {
+        val features = smart ?: return
+        val steps = TranslationRoute.plan(features.translationStore.models.value.map { it.ability }, from, to)
+        if (steps == null) {
+            _translation.value = TranslationStatus.Failed(TranslationProblem.NO_MODEL)
+            return
+        }
+        val project = _inputUri.value
+        val settings = _settings.value
+        translating?.cancel()
+        translating = viewModelScope.launch {
+            _translation.value = TranslationStatus.Working(0, 1)
+            try {
+                val fileUri = settings.subtitleUri
+                if (fileUri != null) {
+                    val text = withContext(ioDispatcher) { textReader.readText(fileUri.toString(), MAX_SUBTITLE_BYTES) }
+                    val texts = text?.let(SubtitleTranslation::texts).orEmpty()
+                    if (text == null || texts.isEmpty()) {
+                        _translation.value = TranslationStatus.Failed(TranslationProblem.NOTHING)
+                        return@launch
+                    }
+                    val out = features.translator.translate(texts, steps) { done, total -> _translation.value = TranslationStatus.Working(done, total) }
+                    val rewritten = SubtitleTranslation.rewrite(text, out)
+                    val extension = if (SubtitleTranslation.isAss(text)) "ass" else "srt"
+                    val name = settings.subtitleName.substringBeforeLast('.').ifBlank { "subtitles" } + ".$to.$extension"
+                    val uri = withContext(ioDispatcher) { features.translationStore.saveSubtitles(name, rewritten) }
+                    if (_inputUri.value != project) return@launch
+                    setSubtitle(uri, name)
+                } else {
+                    val lines = settings.spokenWords.mapValues { (_, words) -> spokenLines(words, settings.subtitleStyle) }
+                    val flat = lines.flatMap { (id, list) -> list.map { id to it } }
+                    if (flat.isEmpty()) {
+                        _translation.value = TranslationStatus.Failed(TranslationProblem.NOTHING)
+                        return@launch
+                    }
+                    val out = features.translator.translate(flat.map { it.second.third }, steps) { done, total ->
+                        _translation.value = TranslationStatus.Working(done, total)
+                    }
+                    if (_inputUri.value != project) return@launch
+                    // Every line's words replaced by its translation, spread over the line's time.
+                    mutate { current ->
+                        var spoken = current.spokenWords
+                        flat.forEachIndexed { i, (sourceId, line) ->
+                            val words = spoken[sourceId] ?: return@forEachIndexed
+                            val inside = words.filter { it.startMs >= line.first && it.startMs < line.second }
+                            if (inside.isEmpty()) return@forEachIndexed
+                            val replacement = retimed(out[i].trim().split(WHITESPACE).filter { it.isNotEmpty() }, inside.first().startMs, inside.last().endMs)
+                            spoken = spoken + (sourceId to (words.filter { it !in inside } + replacement).sortedBy { it.startMs })
+                        }
+                        current.copy(spokenWords = spoken)
+                    }
+                }
+                _translation.value = TranslationStatus.Done(Languages.normalize(to))
+            } catch (e: CancellationException) {
+                _translation.value = TranslationStatus.Idle
+                throw e
+            } catch (e: TranslationEngine.NotEnoughMemory) {
+                _translation.value = TranslationStatus.Failed(TranslationProblem.NO_MEMORY)
+            } catch (e: OutOfMemoryError) {
+                _translation.value = TranslationStatus.Failed(TranslationProblem.NO_MEMORY)
+            } catch (e: Exception) {
+                android.util.Log.w("ConversionViewModel", "Translation failed", e)
+                _translation.value = TranslationStatus.Failed(TranslationProblem.FAILED)
+            }
+        }
+    }
+
+    /** Stops translating; nothing changes. */
+    fun stopTranslation() {
+        translating?.cancel()
+        translating = null
+        _translation.value = TranslationStatus.Idle
+    }
+
+    /** The outcome seen. */
+    fun dismissTranslation() {
+        if (_translation.value !is TranslationStatus.Working) _translation.value = TranslationStatus.Idle
     }
 
     /** [texts] spread over [from]..[to], each word as long as its share of the letters. */
@@ -1301,6 +2195,45 @@ class ConversionViewModel(
         val blocks = SubtitleLayout.ofWords(words, settings.subtitleStyle, request.subtitleFrameRatio)
         if (blocks.isEmpty()) return null
         return SrtSubtitles.write(blocks, settings.wholeEffects.effectiveSpeed)
+    }
+
+    /**
+     * Fills the lyrics tag with what is sung, as plain lines or [synced] LRC
+     * lines timed like the exported file (its cuts and speed). Files not
+     * listened to yet are listened to first (as for spoken subtitles: the
+     * progress shows the same way); if listening stops or fails the lyrics stay
+     * as they were.
+     */
+    fun lyricsFromSpeech(synced: Boolean) {
+        val settings = _settings.value
+        if (settings.listenedFiles().none { it.key !in settings.spokenWords }) {
+            writeLyrics(synced)
+            return
+        }
+        if (speechJob?.isActive == true) return
+        generateSubtitles()
+        val job = speechJob?.takeIf { it.isActive } ?: return
+        val project = projectId
+        viewModelScope.launch {
+            job.join()
+            if (projectId == project && !speechStopped && _speech.value is SpeechStatus.Idle) writeLyrics(synced)
+        }
+    }
+
+    /** The lyrics tag made of the words heard (see [lyricsFromSpeech]); nothing heard changes nothing. */
+    private fun writeLyrics(synced: Boolean) {
+        val settings = _settings.value
+        val footage = settings.footage()
+        val request = settings.toRequest(_selectedFormat.value ?: OutputFormat.MP3, _inputFileName.value, footage)
+        val words = (
+            footage.files.mapIndexedNotNull { index, file ->
+                settings.spokenWords[file.id]?.takeIf { it.isNotEmpty() }?.let { SourceWords(index, it) }
+            }.onTimeline(request.segments, request.effects.reversed) +
+                settings.spokenWords.ofSounds(settings.audioClips, settings.wholeEffects.effectiveSpeed)
+            ).sortedBy { it.startMs }
+        if (words.isEmpty()) return
+        val text = if (synced) LyricsText.synced(words, settings.wholeEffects.effectiveSpeed) else LyricsText.plain(words)
+        updateTags(null) { it.copy(lyrics = text) }
     }
 
     /** Reads the lines of the subtitle file for the live preview. */
@@ -1639,9 +2572,18 @@ class ConversionViewModel(
         // Listening to the files of a project that is closing would be for nothing.
         stopSpeech()
         val discards = (undoStack + redoStack + _settings.value)
-            .flatMap { settings -> settings.sources.map { it.uri } + listOfNotNull(settings.coverUri) }
+            .flatMap { settings ->
+                settings.sources.map { it.uri } + listOfNotNull(settings.coverUri) +
+                    // The pictures of its shapes (only those the app drew are ever deleted).
+                    settings.imageOverlays.filter { it.shape != null }.mapNotNull { it.uri }
+            }
+            .plus(renderedShapes.keys)
             .distinct()
             .filter { it != keep }
+        shapeJobs.values.forEach { it.cancel() }
+        shapeJobs.clear()
+        shapeWanted.clear()
+        renderedShapes.clear()
         saveJob?.cancel()
         saveJob = null
         val store = projects
@@ -1828,6 +2770,8 @@ class ConversionViewModel(
         // State outside the settings that depends on them.
         if (restored.subtitleUri != current.subtitleUri) loadSubtitleCues(restored.subtitleUri)
         if (restored.normalizeAudio) measureSourceLoudness()
+        // A step that changed a shape before its picture was drawn draws it now.
+        syncShapes()
         updateCommandPreview()
         scheduleSave()
     }
@@ -1872,6 +2816,15 @@ class ConversionViewModel(
             delay(COMMAND_PREVIEW_DELAY_MS)
             _commandPreview.value = withContext(Dispatchers.Default) {
                 val request = settings.toRequest(format, inputName).withEncoders(hardwareEncoder(), cpuSpeed())
+                // The custom format has no extension of its own: the studio offers an MP4 to start from.
+                val own = MediaPaths.aliasesFor(request).aliasEntries().map {
+                    if (it.kind == com.cuscus.ffmpeggui.core.command.AliasKind.OUTPUT && '.' !in it.alias) it.copy(alias = "output.mp4") else it
+                }
+                val extra = settings.commandFiles.map {
+                    com.cuscus.ffmpeggui.core.command.CommandAlias(it.alias, com.cuscus.ffmpeggui.core.command.AliasKind.EXTRA)
+                }
+                val outputKind = com.cuscus.ffmpeggui.core.command.AliasKind.OUTPUT
+                _commandAliases.value = own.filter { it.kind != outputKind } + extra + own.filter { it.kind == outputKind }
                 if (format == OutputFormat.CUSTOM) {
                     settings.customCommand.ifBlank { "ffmpeg -i input.${request.inputExtension} ..." }
                 } else {
@@ -1907,6 +2860,9 @@ class ConversionViewModel(
         /** Side assumed for a picture whose size is not known (as the export assumes it). */
         private const val DEFAULT_PICTURE_SIDE = 1080
 
+        /** Width of a new shape, as a fraction of the frame. */
+        private const val NEW_SHAPE_WIDTH = 0.4f
+
         /** Width of a new picture laid over the video, as a fraction of the frame. */
         private const val NEW_PICTURE_WIDTH = 0.33f
 
@@ -1941,6 +2897,7 @@ class ConversionViewModel(
                     smart = container.smartFeatures,
                     outputDirectory = container.outputDirectory,
                     work = container.workReports,
+                    shapeRenderer = container.shapeRenderer::render,
                 )
             }
         }
@@ -1969,5 +2926,22 @@ internal fun ConversionSettings.stackOf(clipId: String?): Pair<List<TextOverlay>
 /** A layer above every caption and picture laid on clip [clipId] (null: on the whole video). */
 internal fun ConversionSettings.topLayer(clipId: String?): Int {
     val (texts, images) = stackOf(clipId)
-    return ((texts.map { it.layer } + images.map { it.layer }).maxOrNull() ?: -1) + 1
+    // The app's effects stay above what is placed after them (see effectLayer).
+    return ((texts.map { it.layer } + images.filter { !it.isEffect }.map { it.layer }).maxOrNull() ?: -1) + 1
 }
+
+/**
+ * The layer of a new effect: above everything of the whole video, with room
+ * left under it for what is placed later (which goes under the effects).
+ */
+internal fun ConversionSettings.effectLayer(): Int {
+    val (texts, images) = stackOf(null)
+    val top = (texts.map { it.layer } + images.map { it.layer }).maxOrNull() ?: -1
+    return maxOf(top + 1, topLayer(null) + EFFECT_LAYER_GAP)
+}
+
+/** How many layers a new effect leaves under it for what is placed after it. */
+private const val EFFECT_LAYER_GAP = 1_000
+
+/** How long a new effect lasts. */
+private const val EFFECT_LENGTH_MS = 5_000L

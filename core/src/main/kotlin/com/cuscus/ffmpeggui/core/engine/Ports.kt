@@ -84,6 +84,9 @@ interface StillMaker {
 fun interface ImageRecoder {
     /** Writes the PNG at [pngPath] as [format] to [targetPath] at [quality] 0..1; false when it cannot. */
     fun recode(pngPath: String, targetPath: String, format: OutputFormat, quality: Float): Boolean
+
+    /** The PNG at [pngPath] as pixels (ARGB, not premultiplied), for the tracer of an SVG; null when it cannot. */
+    fun read(pngPath: String): com.cuscus.ffmpeggui.core.image.Raster? = null
 }
 
 /**
@@ -93,6 +96,12 @@ fun interface ImageRecoder {
 fun interface DrawingRenderer {
     /** A [width] x [height] picture of [strokes], as a source URI; null when it cannot be written. */
     fun render(strokes: List<Stroke>, width: Int, height: Int): String?
+}
+
+/** Draws a picture started from nothing (see [com.cuscus.ffmpeggui.core.model.BlankSpec]). */
+fun interface BlankMaker {
+    /** [spec] drawn into a PNG the app owns (like a still), as a content URI; null when it cannot be written. */
+    fun make(spec: com.cuscus.ffmpeggui.core.model.BlankSpec): String?
 }
 
 /**

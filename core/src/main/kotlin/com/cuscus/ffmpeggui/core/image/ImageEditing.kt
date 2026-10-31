@@ -5,6 +5,8 @@ import com.cuscus.ffmpeggui.core.model.Effects
 import com.cuscus.ffmpeggui.core.model.ImageEdit
 import com.cuscus.ffmpeggui.core.model.ImageEffect
 import com.cuscus.ffmpeggui.core.model.ImageTone
+import com.cuscus.ffmpeggui.core.model.ImagePlacement
+import com.cuscus.ffmpeggui.core.model.PictureCanvas
 import com.cuscus.ffmpeggui.core.model.KeyMode
 import com.cuscus.ffmpeggui.core.model.Rotation
 import kotlin.math.PI
@@ -120,10 +122,27 @@ fun imageStages(edit: ImageEdit, effects: Effects, width: Int, height: Int, subj
 }
 
 /**
- * Size of the picture once turned, straightened and cropped (the frame texts
- * and drawing lie on).
+ * Size of the frame texts and the drawing lie on: the canvas when the picture
+ * has one ([ImageEdit.canvas]), otherwise the picture itself ([pictureSize]).
  */
-fun editedSize(edit: ImageEdit, effects: Effects, width: Int, height: Int): Pair<Int, Int> {
+fun editedSize(edit: ImageEdit, effects: Effects, width: Int, height: Int): Pair<Int, Int> =
+    edit.canvas?.sane()?.let { it.width to it.height } ?: pictureSize(edit, effects, width, height)
+
+/**
+ * Where a picture of [pictureWidth] x [pictureHeight] lies on [canvas] when it
+ * is not placed by hand: centred, as large as the canvas holds it whole.
+ */
+fun fittedPhoto(canvas: PictureCanvas, pictureWidth: Int, pictureHeight: Int): ImagePlacement {
+    val c = canvas.sane()
+    val pictureRatio = pictureWidth.coerceAtLeast(1).toFloat() / pictureHeight.coerceAtLeast(1)
+    val canvasRatio = c.width.toFloat() / c.height
+    // As wide as the canvas, unless it would then be too tall.
+    val fraction = if (pictureRatio >= canvasRatio) 1f else pictureRatio / canvasRatio
+    return ImagePlacement(x = 0.5f, y = 0.5f, widthFraction = fraction, aspect = pictureRatio)
+}
+
+/** Size of the picture once turned, straightened and cropped. */
+fun pictureSize(edit: ImageEdit, effects: Effects, width: Int, height: Int): Pair<Int, Int> {
     var w = width.coerceAtLeast(1)
     var h = height.coerceAtLeast(1)
     if (effects.rotation == Rotation.DEG_90 || effects.rotation == Rotation.DEG_270) {
@@ -278,6 +297,63 @@ fun pictureFrameMs(edit: ImageEdit, lengthMs: Long?): Long {
 
 /** How far before the end of a clip its last usable frame is taken. */
 const val LAST_FRAME_MARGIN_MS = 100L
+
+/**
+ * The alpha of [raster] as a grey picture (each pixel's alpha in its three
+ * colours, opaque), as `alphaextract` gives it: what the picture's own
+ * transparency goes through the geometry as (see [withSourceAlpha]).
+ */
+fun alphaOf(raster: Raster): Raster = Raster(
+    raster.width,
+    raster.height,
+    IntArray(raster.pixels.size) { i ->
+        val a = raster.pixels[i] ushr 24
+        (0xFF shl 24) or (a shl 16) or (a shl 8) or a
+    },
+)
+
+/**
+ * [picture] (what [stages] made of the source, which they read opaque) with the
+ * source's own transparency put back, as the export does for a transparent
+ * picture saved in a format that keeps it ([com.cuscus.ffmpeggui.core.model.ConversionRequest.keepsPictureAlpha]):
+ * [alpha] ([alphaOf] the source, at its size) goes through the geometry among
+ * [stages] (mirrors, turn, keystone, straighten, crop) as the picture did, and is
+ * multiplied into the picture's alpha (that of a key, 255 without one) with
+ * blend's integer `a * b / 255`; the colours stay as they are.
+ */
+fun withSourceAlpha(picture: Raster, alpha: Raster, stages: List<ImageStage>): Raster =
+    mergeAlpha(picture, shapeAlpha(alpha, stages))
+
+/** [alpha] ([alphaOf] a source) through the geometry among [stages], as the picture went (see [withSourceAlpha]). */
+fun shapeAlpha(alpha: Raster, stages: List<ImageStage>): Raster {
+    var shaped = alpha
+    for (stage in stages) if (stage.isGeometry) shaped = stage.apply(shaped)
+    return shaped
+}
+
+/**
+ * [picture] with [shaped] (an alpha already through the picture's geometry, see
+ * [shapeAlpha]) multiplied into its alpha, as blend's integer `a * b / 255`;
+ * an alpha of another size is read at the nearest pixel.
+ */
+fun mergeAlpha(picture: Raster, shaped: Raster): Raster {
+    val w = picture.width
+    val h = picture.height
+    val out = IntArray(w * h)
+    val same = shaped.width == w && shaped.height == h
+    for (y in 0 until h) {
+        // Off by a pixel of rounding (or another size): the nearest pixel of the alpha.
+        val sy = if (same) y else (y * shaped.height / h).coerceIn(0, shaped.height - 1)
+        for (x in 0 until w) {
+            val sx = if (same) x else (x * shaped.width / w).coerceIn(0, shaped.width - 1)
+            val p = picture.pixels[y * w + x]
+            val own = shaped.pixels[sy * shaped.width + sx] and 0xFF
+            val a = (p ushr 24) * own / 255
+            out[y * w + x] = (p and 0xFFFFFF) or (a shl 24)
+        }
+    }
+    return Raster(w, h, out)
+}
 
 /** Runs [stages] on [raster] for the preview. */
 fun render(raster: Raster, stages: List<ImageStage>): Raster = stages.fold(raster) { r, stage -> stage.apply(r) }

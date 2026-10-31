@@ -105,6 +105,7 @@ import com.cuscus.ffmpeggui.core.model.OutputFormat
 import com.cuscus.ffmpeggui.core.model.Rotation
 import com.cuscus.ffmpeggui.core.model.TextOverlay
 import com.cuscus.ffmpeggui.core.model.VideoPlacement
+import com.cuscus.ffmpeggui.core.model.StackSlot
 import com.cuscus.ffmpeggui.core.model.stackOrder
 import com.cuscus.ffmpeggui.core.preview.SnapBox
 import com.cuscus.ffmpeggui.core.preview.SubtitleCue
@@ -125,6 +126,7 @@ import com.cuscus.ffmpeggui.core.time.parseTimecodeMs
 import com.cuscus.ffmpeggui.core.timeline.Clip
 import com.cuscus.ffmpeggui.playback.NowPlaying
 import com.cuscus.ffmpeggui.playback.PreviewMediaSession
+import com.cuscus.ffmpeggui.effects.transitionEffects
 import com.cuscus.ffmpeggui.preview.EditorPreviewPlayer
 import com.cuscus.ffmpeggui.preview.PictureCache
 import com.cuscus.ffmpeggui.preview.PreviewSnapshot
@@ -133,6 +135,7 @@ import com.cuscus.ffmpeggui.preview.previewClipLevels
 import com.cuscus.ffmpeggui.preview.previewClips
 import com.cuscus.ffmpeggui.preview.ofSounds
 import com.cuscus.ffmpeggui.preview.previewSounds
+import com.cuscus.ffmpeggui.preview.previewStemSounds
 import com.cuscus.ffmpeggui.preview.setColorMatrix
 import com.cuscus.ffmpeggui.preview.FrameKeyer
 import com.cuscus.ffmpeggui.preview.applyColorMatrix
@@ -186,7 +189,12 @@ private const val AUDIO_BADGE_PX = 256
  * requests for the same position different, so that the second one is honoured
  * too (the player may have moved on in between).
  */
-data class PreviewSeek(val positionMs: Long, val token: Int)
+data class PreviewSeek(
+    val positionMs: Long,
+    val token: Int,
+    /** One of many asked for in a row while the timeline is dragged (see EditorPreviewPlayer.scrubMediaFrame). */
+    val scrubbing: Boolean = false,
+)
 
 /**
  * Playback state shared by the preview and the controls around it (play button,
@@ -244,6 +252,8 @@ fun PreviewContainer(
     subtitleCues: List<SubtitleCue>,
     /** Words heard in each file, by source id, on that file's own clock: the spoken subtitles. */
     spokenWords: Map<String, List<SpokenWord>> = emptyMap(),
+    /** The separated voice of the files that have one, by source id (see VoiceStem). */
+    voiceStems: Map<String, Uri> = emptyMap(),
     /** How spoken subtitles and SubRip files look. */
     subtitleStyle: SubtitleStyle = SubtitleStyle(),
     /** False for a SubStation Alpha file: it keeps its own look, drawn plainly here. */
@@ -308,7 +318,12 @@ fun PreviewContainer(
     // -- Footage and clocks ---------------------------------------------------------
     val frameTimecodeMs = remember(frameExtractionTimecode) { parseTimecodeMs(frameExtractionTimecode) }
     val playlist = remember(clips, sources) { previewClips(clips, sources) }
-    val clipLevels = remember(shownClips, sources) { previewClipLevels(shownClips, sources) }
+    // A clip with its voice and rest set apart is heard from its stems, on a player of its own.
+    val stemSounds = remember(shownClips, sources, voiceStems, whole, sourceGain, soundsHeard) {
+        if (soundsHeard) previewStemSounds(shownClips, sources, voiceStems, whole, sourceGain) else emptyList()
+    }
+    val stemClips = remember(stemSounds) { stemSounds.map { it.id.removePrefix("stem:") }.toSet() }
+    val clipLevels = remember(shownClips, sources, stemClips) { previewClipLevels(shownClips, sources, stemClips) }
     // The subtitle lines follow their footage through every cut, as in the export.
     val timelineCues = remember(shownCues, shownClips, whole.reversed) { shownCues.followingClips(shownClips, whole.reversed) }
     // So do the words heard, each one with its own clip.
@@ -326,7 +341,7 @@ fun PreviewContainer(
         value = subtitleFonts?.let { fonts -> withContext(Dispatchers.IO) { fonts.of(subtitleStyle.font, subtitleStyle.bold) } }
     }
     val styledSubtitles = spoken || (subtitleFileStyled && timelineCues.isNotEmpty())
-    val sounds = remember(audioClips, imageOverlays) { previewSounds(audioClips, imageOverlays) }
+    val sounds = remember(audioClips, imageOverlays, stemSounds) { previewSounds(audioClips, imageOverlays) + stemSounds }
 
     // -- Player -----------------------------------------------------------------------
     val player = remember { EditorPreviewPlayer(context) }
@@ -356,7 +371,7 @@ fun PreviewContainer(
     LaunchedEffect(previewSeek) {
         previewSeek?.let {
             isPlaying = false
-            player.showMediaFrame(it.positionMs)
+            if (it.scrubbing) player.scrubMediaFrame(it.positionMs) else player.showMediaFrame(it.positionMs)
         }
     }
     // Single-frame extraction shows exactly the frame that will be saved.
@@ -525,7 +540,9 @@ fun PreviewContainer(
             overlays = true,
         )
     }
-    val wholeImages = if (filtersApply) imageOverlays.filter { it.clipId == null } else emptyList()
+    // With the effects laid over the cuts of the effect transitions, as the export lays them.
+    val cutEffects = remember(shownClips, whole) { transitionEffects(shownClips, whole) }
+    val wholeImages = if (filtersApply) imageOverlays.filter { it.clipId == null } + cutEffects else emptyList()
 
     // -- Layout -----------------------------------------------------------------------
     run {
@@ -960,13 +977,20 @@ internal fun BoxScope.StackedOverlays(
     fadeLevel: () -> Float,
     /** What lies on this frame, for things moved by hand to line up with. */
     scene: SnapScene = rememberSnapScene(),
+    /** Pictures drawn from these bitmaps rather than from their files, by id (the picture editor's own picture on its canvas). */
+    pictures: Map<String, android.graphics.Bitmap> = emptyMap(),
 ) {
     val runs = remember(texts, images) {
         val order = stackOrder(texts.map { it.layer }, images.map { it.layer })
         val grouped = mutableListOf<Pair<Boolean, MutableList<Int>>>()
+        // An effect never shares a run with pictures: it is drawn by a layer of its own.
+        fun effect(slot: StackSlot) = !slot.isText && images.getOrNull(slot.index)?.isEffect == true
+        var lastEffect = false
         for (slot in order) {
             val last = grouped.lastOrNull()
-            if (last != null && last.first == slot.isText) last.second += slot.index else grouped += slot.isText to mutableListOf(slot.index)
+            val isEffect = effect(slot)
+            if (last != null && last.first == slot.isText && isEffect == lastEffect) last.second += slot.index else grouped += slot.isText to mutableListOf(slot.index)
+            lastEffect = isEffect
         }
         grouped
     }
@@ -986,6 +1010,16 @@ internal fun BoxScope.StackedOverlays(
                     clipMs = clipMs,
                     scene = scene,
                 )
+            } else if (indices.firstOrNull()?.let { images.getOrNull(it)?.isEffect } == true) {
+                // The app's own effects: screened over what lies under them, never touched here.
+                if (outputMs != null) {
+                    EffectsLayer(
+                        effects = indices.mapNotNull { images.getOrNull(it) },
+                        outputMs = outputMs,
+                        playing = playing,
+                        colorMatrix = colorMatrix,
+                    )
+                }
             } else {
                 ImageOverlaysLayer(
                     overlays = indices.mapNotNull { images.getOrNull(it) },
@@ -999,6 +1033,7 @@ internal fun BoxScope.StackedOverlays(
                     playing = playing,
                     clipMs = clipMs,
                     scene = scene,
+                    pictures = pictures,
                 )
             }
         }
@@ -1548,6 +1583,8 @@ internal fun BoxScope.ImageOverlaysLayer(
     clipMs: (() -> Long)? = null,
     /** What a picture moved by hand lines up with (see SnapScene); null: nothing. */
     scene: SnapScene? = null,
+    /** Pictures drawn from these bitmaps rather than decoded from their files, by id. */
+    pictures: Map<String, android.graphics.Bitmap> = emptyMap(),
 ) {
     val threshold = snapThreshold(LocalDensity.current)
     val currentScene by rememberUpdatedState(scene)
@@ -1608,12 +1645,14 @@ internal fun BoxScope.ImageOverlaysLayer(
                 }
                 // A picture is decoded off the main thread, at a size that suits a phone screen;
                 // a video plays on a player of its own.
+                val given = pictures[overlay.id]
                 val bitmap = if (overlay.isVideo) {
                     null
                 } else {
-                    produceState<android.graphics.Bitmap?>(initialValue = null, uri) {
-                        value = withContext(Dispatchers.IO) { smallPicture(context, uri, OVERLAY_DECODE_PX) }
+                    val decoded = produceState<android.graphics.Bitmap?>(initialValue = null, uri, given == null) {
+                        if (given == null) value = withContext(Dispatchers.IO) { smallPicture(context, uri, OVERLAY_DECODE_PX) }
                     }.value
+                    given ?: decoded
                 }
                 // A video loading before its start is not there yet: touches go through it.
                 // (Derived, so that only the moment it shows recomposes, not every tick.)
@@ -1710,6 +1749,8 @@ internal fun BoxScope.ImageOverlaysLayer(
                                 } else {
                                     current.opacity * overlayFade(current.startMs, current.endMs, current.fadeInSeconds, current.fadeOutSeconds, now)
                                 }
+                                // Mixed with what lies under it as the export mixes it (see LayerBlend).
+                                blendMode = current.blend.composeMode()
                             }
                             // A touch selects it; a drag moves it, selecting it first if needed.
                             .pointerInput(overlay.id, touchable) {
@@ -2031,7 +2072,7 @@ private fun keyClock(outputMs: (() -> Long)?, clipMs: (() -> Long)?, startMs: Lo
  * How visible (0..1) an overlay with these fades is at [atMs]: the same ramps
  * as the export's alpha expression and picture fades.
  */
-private fun overlayFade(startMs: Long, endMs: Long?, fadeInSeconds: Float, fadeOutSeconds: Float, atMs: Long): Float {
+internal fun overlayFade(startMs: Long, endMs: Long?, fadeInSeconds: Float, fadeOutSeconds: Float, atMs: Long): Float {
     var level = 1f
     if (fadeInSeconds > 0f) level = minOf(level, (atMs - startMs) / (fadeInSeconds * 1000f))
     if (fadeOutSeconds > 0f && endMs != null) level = minOf(level, (endMs - atMs) / (fadeOutSeconds * 1000f))

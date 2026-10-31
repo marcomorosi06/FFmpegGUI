@@ -21,6 +21,8 @@ data class MediaInfo(
     val hdr: VideoHdr = VideoHdr.NONE,
     /** Frames per second of the picture (footage); 0 when not known. */
     val frameRate: Float = 0f,
+    /** A picture with an alpha channel: it may have transparent parts of its own. */
+    val hasAlpha: Boolean = false,
 ) {
     companion object {
         /** Builds a [MediaInfo] from raw values, deriving the display strings. */
@@ -34,6 +36,7 @@ data class MediaInfo(
             isStill: Boolean = false,
             hdr: VideoHdr = VideoHdr.NONE,
             frameRate: Float = 0f,
+            hasAlpha: Boolean = false,
         ): MediaInfo = MediaInfo(
             durationMs = durationMs,
             durationFormatted = formatDuration(durationMs),
@@ -46,6 +49,7 @@ data class MediaInfo(
             isStill = isStill,
             hdr = hdr,
             frameRate = frameRate,
+            hasAlpha = hasAlpha,
         )
 
         fun formatDuration(durationMs: Long): String {

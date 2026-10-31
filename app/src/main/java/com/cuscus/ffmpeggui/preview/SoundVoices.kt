@@ -46,6 +46,11 @@ data class PreviewSound(
     val keyframes: Keyframes = Keyframes.NONE,
     /** What the keyframes' volume is multiplied by (its levelling; 0 when muted). */
     val keyScale: Float = 1f,
+    /**
+     * The file is a voice's stems (see VoiceStem): the voice at the first gain
+     * and the rest at the second; null for any other sound.
+     */
+    val stemLevels: Pair<Float, Float>? = null,
 ) {
     /** Its volume at [localMs] from its start. */
     fun volumeAt(localMs: Long): Float =
@@ -84,6 +89,12 @@ internal class SoundVoices(private val context: Context, private val live: LiveA
 
         @Volatile
         var ownStages: List<AudioStage> = sound.stages
+
+        @Volatile
+        var stemLevels: Pair<Float, Float> = sound.stemLevels ?: (1f to 1f)
+
+        /** The speed is nudged while it is a little off its place (see [nudge]): 1 = not. */
+        var nudge = 1f
         lateinit var player: ExoPlayer
     }
 
@@ -98,12 +109,14 @@ internal class SoundVoices(private val context: Context, private val live: LiveA
         voices.entries.removeAll { (id, voice) ->
             val sound = byId[id]
             val reload = sound == null || sound.uri != voice.sound.uri ||
-                sound.trimStartMs != voice.sound.trimStartMs || sound.trimEndMs != voice.sound.trimEndMs
+                sound.trimStartMs != voice.sound.trimStartMs || sound.trimEndMs != voice.sound.trimEndMs ||
+                (sound.stemLevels == null) != (voice.sound.stemLevels == null)
             if (reload) {
                 release(voice)
             } else {
                 voice.sound = sound!!
                 voice.ownStages = sound.stages
+                sound.stemLevels?.let { voice.stemLevels = it }
             }
             reload
         }
@@ -135,7 +148,10 @@ internal class SoundVoices(private val context: Context, private val live: LiveA
             voice.booster.apply(voice.player, if (inside) gain * sound.volumeAt(localMs) * fade * ownFade else 0f)
             // Speed and pitch apart: the player keeps the pitch when only the speed changes. The
             // pitch of the final sound comes on top of the sound's own.
-            val parameters = PlaybackParameters(sound.speed.coerceAtLeast(MIN_RATE), (sound.pitch * live.pitch).coerceAtLeast(MIN_RATE))
+            // A sound a little off its place is brought back by playing it a little faster or
+            // slower (not heard), rather than by a seek (heard): a long one such as a dub drifts.
+            if (playing && inside) voice.nudge = nudge(voice, filePosition(sound, localMs), sound.rangeMs) else voice.nudge = 1f
+            val parameters = PlaybackParameters((sound.speed * voice.nudge).coerceAtLeast(MIN_RATE), (sound.pitch * live.pitch).coerceAtLeast(MIN_RATE))
             if (parameters != voice.parameters) {
                 voice.parameters = parameters
                 voice.player.playbackParameters = parameters
@@ -143,6 +159,26 @@ internal class SoundVoices(private val context: Context, private val live: LiveA
             val wantedRepeat = if (sound.repeats > 1) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
             if (voice.player.repeatMode != wantedRepeat) voice.player.repeatMode = wantedRepeat
             drive(voice.player, filePosition(sound, localMs), sound.rangeMs, playing && inside)
+        }
+    }
+
+    /**
+     * The speed factor that brings [voice] back to [positionMs] of its part
+     * (which lasts [rangeMs]): a little slower when it is ahead, faster when
+     * behind, from [NUDGE_FROM_MS] off until it is within [NUDGE_UNTIL_MS].
+     * A sound looping round, or far off (a seek puts it back), is left.
+     */
+    private fun nudge(voice: Voice, positionMs: Long, rangeMs: Long): Float {
+        val player = voice.player
+        if (player.playbackState != Player.STATE_READY || !player.isPlaying) return 1f
+        val drift = player.currentPosition - positionMs
+        if (abs(drift) > DRIFT_MS || (rangeMs > 0L && abs(drift) > rangeMs / 2)) return 1f
+        val correcting = voice.nudge != 1f
+        return when {
+            abs(drift) <= NUDGE_UNTIL_MS -> 1f
+            !correcting && abs(drift) < NUDGE_FROM_MS -> 1f
+            drift > 0 -> 1f - NUDGE
+            else -> 1f + NUDGE
         }
     }
 
@@ -158,7 +194,11 @@ internal class SoundVoices(private val context: Context, private val live: LiveA
 
     private fun load(voice: Voice): ExoPlayer = processingPlayer(
         context,
-        AudioEffectsProcessor({ voice.ownStages + live.stages }, live.meter),
+        // Stems are mixed down to stereo first, at the levels set for the voice and the rest.
+        *listOfNotNull(
+            if (voice.sound.stemLevels != null) StemMixProcessor { voice.stemLevels } else null,
+            AudioEffectsProcessor({ voice.ownStages + live.stages }, live.meter),
+        ).toTypedArray(),
     ).apply {
         val sound = voice.sound
         repeatMode = Player.REPEAT_MODE_OFF
@@ -226,6 +266,13 @@ internal class SoundVoices(private val context: Context, private val live: LiveA
 
         /** How far a playing sound may drift before it is re-aligned. */
         const val DRIFT_MS = 400L
+
+        /** From this far off a playing sound is nudged back, until it is this close. */
+        const val NUDGE_FROM_MS = 60L
+        const val NUDGE_UNTIL_MS = 15L
+
+        /** How much faster or slower a nudged sound plays. */
+        const val NUDGE = 0.04f
 
         /** How far a waiting sound may be from its place before it is moved there. */
         const val PARKED_DRIFT_MS = 150L

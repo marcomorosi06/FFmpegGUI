@@ -8,6 +8,8 @@ import android.util.Log
 import com.arthenica.ffmpegkit.FFprobeKit
 import com.cuscus.ffmpeggui.core.engine.MetadataReader
 import com.cuscus.ffmpeggui.core.model.MetadataTags
+import com.cuscus.ffmpeggui.core.model.CustomTag
+import com.cuscus.ffmpeggui.core.model.EXIF_TAGS
 import org.json.JSONObject
 
 /**
@@ -32,11 +34,15 @@ class AndroidMetadataReader(context: Context) : MetadataReader {
         appContext.contentResolver.openInputStream(uri)?.use { stream ->
             val exif = ExifInterface(stream)
             fun tag(name: String) = exif.getAttribute(name)?.trim().orEmpty()
+            // Every other tag worth keeping (the date, the camera, the place), by its EXIF name.
+            val custom = EXIF_TAGS.mapNotNull { name -> tag(name).takeIf { it.isNotEmpty() }?.let { CustomTag(name, it) } }
             MetadataTags(
                 title = tag(ExifInterface.TAG_IMAGE_DESCRIPTION),
                 artist = tag(ExifInterface.TAG_ARTIST),
                 copyright = tag(ExifInterface.TAG_COPYRIGHT),
                 fromSource = true,
+                custom = custom,
+                sourceKeys = custom.map { it.key }.toSet(),
             )
         }
     } catch (e: Exception) {
@@ -49,19 +55,26 @@ class AndroidMetadataReader(context: Context) : MetadataReader {
         return try {
             // FFmpegKitNext is written in Kotlin: its results have getters, not properties.
             val info = FFprobeKit.getMediaInformation(input).getMediaInformation() ?: return null
-            // Tags of the file first, then those of its first sound stream, by lower-case name.
-            val found = HashMap<String, String>()
+            // Tags of the file first, then those of its first sound stream, by lower-case name
+            // (each also under the name the file gives it, which is how it is written back).
+            val found = LinkedHashMap<String, String>()
+            val named = HashMap<String, String>()
             fun take(tags: JSONObject?) {
                 tags ?: return
                 for (key in tags.keys()) {
                     val value = tags.optString(key).trim()
-                    if (value.isNotEmpty()) found.putIfAbsent(key.lowercase(), value)
+                    if (value.isEmpty()) continue
+                    if (found.putIfAbsent(key.lowercase(), value) == null) named[key.lowercase()] = key
                 }
             }
             take(info.getTags())
             take(info.getStreams().firstOrNull { it.getType() == "audio" }?.getTags())
-            fun first(vararg keys: String) = keys.firstNotNullOfOrNull { found[it] }.orEmpty()
-            MetadataTags(
+            val used = HashSet<String>()
+            fun first(vararg keys: String): String {
+                used += keys
+                return keys.firstNotNullOfOrNull { found[it] }.orEmpty()
+            }
+            val known = MetadataTags(
                 title = first("title"),
                 artist = first("artist", "album_artist", "author", "performer"),
                 album = first("album"),
@@ -69,8 +82,18 @@ class AndroidMetadataReader(context: Context) : MetadataReader {
                 comment = first("comment", "description"),
                 genre = first("genre"),
                 copyright = first("copyright"),
+                albumArtist = first("album_artist", "albumartist", "album artist"),
+                // FFmpeg names an MP3's USLT frame after its language ("lyrics-eng").
+                lyrics = first("lyrics", "unsyncedlyrics", "syncedlyrics").ifEmpty {
+                    found.entries.firstOrNull { it.key.startsWith("lyrics") }?.also { used += it.key }?.value.orEmpty()
+                },
                 fromSource = true,
             )
+            // Every other tag, as the file names it; not those that only describe the container.
+            val custom = found.entries
+                .filter { (key, _) -> key !in used && key !in CONTAINER_KEYS && !key.startsWith("lyrics") }
+                .map { (key, value) -> CustomTag(named[key] ?: key, value) }
+            known.copy(custom = custom, sourceKeys = custom.map { it.key }.toSet())
         } catch (e: Exception) {
             Log.w(TAG, "Could not probe tags: ${e.message}")
             null
@@ -85,6 +108,7 @@ class AndroidMetadataReader(context: Context) : MetadataReader {
             MetadataTags(
                 title = tag(MediaMetadataRetriever.METADATA_KEY_TITLE),
                 artist = tag(MediaMetadataRetriever.METADATA_KEY_ARTIST).ifEmpty { tag(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST) },
+                albumArtist = tag(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST),
                 album = tag(MediaMetadataRetriever.METADATA_KEY_ALBUM),
                 year = yearOf(tag(MediaMetadataRetriever.METADATA_KEY_YEAR).ifEmpty { tag(MediaMetadataRetriever.METADATA_KEY_DATE) }),
                 genre = tag(MediaMetadataRetriever.METADATA_KEY_GENRE),
@@ -104,5 +128,11 @@ class AndroidMetadataReader(context: Context) : MetadataReader {
 
     private companion object {
         const val TAG = "AndroidMetadataReader"
+
+        /** Tags that describe the container or the stream, not the file's content: the muxer writes them anew. */
+        val CONTAINER_KEYS = setOf(
+            "major_brand", "minor_version", "compatible_brands", "encoder", "handler_name", "vendor_id",
+            "language", "duration", "encoder_options",
+        )
     }
 }

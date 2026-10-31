@@ -67,6 +67,8 @@ dependencies {
     implementation("com.arthenica:ffmpeg-kit-next:$ffmpegKitNextVersion@aar")
     // FFmpegKitNext's only dependency. The AAR comes without its POM, so it is declared here.
     implementation(libs.smart.exception.java)
+    // SVG pictures, drawn into a PNG when they are opened (AndroidStillMaker).
+    implementation(libs.androidsvg)
 }
 
 /**

@@ -8,6 +8,7 @@ import android.content.Context
 import android.os.SystemClock
 import android.util.Log
 import com.cuscus.ffmpeggui.core.cutout.SubjectModelIo
+import com.cuscus.ffmpeggui.speech.AiKernels
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -137,10 +138,8 @@ class CutoutEngine(context: Context, private val active: () -> CutoutModelStore)
         if (memory.availMem in 1 until MIN_FREE_BYTES) throw NotEnoughMemory(memory.availMem)
         val started = SystemClock.elapsedRealtime()
         val environment = OrtEnvironment.getEnvironment()
-        val options = OrtSession.SessionOptions()
+        val options = AiKernels.options(threads)
         try {
-            options.setIntraOpNumThreads(threads)
-            options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
             val session = environment.createSession(file.absolutePath, options)
             val input = session.inputNames.firstOrNull() ?: throw IOException("The model has no input")
             Log.i(TAG, "${store.model.name} loaded in ${SystemClock.elapsedRealtime() - started} ms on $threads threads")

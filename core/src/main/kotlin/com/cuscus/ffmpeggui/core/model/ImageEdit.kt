@@ -1,5 +1,7 @@
 package com.cuscus.ffmpeggui.core.model
 
+import com.cuscus.ffmpeggui.core.vector.TraceSettings
+
 /**
  * What is done to a picture when the output is an image file (a photo, or one
  * frame of a video at [frameMs]). The turn, mirrors and crop are the whole
@@ -14,7 +16,8 @@ package com.cuscus.ffmpeggui.core.model
  *  4. [effect] at [effectAmount], then [sharpen], [vignette] and [grain];
  *  5. the colour [key] (a background cut out: transparent, or a colour of its own);
  *  6. texts and pictures on top, then the drawing ([strokes]);
- *  7. [border] around everything, then the output size ([output]);
+ *  7. [border] around everything, then the output size ([output]), then the
+ *     rounded [corners];
  *  8. [hdr]: a JPG becomes an Ultra HDR picture, the picture above plus a gain
  *     map that makes its light parts brighter on an HDR screen.
  *
@@ -41,6 +44,18 @@ data class ImageEdit(
     /** 0..1. */
     val grain: Float = 0f,
     val border: ImageBorder? = null,
+    /**
+     * 0..1: how round the corners of the whole picture are (border included),
+     * 0 square, 1 by half the shorter side (a square picture becomes a circle).
+     * What is cut off is of [cornerColor] (see `core.image.cornerFilters`).
+     */
+    val corners: Float = 0f,
+    /**
+     * What fills the cut-off corners: an opaque colour (ARGB), [TRANSPARENT_CORNERS],
+     * or null for the default: transparent where the format holds transparency,
+     * black elsewhere (see [cornerFillFor]).
+     */
+    val cornerColor: Long? = null,
     val strokes: List<Stroke> = emptyList(),
     val output: ImageOutput = ImageOutput(),
     /**
@@ -51,6 +66,15 @@ data class ImageEdit(
     val key: ColorKey? = null,
     /** An HDR look for the picture (see [ImageHdr]); null for none. */
     val hdr: ImageHdr? = null,
+    /**
+     * A canvas of its own for the picture: the file is the canvas, and the
+     * picture (made as above) is one of its layers, moved, sized, turned and
+     * stacked among the texts and stickers (see [PictureCanvas]). Null: the
+     * picture is the canvas, as always.
+     */
+    val canvas: PictureCanvas? = null,
+    /** How the picture is traced into shapes when it is saved as an SVG. */
+    val trace: TraceSettings = TraceSettings(),
 ) {
     /**
      * This edit as [format] will hold it: where the format has no transparency
@@ -67,12 +91,30 @@ data class ImageEdit(
         }
     }
 
+    /**
+     * The colour (0xRRGGBB) the cut-off corners take in [format], or null when
+     * they are transparent: transparency only where the format holds it, else
+     * black unless another colour was chosen.
+     */
+    fun cornerFillFor(format: OutputFormat): Int? {
+        val chosen = cornerColor
+        val see = chosen == null || ((chosen ushr 24) and 0xFFL) == 0L
+        return when {
+            see && format.holdsTransparency -> null
+            see -> 0x000000
+            else -> (chosen!! and 0xFFFFFFL).toInt()
+        }
+    }
+
     /** True when the picture comes out with transparent (or see-through) parts. */
     val isTransparent: Boolean get() = key != null && (key.background == null || key.hasTranslucentBackground)
 
     companion object {
         /** What shows through a cut-out in a picture file that holds no transparency. */
         const val OPAQUE_KEY_BACKGROUND = 0xFFFFFF
+
+        /** [cornerColor] for corners chosen transparent (black where the format holds no transparency). */
+        const val TRANSPARENT_CORNERS = 0x00000000L
     }
 }
 
@@ -193,3 +235,28 @@ enum class HdrMode { GENERATED, ORIGINAL }
 
 /** Where the HDR look of [ImageHdr] goes. */
 enum class HdrArea { EVERYWHERE, SUBJECT, BACKGROUND, BRUSH }
+
+/**
+ * The canvas a picture is laid on: [width] x [height] pixels, filled with
+ * [background] (ARGB; null: transparent, which only PNG, WEBP and TIFF keep;
+ * elsewhere it is white). Texts, stickers and the drawing lie on it, the
+ * border goes around it and the output size and the corners apply to it. The
+ * picture is placed as a layer of its own (see
+ * [ConversionRequest.photoPlacement]).
+ */
+data class PictureCanvas(
+    val width: Int = 1080,
+    val height: Int = 1080,
+    val background: Long? = 0xFFFFFFFFL,
+) {
+    /** The canvas as it can be made: at least 16 pixels a side, at most [MAX_SIDE]. */
+    fun sane(): PictureCanvas = copy(width = width.coerceIn(MIN_SIDE, MAX_SIDE), height = height.coerceIn(MIN_SIDE, MAX_SIDE))
+
+    /** True when what [background] fills is (partly) see-through. */
+    val seeThrough: Boolean get() = background == null || ((background ushr 24) and 0xFF) < 0xFF
+
+    companion object {
+        const val MIN_SIDE = 16
+        const val MAX_SIDE = 8192
+    }
+}

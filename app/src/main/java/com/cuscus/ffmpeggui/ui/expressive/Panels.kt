@@ -847,7 +847,10 @@ fun FilePickCard(
 
 /**
  * Colours as round swatches; the chosen one morphs into a cookie with a ring
- * and a check. [colors] are ARGB values.
+ * and a check. [colors] are ARGB values. A colour chosen that is not among
+ * them shows chosen at the end, and with [hex] the last swatch types any
+ * colour by its hex code ([HexColorDialog]). [noneSelected]: none is chosen
+ * (something else is, beside the row).
  */
 @Composable
 fun ColorSwatchRow(
@@ -855,9 +858,12 @@ fun ColorSwatchRow(
     selected: Long,
     onSelect: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    hex: Boolean = true,
+    noneSelected: Boolean = false,
 ) {
     val haptic = LocalHapticFeedback.current
     val colorLabel = stringResource(R.string.text_color)
+    val own = !noneSelected && colors.none { (it and RGB_MASK) == (selected and RGB_MASK) }
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -866,8 +872,9 @@ fun ColorSwatchRow(
             .horizontalScroll(rememberScrollState())
             .padding(vertical = 4.dp),
     ) {
-        colors.forEach { argb ->
-            val chosen = (argb and RGB_MASK) == (selected and RGB_MASK)
+        val shown = if (own) colors + (0xFF000000L or (selected and RGB_MASK)) else colors
+        shown.forEach { argb ->
+            val chosen = !noneSelected && (argb and RGB_MASK) == (selected and RGB_MASK)
             val interaction = remember { MutableInteractionSource() }
             val swatch = Color(argb)
             Box(
@@ -908,6 +915,12 @@ fun ColorSwatchRow(
                         )
                     }
                 }
+            }
+        }
+        if (hex) {
+            HexSwatch(current = selected) { picked ->
+                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                onSelect(picked)
             }
         }
     }

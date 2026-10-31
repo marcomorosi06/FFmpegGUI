@@ -168,6 +168,8 @@ private fun Random.randomValue(type: Type, depth: Int): Any = when {
     type is WildcardType -> randomValue(type.upperBounds[0], depth)
     type is ParameterizedType && (type.rawType as Class<*>) == List::class.java ->
         List(if (depth > 3) 0 else nextInt(0, 4)) { randomValue(type.actualTypeArguments[0], depth + 1) }
+    type is ParameterizedType && (type.rawType as Class<*>) == Set::class.java ->
+        List(if (depth > 3) 0 else nextInt(0, 4)) { randomValue(type.actualTypeArguments[0], depth + 1) }.toSet()
     type is ParameterizedType && (type.rawType as Class<*>) == Map::class.java ->
         List(nextInt(0, 4)) { randomValue(type.actualTypeArguments[0], depth + 1) to randomValue(type.actualTypeArguments[1], depth + 1) }.toMap()
     type !is Class<*> -> error("Unsupported type $type")
@@ -187,6 +189,7 @@ private fun Random.randomValue(type: Type, depth: Int): Any = when {
         nextLong(0L, 10_000_000L), nextBoolean(), nextInt(0, 4000), nextInt(0, 4000),
         nextLong(0L, 1L shl 40), nextBoolean(), nextBoolean(),
         frameRate = nextInt(0, 480) / 4f,
+        hasAlpha = nextBoolean(),
     )
     else -> {
         val components = type.methods.count { it.name.matches(Regex("component\\d+")) && it.parameterCount == 0 }

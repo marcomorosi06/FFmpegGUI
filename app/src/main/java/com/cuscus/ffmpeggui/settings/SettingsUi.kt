@@ -316,4 +316,7 @@ internal object ProjectLinks {
     const val CC_BY = "https://creativecommons.org/licenses/by/4.0/"
     const val ANTI_VOCALE = "https://github.com/RisorseArtificiali/anti-vocale"
     const val SHERPA_ONNX = "https://github.com/k2-fsa/sherpa-onnx"
+    const val ANDROIDSVG = "https://github.com/BigBadaboom/androidsvg"
+    /** The script that draws the video effects, in the repository. */
+    const val EFFECTS_SCRIPT = "https://github.com/marcomorosi06/FFmpegGUI/blob/main/scripts/generate-effects.py"
 }

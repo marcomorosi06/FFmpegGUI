@@ -25,8 +25,12 @@ fun previewClips(clips: List<Clip>, sources: List<EditorSource>): List<PreviewCl
         PreviewClip(source.uri, clip.startMs, clip.endMs, source.durationMs, isStill = source.info?.isStill == true)
     }
 
-/** How each loadable clip plays: the clip effects the player reproduces. Lines up with [previewClips]. */
-fun previewClipLevels(clips: List<Clip>, sources: List<EditorSource>): List<ClipLevels> =
+/**
+ * How each loadable clip plays: the clip effects the player reproduces. Lines
+ * up with [previewClips]. The clips of [silenced] (ids) are heard from their
+ * separated voice instead (see [previewStemSounds]): their own sound is off.
+ */
+fun previewClipLevels(clips: List<Clip>, sources: List<EditorSource>, silenced: Set<String> = emptySet()): List<ClipLevels> =
     clips.filter { clip -> sources.any { it.id == clip.sourceId } }.map { clip ->
         val effects = clip.effects
         ClipLevels(
@@ -34,7 +38,7 @@ fun previewClipLevels(clips: List<Clip>, sources: List<EditorSource>): List<Clip
             reversed = effects.reversed,
             curve = effects.curve,
             keepPitch = effects.keepPitch,
-            gain = if (effects.muted) 0f else effects.volume,
+            gain = if (effects.muted || clip.id in silenced) 0f else effects.volume,
             fadeInSeconds = effects.fadeInSeconds,
             fadeOutSeconds = effects.fadeOutSeconds,
             keyframes = effects.keyframes,
@@ -153,3 +157,44 @@ fun Map<String, List<SpokenWord>>.ofSounds(sounds: List<AudioClip>, wholeSpeed: 
     sounds.filter { !it.muted }.flatMap { sound ->
         this[soundWordsKey(sound.uri)]?.let { placedWords(it, sound.span, wholeSpeed) }.orEmpty()
     }.sortedBy { it.startMs }
+
+/**
+ * The clips whose voice and rest are set apart, as the preview plays them:
+ * each one's part of its file's stems ([stems], by source id; see VoiceStem)
+ * on a player of its own, where the clip plays on the output clock, at the
+ * clip's speed (a speed curve at its average) and volume ([gain] is the level
+ * of the footage's sound), the voice and the rest at the clip's levels. The
+ * clip's own sound is meanwhile off (see [previewClipLevels]). A clip played
+ * backwards is left out: the preview mutes backwards sound anyway.
+ */
+fun previewStemSounds(clips: List<Clip>, sources: List<EditorSource>, stems: Map<String, Uri>, whole: Effects, gain: Float): List<PreviewSound> {
+    if (stems.isEmpty() || whole.reversed) return emptyList()
+    val known = clips.filter { clip -> sources.any { it.id == clip.sourceId } }
+    val speed = whole.effectiveSpeed.takeIf { it > 0f } ?: 1f
+    val timeline = PreviewTimeline(
+        known.map { PreviewTimeline.SegmentTiming(it.lengthMs, it.effects.effectiveSpeed, it.effects.reversed, it.effects.curve, transition = it.effects.transition) },
+        speed,
+    )
+    return known.mapIndexedNotNull { index, clip ->
+        val effects = clip.effects
+        val stem = stems[clip.sourceId]
+        if (stem == null || !effects.splitsVoice || effects.reversed) return@mapIndexedNotNull null
+        val source = sources.first { it.id == clip.sourceId }
+        val end = clip.endMs ?: source.durationMs.takeIf { it > 0L } ?: return@mapIndexedNotNull null
+        val rate = effects.effectiveSpeed * speed
+        PreviewSound(
+            id = "stem:" + clip.id,
+            uri = stem,
+            startMs = Math.round(timeline.joinedStartMs(index) / speed.toDouble()),
+            trimStartMs = clip.startMs,
+            trimEndMs = end,
+            volume = if (effects.muted) 0f else gain * effects.volume,
+            // The clip's fades are on its own clock; the sound's on the output's.
+            fadeInSeconds = effects.fadeInSeconds / speed,
+            fadeOutSeconds = effects.fadeOutSeconds / speed,
+            speed = rate,
+            pitch = if (effects.keepPitch) 1f else effects.effectiveSpeed,
+            stemLevels = effects.voiceLevel to effects.backgroundLevel,
+        )
+    }
+}

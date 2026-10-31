@@ -6,6 +6,8 @@ import com.cuscus.ffmpeggui.AudioClip
 import com.cuscus.ffmpeggui.ConversionSettings
 import com.cuscus.ffmpeggui.EditorSource
 import com.cuscus.ffmpeggui.ImageOverlay
+import com.cuscus.ffmpeggui.ShapeLayer
+import com.cuscus.ffmpeggui.core.model.LayerBlend
 import com.cuscus.ffmpeggui.core.model.AudioEffects
 import com.cuscus.ffmpeggui.core.model.OutputFormat
 import com.cuscus.ffmpeggui.core.project.Json
@@ -99,6 +101,9 @@ object ProjectJson {
         put("customCommand", s.customCommand)
         put("isManualMode", s.isManualMode)
         put("manualCommandOverride", s.manualCommandOverride)
+        putList("commandFiles", s.commandFiles) { f ->
+            Json.Obj(mapOf("alias" to Json.of(f.alias), "uri" to Json.of(f.uri), "name" to Json.of(f.name)))
+        }
         putList("imageOverlays", s.imageOverlays) { write(it) }
         put("subtitleUri", s.subtitleUri?.toString())
         put("subtitleName", s.subtitleName)
@@ -143,6 +148,13 @@ object ProjectJson {
             customCommand = o.string("customCommand", d.customCommand),
             isManualMode = o.bool("isManualMode", d.isManualMode),
             manualCommandOverride = o.string("manualCommandOverride", d.manualCommandOverride),
+            commandFiles = o.list("commandFiles", d.commandFiles) { item ->
+                (item as? Json.Obj)?.let { f ->
+                    val alias = f.string("alias", "")
+                    val uri = f.string("uri", "")
+                    if (alias.isEmpty() || uri.isEmpty()) null else com.cuscus.ffmpeggui.core.command.CommandFile(alias, uri, f.string("name", alias))
+                }
+            },
             imageOverlays = o.list("imageOverlays", d.imageOverlays) { (it as? Json.Obj)?.let(::imageOverlay) },
             subtitleUri = o.stringOrNull("subtitleUri")?.let(Uri::parse),
             subtitleName = o.string("subtitleName", d.subtitleName),
@@ -171,6 +183,7 @@ object ProjectJson {
         put("uri", s.uri.toString())
         put("fileName", s.fileName)
         put("info", s.info, ModelJson::write)
+        put("originalUri", s.originalUri?.toString())
     }
 
     fun source(o: Json.Obj): EditorSource? {
@@ -181,6 +194,7 @@ object ProjectJson {
             uri = Uri.parse(uri),
             fileName = o.string("fileName", ""),
             info = o.objOrNull("info", null, ModelJson::mediaInfo),
+            originalUri = o.stringOrNull("originalUri")?.let(Uri::parse),
         )
     }
 
@@ -200,6 +214,7 @@ object ProjectJson {
         put("trebleDb", a.trebleDb)
         put("normalize", a.normalize)
         put("loudnessLufs", a.loudnessLufs)
+        put("aiVoice", a.aiVoice)
         put("effects", ModelJson.write(a.effects))
         with(ModelJson) { putKeyframes(a.keyframes) }
     }
@@ -222,6 +237,7 @@ object ProjectJson {
             trebleDb = o.float("trebleDb", d.trebleDb),
             normalize = o.bool("normalize", d.normalize),
             loudnessLufs = o.doubleOrNull("loudnessLufs", d.loudnessLufs),
+            aiVoice = o.stringOrNull("aiVoice"),
             effects = o.obj("effects")?.let(ModelJson::audioEffects) ?: AudioEffects.NONE,
             keyframes = ModelJson.keyframes(o),
         )
@@ -255,6 +271,37 @@ object ProjectJson {
         with(ModelJson) { putKeyframes(i.keyframes) }
         put("look", i.look.takeUnless { it == OverlayLook.NONE }, ModelJson::write)
         put("layer", i.layer)
+        put("blend", i.blend)
+        put("shape", i.shape, ::writeShape)
+        put("effect", i.effect)
+        put("hue", i.hue)
+    }
+
+    fun writeShape(s: ShapeLayer): Json.Obj = jsonObject {
+        put("kind", s.kind)
+        put("fill", s.fill)
+        put("fillColor", s.fillColor)
+        put("gradientColor", s.gradientColor)
+        put("gradientAngle", s.gradientAngle)
+        put("outlineWidth", s.outlineWidth)
+        put("outlineColor", s.outlineColor)
+        put("aspect", s.aspect)
+        put("roundness", s.roundness)
+    }
+
+    fun shapeLayer(o: Json.Obj): ShapeLayer {
+        val d = ShapeLayer()
+        return ShapeLayer(
+            kind = o.enum("kind", d.kind),
+            fill = o.enum("fill", d.fill),
+            fillColor = o.long("fillColor", d.fillColor),
+            gradientColor = o.long("gradientColor", d.gradientColor),
+            gradientAngle = o.float("gradientAngle", d.gradientAngle),
+            outlineWidth = o.float("outlineWidth", d.outlineWidth),
+            outlineColor = o.long("outlineColor", d.outlineColor),
+            aspect = o.float("aspect", d.aspect),
+            roundness = o.float("roundness", d.roundness),
+        )
     }
 
     fun imageOverlay(o: Json.Obj): ImageOverlay? {
@@ -288,6 +335,10 @@ object ProjectJson {
             keyframes = ModelJson.keyframes(o),
             look = o.objOrNull("look", null, ModelJson::overlayLook) ?: OverlayLook.NONE,
             layer = o.int("layer", d.layer),
+            blend = LayerBlend.named(o.stringOrNull("blend")),
+            shape = o.objOrNull("shape", d.shape, ::shapeLayer),
+            effect = o.stringOrNull("effect", d.effect),
+            hue = o.float("hue", d.hue),
         )
     }
 

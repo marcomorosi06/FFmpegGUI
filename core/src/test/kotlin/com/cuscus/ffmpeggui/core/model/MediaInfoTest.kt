@@ -30,7 +30,7 @@ class MediaInfoTest {
     fun `tags read from the file are the whole truth, so blanks remove tags`() {
         val tags = MetadataTags(title = "T", copyright = "(c) me", fromSource = true)
         assertEquals(
-            listOf("title" to "T", "artist" to "", "album" to "", "date" to "", "genre" to "", "comment" to "", "copyright" to "(c) me"),
+            listOf("title" to "T", "artist" to "", "album" to "", "date" to "", "genre" to "", "comment" to "", "copyright" to "(c) me", "album_artist" to "", "lyrics" to ""),
             tags.asMap().toList(),
         )
         assertEquals(false, tags.isEmpty)

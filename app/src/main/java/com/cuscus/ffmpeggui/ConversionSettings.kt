@@ -2,6 +2,7 @@ package com.cuscus.ffmpeggui
 
 import android.net.Uri
 import com.cuscus.ffmpeggui.core.model.AudioEffects
+import com.cuscus.ffmpeggui.core.model.Compression
 import com.cuscus.ffmpeggui.core.model.AudioEncoding
 import com.cuscus.ffmpeggui.core.model.CanvasRatio
 import com.cuscus.ffmpeggui.core.model.Effects
@@ -74,6 +75,8 @@ data class ConversionSettings(
     val customCommand: String = "",
     val isManualMode: Boolean = false,
     val manualCommandOverride: String = "",
+    /** Extra files a hand-written command may name (the command studio's tray). */
+    val commandFiles: List<com.cuscus.ffmpeggui.core.command.CommandFile> = emptyList(),
 
     // New feature: image overlays (watermark / logo)
     val imageOverlays: List<ImageOverlay> = emptyList(),
@@ -121,6 +124,9 @@ data class ConversionSettings(
 
     // Cover picture of an audio file (an app-made square JPEG): the opened file's own, or one chosen
     val coverUri: Uri? = null,
+
+    // Made by the compressor (set only for its export, never saved with the project)
+    val compression: Compression? = null,
 ) {
     /**
      * The clips that actually play: the timeline with the whole-sequence trim

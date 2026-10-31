@@ -34,6 +34,10 @@ class WorkNotifier(
         CUTOUT(4202, R.drawable.ic_notification_cutout),
         SPEECH_MODEL(4203, R.drawable.ic_notification_unpack),
         CUTOUT_MODEL(4204, R.drawable.ic_notification_unpack),
+        VOICE(4205, R.drawable.ic_notification_voice),
+        VOICE_MODEL(4206, R.drawable.ic_notification_unpack),
+        DUB(4207, R.drawable.ic_notification_voice),
+        DUB_MODEL(4208, R.drawable.ic_notification_unpack),
     }
 
     /** What a notification shows now. */
@@ -60,6 +64,14 @@ class WorkNotifier(
     private val running = LinkedHashMap<Kind, Running>()
     private val lastPost = HashMap<Kind, Pair<Long, Int>>()
 
+    /** The kinds whose notification may still be up: only those are taken away (see [sweep]). */
+    private val shown = HashSet<Kind>()
+
+    init {
+        // What a process killed while working left up, once.
+        Kind.entries.forEach { manager.cancel(it.id) }
+    }
+
     /**
      * Shows [kind] of work as [status]: a new notification the first time
      * (its cancel button calls [onCancel], none without), the same one after.
@@ -78,6 +90,7 @@ class WorkNotifier(
             else -> before.endsAtMs
         }
         running[kind] = Running(status, onCancel ?: before?.onCancel, startedAt, endsAt)
+        shown += kind
         if (before == null) {
             ensureChannels()
             manager.cancel(resultId(kind))
@@ -121,7 +134,10 @@ class WorkNotifier(
     /** Takes away the notifications of work that is over (one that held the foreground stays until let go). */
     @Synchronized
     internal fun sweep() {
-        Kind.entries.filter { it !in running }.forEach { manager.cancel(it.id) }
+        // Only what was put up: cancelling every kind each time the service looks again
+        // runs into the system's limit on notification calls (it then drops them).
+        shown.filter { it !in running }.forEach { manager.cancel(it.id) }
+        shown.retainAll(running.keys)
     }
 
     /** The work that holds the service's foreground, and its notification; null when none runs. */

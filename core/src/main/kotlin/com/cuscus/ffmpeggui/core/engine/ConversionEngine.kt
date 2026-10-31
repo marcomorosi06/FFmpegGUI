@@ -30,6 +30,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.io.File
 import java.io.IOException
+import com.cuscus.ffmpeggui.core.vector.TraceSettings
+import com.cuscus.ffmpeggui.core.vector.VectorTracer
 
 /**
  * Runs a [ConversionJob] from start to finish:
@@ -97,6 +99,23 @@ class ConversionEngine(
                 }
             }
 
+            // The compressor fitting a size: x265's first pass measures the video.
+            if (job.mode == CommandMode.Generated && commandBuilder.needsFirstPass(request)) {
+                onEvent(ConversionEvent.StageChanged(ConversionStage.ANALYZING))
+                val firstPass = commandBuilder.buildFirstPass(request, paths)
+                onEvent(ConversionEvent.LogLine(firstPass.toDisplayString()))
+                val expected = request.progressDurationMs()
+                val measured = executor.execute(firstPass) { line ->
+                    onEvent(ConversionEvent.LogLine(line))
+                    progressParser.fraction(line, expected)?.let { onEvent(ConversionEvent.Progress(it)) }
+                }
+                when (measured) {
+                    ExecutionResult.Success -> onEvent(ConversionEvent.Progress(0f))
+                    ExecutionResult.Cancelled -> return ConversionOutcome.Cancelled
+                    is ExecutionResult.Failed -> return ConversionOutcome.Failure(FailureReason.ANALYSIS_FAILED)
+                }
+            }
+
             // A format FFmpeg cannot write: it makes a PNG next to the sources, encoded afterwards.
             // (One picture: a sequence of frames is written in a format FFmpeg has, see sequenceFormat.)
             val onePicture = request.frameExtraction == FrameExtraction.Disabled
@@ -116,7 +135,11 @@ class ConversionEngine(
                     plan,
                 )
                 is CommandMode.Manual -> {
-                    val aliases = MediaPaths.aliasesFor(request).inputAliasesTo(paths)
+                    // The extra files first: a name of the project itself wins over one of theirs.
+                    val extra = mode.files.associate { file ->
+                        file.alias to (session.stage(file.uri, file.name) ?: return ConversionOutcome.Failure(FailureReason.SOURCE_UNREADABLE, file.name))
+                    }
+                    val aliases = extra + MediaPaths.aliasesFor(request).inputAliasesTo(paths)
                     val stem = outputPlanner.manualStem(request, directory, timestamp)
                     when (val resolved = manualResolver.resolve(mode.commandLine, aliases, stem)) {
                         ManualCommandResolver.Result.Empty ->
@@ -166,11 +189,20 @@ class ConversionEngine(
                 result = encode(software)
                 encoder = VideoEncoderUse.FALLBACK
             }
+            // The compressor fitting a JPG into a size: the best quality that fits, found by halves.
+            if (result == ExecutionResult.Success) {
+                fitted(job, paths.copy(output = plan.commandPath), session, encode)?.let { result = it }
+            }
 
             return when (result) {
                 ExecutionResult.Success -> {
                     if (intermediate != null) {
-                        val written = imageRecoder?.recode(intermediate, prepared.plan.commandPath, request.format, request.image.output.quality) ?: false
+                        val written = if (request.format == OutputFormat.SVG) {
+                            onEvent(ConversionEvent.LogLine("Tracing the picture into shapes"))
+                            traced(intermediate, prepared.plan.commandPath, request.image.trace)
+                        } else {
+                            imageRecoder?.recode(intermediate, prepared.plan.commandPath, request.format, request.image.output.quality) ?: false
+                        }
                         if (!written) return ConversionOutcome.Failure(FailureReason.ENCODING_FAILED, "no ${request.format.extension} encoder")
                     }
                     // FFmpeg writes no tags into a picture: they are added to the finished file
@@ -297,6 +329,66 @@ class ConversionEngine(
         if (folder.listFiles()?.isEmpty() == true) folder.delete()
     }
 
+    /**
+     * A JPG the compressor must fit into its size ([com.cuscus.ffmpeggui.core.model.Compression.targetBytes]),
+     * already written at [paths]' output: when it is larger, it is made again at
+     * the quality halfway between the last that fitted and the last that did
+     * not, [FIT_STEPS] times, and the best one that fits is kept (the smallest
+     * one when none does). Returns the last result when it ran, null when it
+     * had nothing to do.
+     */
+    private suspend fun fitted(
+        job: ConversionJob,
+        paths: MediaPaths,
+        session: StagingSession,
+        encode: suspend (FfmpegCommand) -> ExecutionResult,
+    ): ExecutionResult? {
+        val request = job.request
+        val target = request.compression?.targetBytes?.takeIf { it > 0L } ?: return null
+        if (job.mode != CommandMode.Generated || request.format != OutputFormat.JPG || request.image.hdr != null) return null
+        val output = File(paths.output)
+        if (!output.exists() || output.length() <= target) return null
+        val best = File(session.scratchFile("fitted.jpg"))
+        val smallest = File(session.scratchFile("smallest.jpg"))
+        output.copyTo(smallest, overwrite = true)
+        var fits = false
+        var low = 0f
+        var high = request.image.output.quality
+        var last: ExecutionResult = ExecutionResult.Success
+        repeat(FIT_STEPS) {
+            currentCoroutineContext().ensureActive()
+            val quality = (low + high) / 2f
+            val again = request.copy(image = request.image.copy(output = request.image.output.copy(quality = quality)))
+            last = encode(commandBuilder.build(again, paths))
+            if (last != ExecutionResult.Success) return last
+            if (output.length() <= target) {
+                output.copyTo(best, overwrite = true)
+                fits = true
+                low = quality
+            } else {
+                if (output.length() < smallest.length()) output.copyTo(smallest, overwrite = true)
+                high = quality
+            }
+        }
+        (if (fits) best else smallest).copyTo(output, overwrite = true)
+        return last
+    }
+
+    /**
+     * The PNG FFmpeg made at [pngPath] traced into shapes as [settings] say
+     * (see [VectorTracer]) and written as an SVG to [targetPath], as large as
+     * the picture; false when it cannot be read or written.
+     */
+    private fun traced(pngPath: String, targetPath: String, settings: TraceSettings): Boolean {
+        val raster = imageRecoder?.read(pngPath) ?: return false
+        return try {
+            File(targetPath).writeText(VectorTracer.trace(raster, settings).toSvg(raster.width, raster.height))
+            true
+        } catch (e: IOException) {
+            false
+        }
+    }
+
     private class Prepared(val command: FfmpegCommand, val plan: OutputPlan)
 
     private sealed interface Staging {
@@ -336,6 +428,8 @@ class ConversionEngine(
             }
         }
         val transforms = if (request.stabilization != null) session.scratchFile("transforms.trf") else null
+        // The compressor's two x265 passes share their stats.
+        val passLog = if (commandBuilder.needsFirstPass(request)) session.scratchFile("x265_2pass.log") else null
         // The cover: the picture itself, or a tags file holding it (see CoverWriting).
         val writing = request.coverWriting()
         val cover = sources.cover?.takeIf { writing != null }?.let { picture ->
@@ -365,6 +459,7 @@ class ConversionEngine(
                 cover = cover.takeIf { writing == CoverWriting.ATTACHED_PICTURE },
                 coverTags = coverTags,
                 hdrLut = hdrLut,
+                passLog = passLog,
             ),
         )
     }
@@ -436,6 +531,9 @@ class ConversionEngine(
     }
 
     private companion object {
+        /** Halvings of the quality range when a JPG must fit a size (the JPG scale has 30 steps). */
+        const val FIT_STEPS = 6
+
         const val MAX_SUBTITLE_BYTES = 5L * 1024 * 1024
 
         /** Asked for when the font is not known; libass then takes what fontconfig offers. */

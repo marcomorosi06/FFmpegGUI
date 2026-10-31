@@ -24,6 +24,7 @@ import com.cuscus.ffmpeggui.core.model.ImageTone
 import com.cuscus.ffmpeggui.core.model.ImageEdit
 import com.cuscus.ffmpeggui.core.model.ImageHdr
 import com.cuscus.ffmpeggui.core.model.VideoHdr
+import com.cuscus.ffmpeggui.core.model.LayerBlend
 import com.cuscus.ffmpeggui.core.model.Limiter
 import com.cuscus.ffmpeggui.core.model.MetadataTags
 import com.cuscus.ffmpeggui.core.model.MotionKind
@@ -317,7 +318,7 @@ class CommandBuilderTest {
     fun `tags read from the input are written back, blanks removing the input's own`() {
         val result = args(request(OutputFormat.MP3) { copy(metadata = MetadataTags(title = "Song", copyright = "2026 Me", fromSource = true)) })
         val tags = result.indices.filter { result[it] == "-metadata" }.map { result[it + 1] }
-        assertEquals(listOf("title=Song", "artist=", "album=", "date=", "genre=", "comment=", "copyright=2026 Me"), tags)
+        assertEquals(listOf("title=Song", "artist=", "album=", "date=", "genre=", "comment=", "copyright=2026 Me", "album_artist=", "lyrics="), tags)
     }
 
     @Test
@@ -769,6 +770,42 @@ class CommandBuilderTest {
         assertTrue(graph, graph.contains("[wovp0]scale=w=384:h='max(2,trunc(ow/dar/2)*2)'[wov0]"))
         assertTrue(graph, graph.contains("[wov0]format=rgba,rotate=1.570796:ow=rotw(1.570796):oh=roth(1.570796):c=none[wovr0]"))
         assertTrue(graph, graph.contains("[wmain][wovr0]overlay=x=(W-w)*0.0500:y=(H-h)*0.0500:enable='between(t,2.000,4.500)':eof_action=pass[vout]"))
+    }
+
+    @Test
+    fun `an effect loops its file, fills the frame, turns its hue and screens over everything`() {
+        val result = args(
+            request {
+                copy(
+                    imageOverlays = listOf(
+                        ImagePlacement(
+                            startMs = 1_000, endMs = 3_000, opacity = 0.8f, fadeInSeconds = 0.5f, cover = true, hueDegrees = 120f,
+                            video = OverlayVideo(loop = true), blend = LayerBlend.SCREEN, layer = 1_000,
+                        ),
+                    ),
+                )
+            },
+        )
+        assertEquals(listOf("-stream_loop", "-1", "-t", "00:00:02.000", "-i", "overlay_0.png"), result.subList(3, 9))
+        val graph = result.valueOf("-filter_complex")
+        assertTrue(graph, graph.contains("[1:v]setpts=PTS-STARTPTS+1.000/TB,hue=h=120.0[wovp0]"))
+        assertTrue(graph, graph.contains("[wovp0]scale=w=1920:h=1080:force_original_aspect_ratio=increase,crop=w=1920:h=1080[wovs0]"))
+        // A video fades as it plays: it is not frozen on its first frame.
+        assertTrue(graph, graph.contains("[wov0]format=rgba,fade=t=in:st=1.000:d=0.500:alpha=1[wovf0]"))
+        assertTrue(graph, graph.contains("overlay=x=(W-w)*0.5000:y=(H-h)*0.5000:enable='between(t,1.000,3.000)':format=rgb:eof_action=pass"))
+        assertTrue(graph, graph.contains("blend=all_mode=screen"))
+    }
+
+    @Test
+    fun `an effect that lasts to the end loops for as long as the video`() {
+        val result = args(request { copy(imageOverlays = listOf(ImagePlacement(cover = true, video = OverlayVideo(loop = true)))) })
+        assertEquals(listOf("-stream_loop", "-1", "-i", "overlay_0.png"), result.subList(3, 7))
+    }
+
+    @Test
+    fun `the whole frame's size follows the output's resolution`() {
+        assertEquals(1920 to 1080, builder.wholeFrameSize(request { this }))
+        assertEquals(1280 to 720, builder.wholeFrameSize(request { copy(encoding = encoding.copy(resolution = Resolution.P720)) }))
     }
 
     @Test

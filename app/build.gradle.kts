@@ -80,6 +80,8 @@ kotlin {
 dependencies {
     implementation(project(":core"))
     implementation(project(":media"))
+    // The SVG editor draws what its own drawing does not (a use, a text placed piece by piece) with it.
+    implementation(libs.androidsvg)
 
     implementation(libs.kotlinx.coroutines.android)
 

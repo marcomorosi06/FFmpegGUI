@@ -30,6 +30,14 @@ data class Effects(
     val muted: Boolean = false,
     /** 0..1, 0 = off. */
     val audioDenoise: Float = 0f,
+    /**
+     * The voice and the rest of the clip's sound at their own levels (linear,
+     * 0..2, 1 = as recorded), once its file's voice has been separated (see
+     * VoiceSeparation): the clip's sound then comes from that file's stems.
+     * On a clip only.
+     */
+    val voiceLevel: Float = 1f,
+    val backgroundLevel: Float = 1f,
     /** Slow zoom or pan over a still (a picture clip); ignored on footage and on the whole video. */
     val motion: StillMotion? = null,
     /**
@@ -135,12 +143,19 @@ data class Effects(
     val changesFrameSize: Boolean
         get() = rotation == Rotation.DEG_90 || rotation == Rotation.DEG_270 || effectiveCrop != null
 
+    /** True when the voice and the rest are set apart (the separated stems are wanted). */
+    val splitsVoice: Boolean
+        get() = abs(voiceLevel - 1f) > LEVEL_EPSILON || abs(backgroundLevel - 1f) > LEVEL_EPSILON
+
     /** True when nothing is changed, so no filter is needed. */
     val isNeutral: Boolean
         get() = copy(crop = effectiveCrop) == NONE
 
     companion object {
         val NONE = Effects()
+
+        /** Levels closer to 1 than this leave the sound as it is. */
+        private const val LEVEL_EPSILON = 0.005f
     }
 }
 

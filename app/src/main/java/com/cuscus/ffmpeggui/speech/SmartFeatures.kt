@@ -11,7 +11,18 @@ import com.cuscus.ffmpeggui.cutout.RefineEngine
 import com.cuscus.ffmpeggui.cutout.RefineModel
 import com.cuscus.ffmpeggui.cutout.SubjectCutter
 import com.cuscus.ffmpeggui.R
+import com.cuscus.ffmpeggui.translate.TranslationEngine
+import com.cuscus.ffmpeggui.translate.TranslationModelStore
 import com.cuscus.ffmpeggui.media.FfmpegAudioExtractor
+import com.cuscus.ffmpeggui.voice.VoiceModel
+import com.cuscus.ffmpeggui.dub.DubEngine
+import com.cuscus.ffmpeggui.erase.EraseEngine
+import com.cuscus.ffmpeggui.erase.EraseModel
+import com.cuscus.ffmpeggui.erase.EraseVariant
+import com.cuscus.ffmpeggui.dub.PiperVoiceStore
+import com.cuscus.ffmpeggui.dub.DubModel
+import com.cuscus.ffmpeggui.dub.DubModelStore
+import com.cuscus.ffmpeggui.voice.VoiceSeparator
 import com.cuscus.ffmpeggui.work.WorkNotifier
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -50,6 +61,11 @@ class SmartFeatures(
     private val app = context.applicationContext
 
     private val choices = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    init {
+        // Before any model is loaded: every engine reads it then.
+        AiKernels.fast = choices.getBoolean(KEY_FAST_KERNELS, true)
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val speechStores: Map<SpeechVariant, SpeechModelStore> =
@@ -75,7 +91,8 @@ class SmartFeatures(
         // The chosen build's recordings, else the other's.
         (listOf(store) + speechStores.values).asSequence().map { it.samples() }.firstOrNull { it.isNotEmpty() }.orEmpty()
     }
-    val transcriber = SpeechTranscriber(context, engine, FfmpegAudioExtractor(context, executor))
+    private val extractor = FfmpegAudioExtractor(context, executor)
+    val transcriber = SpeechTranscriber(context, engine, extractor)
 
     val cutoutStores: Map<CutoutVariant, CutoutModelStore> =
         CutoutVariant.entries.associateWith { CutoutModelStore(context, CutoutModel.of(it)) }
@@ -103,10 +120,109 @@ class SmartFeatures(
     /** SlimSAM, which corrects a cut-out where the finger points (optional, see RefineModel). */
     val refineStore = SpeechModelStore(context, RefineModel.FILES)
 
+    /** The magic eraser's models (see EraseModel): quick MI-GAN, precise LaMa. */
+    val eraseStores: Map<EraseVariant, SpeechModelStore> =
+        EraseVariant.entries.associateWith { SpeechModelStore(context, EraseModel.of(it)) }
+
+    private val _eraseVariant = MutableStateFlow(
+        choices.getString(KEY_ERASE, null)?.let { name -> EraseVariant.entries.firstOrNull { it.name == name } }
+            ?: firstInstalled(listOf(EraseVariant.FAST, EraseVariant.PRECISE)) { eraseStores.getValue(it).state.value }
+            ?: EraseVariant.FAST,
+    )
+
+    /** The magic eraser's model the editors use. */
+    val eraseVariant: StateFlow<EraseVariant> = _eraseVariant.asStateFlow()
+
+    /** Where the chosen eraser model is. */
+    val eraseState: StateFlow<SpeechModelStore.State> = _eraseVariant
+        .flatMapLatest { eraseStores.getValue(it).state }
+        .stateIn(scope, SharingStarted.Eagerly, eraseStores.getValue(_eraseVariant.value).state.value)
+
+    /** Fills in what is painted over a picture. */
+    val eraser = EraseEngine(context) { _eraseVariant.value to eraseStores.getValue(_eraseVariant.value) }
+
+    /** Uses [variant] of the eraser from now on (the other one is let go of from memory). */
+    fun chooseErase(variant: EraseVariant) {
+        if (_eraseVariant.value == variant) return
+        _eraseVariant.value = variant
+        choices.edit().putString(KEY_ERASE, variant.name).apply()
+        eraser.unload()
+    }
+
+    /** Removes the eraser model [variant] (the pictures already erased stay: projects use them). */
+    fun deleteEraseModel(variant: EraseVariant) {
+        eraser.unload()
+        eraseStores.getValue(variant).delete()
+    }
+
     /** Where the correcting model is. */
     val refineState: StateFlow<SpeechModelStore.State> get() = refineStore.state
 
     val refineEngine = RefineEngine(context, refineStore)
+
+    /** The translation models (see OpusMt): any number of language pairs. */
+    val translationStore = TranslationModelStore(context)
+
+    /** Translates subtitles with them. */
+    val translator = TranslationEngine(context, translationStore)
+
+    /** Spleeter, which sets a voice apart from the rest of a sound (see VoiceModel). */
+    val voiceStore = SpeechModelStore(context, VoiceModel.FILES)
+
+    /** Where the voice model is. */
+    val voiceState: StateFlow<SpeechModelStore.State> get() = voiceStore.state
+
+    /** Sets voices apart with it, and keeps what it found. */
+    val voiceSeparator = VoiceSeparator(context, voiceStore, extractor)
+
+    /** Kokoro, which dubs the video in the subtitles' language (see DubModel). */
+    val dubStore = DubModelStore(context)
+
+    /** Where the dubbing model is. */
+    val dubState: StateFlow<SpeechModelStore.State> get() = dubStore.state
+
+    /** The Piper voices the user imported: other voices to dub with, much quicker than Kokoro's. */
+    val piperStore = PiperVoiceStore(context, dubStore)
+
+    /** Says the subtitles with them. */
+    val dubber = DubEngine(context, dubStore, piperStore)
+
+    private val _fastKernels = MutableStateFlow(AiKernels.fast)
+
+    /** Whether every model tries ONNX Runtime's XNNPACK kernels (see AiKernels). */
+    val fastKernels: StateFlow<Boolean> = _fastKernels.asStateFlow()
+
+    /** Turns the XNNPACK kernels on or off for every model: those in memory are let go of, to load again so. */
+    fun setFastKernels(on: Boolean) {
+        choices.edit().putBoolean(KEY_FAST_KERNELS, on).apply()
+        AiKernels.fast = on
+        _fastKernels.value = on
+        engine.unload()
+        cutoutEngine.unload()
+        refineEngine.unload()
+        voiceSeparator.unload()
+        translator.unload()
+        dubber.unload()
+        eraser.unload()
+    }
+
+    /** Removes the Piper voice [id] (the dubs already made with it stay). */
+    fun deletePiperVoice(id: String) {
+        dubber.unload()
+        piperStore.delete(id)
+    }
+
+    /** Removes the dubbing model (the dubs already made stay: projects use them). */
+    fun deleteDubModel() {
+        dubber.unload()
+        dubStore.delete()
+    }
+
+    /** Removes the voice model (the voices already set apart stay: projects use them). */
+    fun deleteVoiceModel() {
+        voiceSeparator.unload()
+        voiceStore.delete()
+    }
 
     /** Removes the correcting model (the corrected masks stay: projects use them). */
     fun deleteRefineModel() {
@@ -263,6 +379,11 @@ class SmartFeatures(
                 report(store.state, WorkNotifier.Kind.CUTOUT_MODEL, app.getString(R.string.work_model_cutout_title, CutoutModel.of(variant).name), store::stop)
             }
             report(refineStore.state, WorkNotifier.Kind.CUTOUT_MODEL, app.getString(R.string.work_model_cutout_title, RefineModel.NAME), refineStore::stop)
+            eraseStores.forEach { (variant, store) ->
+                report(store.state, WorkNotifier.Kind.CUTOUT_MODEL, app.getString(R.string.work_model_erase_title, EraseModel.of(variant).name), store::stop)
+            }
+            report(voiceStore.state, WorkNotifier.Kind.VOICE_MODEL, app.getString(R.string.work_model_voice_title, VoiceModel.NAME), voiceStore::stop)
+            report(dubStore.state, WorkNotifier.Kind.DUB_MODEL, app.getString(R.string.work_model_dub_title, DubModel.NAME), dubStore::stop)
         }
         // What was just imported is chosen when the chosen one is not there.
         speechStores.forEach { (variant, store) ->
@@ -331,6 +452,8 @@ class SmartFeatures(
         const val PREFS = "smart_features"
         const val KEY_SPEECH = "speech_variant"
         const val KEY_CUTOUT = "cutout_variant"
+        const val KEY_FAST_KERNELS = "ai_fast_kernels"
+        const val KEY_ERASE = "erase_variant"
 
         /** The first of [variants] whose model is installed, if any. */
         fun <V> firstInstalled(variants: List<V>, state: (V) -> SpeechModelStore.State): V? =

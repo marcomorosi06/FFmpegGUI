@@ -43,6 +43,8 @@ material = "1.12.0"
 ffmpegKitNext = "6.1.1"
 # Its only dependency (Apache 2.0, by FFmpegKit's author), from Maven Central.
 smartException = "0.2.1"
+# SVG pictures opened in the app are drawn into a PNG with it (Apache 2.0, pure Java, from Maven Central).
+androidsvg = "1.4"
 
 # ONNX Runtime's Java API, for the subject cut-out model. Its libonnxruntime.so is
 # the only one in the app: sherpa-onnx (built on 1.28.2, same C API version 28) runs
@@ -85,6 +87,7 @@ onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime
 google-material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 
 smart-exception-java = { group = "com.arthenica", name = "smart-exception-java", version.ref = "smartException" }
+androidsvg = { group = "com.caverock", name = "androidsvg-aar", version.ref = "androidsvg" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 

@@ -17,7 +17,9 @@
 #   sherpa-onnx-sources/     the third-party archives its Android build downloads, as
 #                            downloaded, each checked against the SHA-256 its cmake/
 #                            files give;
-#   SOURCES.txt              where each one comes from, and how the APK is built.
+#   SOURCES.txt              where each one comes from, and how the APK is built
+#                            (the video effects' source is the script in ffmpeg-gui/
+#                            that draws them: scripts/generate-effects.py).
 #
 # Every commit fetched is checked against the one asked for, and every archive
 # against its SHA-256: a source that changed upstream stops the script.
@@ -240,6 +242,15 @@ HOW THE APK IS BUILT
   sherpa-onnx-sources/; put them where its cmake/*.cmake files look for them
   (for example next to CMakeLists.txt) to build without a network. ONNX
   Runtime (MIT) comes as a prebuilt library: https://github.com/microsoft/onnxruntime
+- The video effects (app/src/main/assets/effects/: the MP4s, their frame
+  sheets and index.json): drawn by ffmpeg-gui/scripts/generate-effects.py
+  (Python 3, numpy, scipy and FFmpeg with libx264), which is their source:
+  python3 scripts/generate-effects.py makes them all again.
+- The AI models (speech, cut-out, translation, voice separation, dubbing) are not in
+  the APK: the user downloads them. The code that runs them is in
+  ffmpeg-gui/ (the voice separation's spectrogram and masks in core/voice/;
+  the Piper voices' token list and ONNX metadata in core/dub/PiperVoice.kt).
+  Piper voices, which the user may import, each come under their own licence.
 
 SOURCES
 EOF

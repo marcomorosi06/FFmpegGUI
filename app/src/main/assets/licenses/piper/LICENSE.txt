@@ -1,0 +1,52 @@
+Piper voices (rhasspy/piper): the voice format and the published voices
+-------------------------------------------------------------------------
+FFmpeg GUI can dub with Piper voices (VITS networks with their .onnx.json
+settings) that the user downloads and imports. No Piper code and no voice
+is in the APK: the app reads a voice's settings with its own Kotlin, writes
+sherpa-onnx's token list and metadata from them, and runs the network with
+sherpa-onnx (sherpa-onnx/LICENSE.txt), which reads words with eSpeak NG and
+piper-phonemize (sherpa-onnx/espeak-ng/, sherpa-onnx/piper-phonemize/).
+
+The list of voices the app offers is taken from Piper's voices.json
+(rhasspy/piper-voices): names, languages, qualities and sizes only.
+
+Each voice has its own licence and its own recordings, stated in its
+MODEL_CARD (shown in the app, under the voice): read it before publishing
+what is made with a voice. The app reads the card for its licence and, for
+a voice not free for commercial use (or for research only, or whose licence
+it cannot tell), says so before every dub: keeping to the licence is up to
+whoever publishes the video. A voice the user trains is the user's.
+
+Piper (https://github.com/rhasspy/piper), the project that defined the
+format, was released under the MIT licence:
+
+MIT License
+
+Copyright (c) 2022 Michael Hansen
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+Marking of synthetic speech
+-------------------------------------------------------------------------
+Every dub carries a comment saying that its voice was made by a machine and
+which one (in the WAV file the app makes), and every file exported with a
+dub in it carries the tags AI_GENERATED and DIGITAL_SOURCE_TYPE (IPTC
+"compositeWithTrainedAlgorithmicMedia"), as Article 50(2) of the EU AI Act
+asks of synthetic audio.

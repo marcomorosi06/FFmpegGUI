@@ -56,7 +56,28 @@ class AndroidMediaProbe(context: Context) : MediaProbe {
             fileSizeBytes = fileSize(sourceUri),
             hasAudio = false,
             isStill = true,
+            hasAlpha = pictureHasAlpha(uri, size),
         )
+    }
+
+    /**
+     * True when the picture at [uri] ([size] as stored) has an alpha channel, so
+     * that it may have transparent parts of its own: a small copy is decoded
+     * (the platform tells an opaque picture from one with alpha as it decodes).
+     */
+    private fun pictureHasAlpha(uri: Uri, size: Pair<Int, Int>): Boolean = try {
+        var sample = 1
+        while (maxOf(size.first, size.second) / (sample * 2) >= ALPHA_PROBE_PX) sample *= 2
+        val options = BitmapFactory.Options().apply { inSampleSize = sample }
+        val bitmap = appContext.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+        val alpha = bitmap?.hasAlpha() == true
+        bitmap?.recycle()
+        alpha
+    } catch (e: Exception) {
+        Log.w(TAG, "Could not tell whether the picture has alpha: ${e.message}")
+        false
+    } catch (e: OutOfMemoryError) {
+        false
     }
 
     /** The stored size of the picture at [uri], read from its header only; null when it is not one. */
@@ -205,6 +226,9 @@ class AndroidMediaProbe(context: Context) : MediaProbe {
 
     private companion object {
         const val TAG = "AndroidMediaProbe"
+
+        /** Side the copy decoded to tell whether a picture has alpha is at least as large as. */
+        const val ALPHA_PROBE_PX = 64
 
         /** Used when the content resolver does not tell the type. */
         val PICTURE_EXTENSIONS = listOf(".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".heic", ".heif")

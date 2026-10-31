@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.annotation.StringRes
 import com.cuscus.ffmpeggui.core.model.ColorKey
 import com.cuscus.ffmpeggui.core.model.Keyframes
+import com.cuscus.ffmpeggui.core.model.LayerBlend
 import com.cuscus.ffmpeggui.core.model.OverlayLook
 import com.cuscus.ffmpeggui.core.model.AudioEffects
 import com.cuscus.ffmpeggui.core.model.MediaInfo
@@ -28,6 +29,11 @@ data class EditorSource(
     val uri: Uri,
     val fileName: String,
     val info: MediaInfo? = null,
+    /**
+     * The file it was opened as, when [uri] is a picture made from it since
+     * (the magic eraser's): what "compare" shows as the original.
+     */
+    val originalUri: Uri? = null,
 ) {
     /** Full length of the file, 0 while unknown. */
     val durationMs: Long get() = info?.durationMs ?: 0L
@@ -96,8 +102,27 @@ data class ImageOverlay(
     val look: OverlayLook = OverlayLook.NONE,
     /** Where it lies among the captions and pictures of its clip or of the whole video (see stackOrder). */
     val layer: Int = 0,
+    /** How it mixes with what lies under it (see LayerBlend). */
+    val blend: LayerBlend = LayerBlend.NORMAL,
+    /**
+     * A shape the app draws (see ShapeLayer): [uri] is then its picture, drawn
+     * again whenever the shape changes. Null for a picture or a video of the user.
+     */
+    val shape: ShapeLayer? = null,
+    /**
+     * One of the app's own effects (its name in the effect library, see
+     * EffectLibrary): [uri] is then its file, played over and over for as long
+     * as it shows, filling the frame and screened over what lies under it.
+     * Null for anything else.
+     */
+    val effect: String? = null,
+    /** An effect's colours turned round the colour wheel, in degrees (0 = as made). */
+    val hue: Float = 0f,
 ) {
     val isVideo: Boolean get() = video != null
+
+    /** True for one of the app's own effects (see [effect]). */
+    val isEffect: Boolean get() = effect != null
 
     /** When it shows. */
     val span: TimeSpan get() = TimeSpan(startMs, endMs ?: (startMs + TimeSpan.DEFAULT_LENGTH_MS))
@@ -137,7 +162,9 @@ fun TextOverlay.withSpan(span: TimeSpan): TextOverlay = copy(startMs = span.star
  * when the speed changes (else it follows, like a tape); [pitchSemitones]
  * shifts it on top. The equaliser gains are in dB. [normalize] levels the
  * loudness; [loudnessLufs] is the measured loudness of the file, which the
- * preview needs to imitate it (null until measured).
+ * preview needs to imitate it (null until measured). [aiVoice] names the
+ * machine that made the voice in it (a dub), when one did: the exported file
+ * then says so (AI Act, Article 50).
  */
 data class AudioClip(
     val id: String = UUID.randomUUID().toString(),
@@ -159,6 +186,7 @@ data class AudioClip(
     val effects: AudioEffects = AudioEffects.NONE,
     /** How its volume changes while it plays (times from its start on the video). */
     val keyframes: Keyframes = Keyframes.NONE,
+    val aiVoice: String? = null,
 )
 
 /**
@@ -175,3 +203,14 @@ enum class CropAspect(val ratio: Float?, @StringRes val labelRes: Int) {
 
 /** Where a caption or picture goes among those laid over the video. */
 typealias LayerMove = com.cuscus.ffmpeggui.core.model.LayerMove
+
+/**
+ * Id of the picture editor's own picture laid on its canvas as a layer (see
+ * `ImageEdit.canvas`): kept among the stickers so that it is moved, sized,
+ * turned and stacked as they are, but drawn from the edited picture and
+ * never exported as a file laid over.
+ */
+const val PHOTO_LAYER_ID = "picture-on-canvas"
+
+/** True for the picture itself on its canvas (see [PHOTO_LAYER_ID]). */
+val ImageOverlay.isPhoto: Boolean get() = id == PHOTO_LAYER_ID

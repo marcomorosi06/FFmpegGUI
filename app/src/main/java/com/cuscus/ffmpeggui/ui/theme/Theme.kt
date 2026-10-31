@@ -28,8 +28,12 @@ val LocalAppSettings = staticCompositionLocalOf { AppSettings() }
 /** Whether this Android can take colours from the wallpaper (12 and later). */
 val dynamicColorAvailable: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
-/** The light or dark scheme: the wallpaper's when [dynamic] (and available), else the icon's teal. */
-fun appColorScheme(context: Context, dark: Boolean, dynamic: Boolean): ColorScheme = when {
+/**
+ * The light or dark scheme: greys only when [monochrome], else the wallpaper's
+ * when [dynamic] (and available), else the icon's teal.
+ */
+fun appColorScheme(context: Context, dark: Boolean, dynamic: Boolean, monochrome: Boolean = false): ColorScheme = when {
+    monochrome -> if (dark) MonochromeDarkColorScheme else MonochromeLightColorScheme
     dynamic && dynamicColorAvailable -> if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     dark -> TealDarkColorScheme
     else -> TealLightColorScheme
@@ -73,8 +77,8 @@ fun FFmpegGUITheme(
         ThemeMode.DARK -> true
     }
     val context = LocalContext.current
-    val colorScheme = remember(context, darkTheme, settings.dynamicColor, settings.pureBlack) {
-        val scheme = appColorScheme(context, darkTheme, settings.dynamicColor)
+    val colorScheme = remember(context, darkTheme, settings.dynamicColor, settings.monochrome, settings.pureBlack) {
+        val scheme = appColorScheme(context, darkTheme, settings.dynamicColor, settings.monochrome)
         if (darkTheme && settings.pureBlack) scheme.onBlack() else scheme
     }
 

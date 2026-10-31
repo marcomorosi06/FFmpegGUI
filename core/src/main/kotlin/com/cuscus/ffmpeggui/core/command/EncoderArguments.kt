@@ -34,6 +34,8 @@ internal fun encoderArguments(
     x264Preset: String = CpuEncoderSpeed.BALANCED.preset,
     /** An HDR video: HEVC Main 10 by x265, which every phone that shows HDR plays. */
     hdr: Boolean = false,
+    /** The compressor's video: x265 at a CRF or a bitrate (see [X265Encoding]). */
+    x265: X265Encoding? = null,
 ): List<String> {
     val noPicture = if (withCover) emptyList() else listOf("-vn")
     val q = quality.coerceIn(0f, 1f)
@@ -42,7 +44,9 @@ internal fun encoderArguments(
 
     when (format) {
         OutputFormat.MP4, OutputFormat.MKV -> {
-            args += if (hdr) {
+            args += if (x265 != null) {
+                x265Arguments(x265, format, x264Preset, hdr)
+            } else if (hdr) {
                 listOf(
                     "-vcodec", "libx265", "-crf", (qualityToCrf(q) + X265_CRF_OFFSET).toString(), "-preset", x264Preset,
                     "-pix_fmt", "yuv420p10le", "-profile:v", "main10",
@@ -57,7 +61,7 @@ internal fun encoderArguments(
             } else {
                 listOf("-vcodec", "libx264", "-crf", qualityToCrf(q).toString(), "-preset", x264Preset)
             }
-            if (withAudio) args += listOf("-acodec", "aac", "-b:a", "128k")
+            if (withAudio) args += listOf("-acodec", "aac", "-b:a", "${x265?.audioKbps ?: 128}k")
         }
         OutputFormat.AVI -> {
             args += listOf("-vcodec", "libxvid", "-qscale:v", qualityToXvidScale(q).toString())
@@ -81,7 +85,7 @@ internal fun encoderArguments(
             args += sampleRate(audio)
             args += listOf(containerFlag, "wav")
         }
-        OutputFormat.JPG, OutputFormat.PNG, OutputFormat.WEBP, OutputFormat.BMP, OutputFormat.TIFF ->
+        OutputFormat.JPG, OutputFormat.PNG, OutputFormat.WEBP, OutputFormat.BMP, OutputFormat.TIFF, OutputFormat.SVG ->
             args += imageEncoderArguments(format, quality)
         // A transcript is written by the speech model, never by FFmpeg.
         OutputFormat.TXT, OutputFormat.SRT -> Unit
@@ -97,12 +101,18 @@ internal fun encoderArguments(
  * which the platform's encoder then turns into WEBP. With [alpha] the picture
  * keeps its transparent parts (PNG, WEBP and TIFF only).
  */
-internal fun imageEncoderArguments(format: OutputFormat, quality: Float, alpha: Boolean = false): List<String> {
-    val rgb = if (alpha && format.holdsTransparency) "rgba" else "rgb24"
+internal fun imageEncoderArguments(format: OutputFormat, quality: Float, alpha: Boolean = false, palette: Boolean = false): List<String> {
+    val rgb = when {
+        // 256 colours (see PNG_PALETTE_FILTER), their transparency in the palette.
+        palette && format == OutputFormat.PNG -> "pal8"
+        alpha && format.holdsTransparency -> "rgba"
+        else -> "rgb24"
+    }
     return when (format) {
         OutputFormat.JPG -> listOf("-c:v", "mjpeg", "-q:v", qualityToJpegScale(quality).toString(), "-pix_fmt", "yuvj444p")
         OutputFormat.PNG -> listOf("-c:v", "png", "-pix_fmt", rgb)
-        OutputFormat.WEBP -> listOf("-c:v", "png", "-pix_fmt", rgb, "-f", "image2")
+        // Written as a PNG: the platform encodes the WEBP, the tracer draws the SVG.
+        OutputFormat.WEBP, OutputFormat.SVG -> listOf("-c:v", "png", "-pix_fmt", rgb, "-f", "image2")
         OutputFormat.BMP -> listOf("-c:v", "bmp", "-pix_fmt", "bgr24")
         OutputFormat.TIFF -> listOf("-c:v", "tiff", "-pix_fmt", rgb, "-compression_algo", "deflate")
         else -> throw IllegalArgumentException("$format is not a picture format")

@@ -28,6 +28,9 @@ class OutputClock(
     /** Length of the exported video. */
     val outputDurationMs: Long = timeline.outputDurationMs
 
+    /** Where the exported video cuts from clip [gap] to the next one (see [PreviewTimeline.cutOutputMs]). */
+    fun cutOutputMs(gap: Int): Long? = timeline.cutOutputMs(gap)
+
     /** Where output instant [outputMs] is drawn on the editor's timeline. */
     fun timelineMs(outputMs: Long): Double {
         val media = when {

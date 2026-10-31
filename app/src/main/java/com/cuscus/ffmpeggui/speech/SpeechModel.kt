@@ -66,13 +66,14 @@ class SpeechModel internal constructor(
      */
     class Sample(val file: ModelFile, val language: String, val says: String)
 
-    class Archive(val name: String, val sha256: String, val bytes: Long)
+    /** An archive holding the model; [url] where it is, when not among sherpa-onnx's speech models. */
+    class Archive(val name: String, val sha256: String, val bytes: Long, val url: String? = null)
 
     /** One thing to download: [file] is its name. */
     class Download(val file: String, val url: String)
 
     /** The archive to download instead of the loose files, when there is one. */
-    val archiveDownload: Download? get() = archive?.let { Download(it.name, "$ARCHIVE_RELEASES/${it.name}") }
+    val archiveDownload: Download? get() = archive?.let { Download(it.name, it.url ?: "$ARCHIVE_RELEASES/${it.name}") }
 
     /** Every file an import looks for: the model, then its recordings. */
     val allFiles: List<ModelFile> = files + samples.map { it.file }

@@ -16,6 +16,7 @@ import com.cuscus.ffmpeggui.core.model.Effects
 import com.cuscus.ffmpeggui.core.model.Rotation
 import com.cuscus.ffmpeggui.core.project.Json
 import com.cuscus.ffmpeggui.core.project.JsonText
+import com.cuscus.ffmpeggui.effects.EffectLibrary
 import com.cuscus.ffmpeggui.settings.AppSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -50,6 +51,8 @@ data class ProjectCard(
     val bytes: Long,
     /** The last file exported from it, when that file still exists. */
     val lastExport: String?,
+    /** A drawing of the SVG editor (see SvgDrawingStore): [clips] counts its elements. */
+    val drawing: Boolean = false,
 )
 
 /**
@@ -245,6 +248,8 @@ class ProjectStore(
         val kept = when {
             // Already one of this project's files.
             uri.authority == authority && path.startsWith("/$ROOT/$id/") -> uri
+            // One of the app's own effects: always there (see EffectLibrary).
+            EffectLibrary.owns(uri) -> uri
             // The app's own files (camera recordings, stills, covers: the cache is emptied).
             uri.authority == authority || uri.scheme == "file" -> copyInto(uri, media) ?: uri
             uri.scheme == "content" -> if (holdPermission(uri)) uri else copyInto(uri, media) ?: uri

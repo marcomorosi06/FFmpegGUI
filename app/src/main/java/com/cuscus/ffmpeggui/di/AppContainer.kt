@@ -70,6 +70,11 @@ class AppContainer(
 
     val textReader: TextSourceReader by lazy { ContentTextReader(appContext) }
 
+    /** The command studio's knowledge of FFmpeg, history, favourites and added files. */
+    val commandStudio: com.cuscus.ffmpeggui.command.CommandStudioStore by lazy {
+        com.cuscus.ffmpeggui.command.CommandStudioStore(appContext, ffmpegExecutor)
+    }
+
     val loudnessMeter: LoudnessMeter by lazy { FfmpegLoudnessMeter(appContext, ffmpegExecutor) }
 
     val conversionMessages: ConversionMessages by lazy { ConversionMessages(appContext.resources) }
@@ -84,6 +89,9 @@ class AppContainer(
 
     /** Pictures added as clips and freeze frames. */
     val stillMaker: StillMaker by lazy { AndroidStillMaker(appContext, cacheJanitor, stillGainMaps) }
+    /** Pictures started from nothing, and the user's own starting points for them. */
+    val blankMaker: com.cuscus.ffmpeggui.core.engine.BlankMaker by lazy { com.cuscus.ffmpeggui.media.AndroidBlankMaker(cacheJanitor) }
+    val blankPresets: com.cuscus.ffmpeggui.blank.BlankPresetStore by lazy { com.cuscus.ffmpeggui.blank.BlankPresetStore(appContext) }
 
     /** The user's settings (DataStore). */
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(appContext) }
@@ -110,6 +118,9 @@ class AppContainer(
 
     /** Cover pictures of audio files: chosen by the user, or found in the opened file. */
     val coverArtist: CoverArtist by lazy { AndroidCoverArtist(appContext, cacheJanitor) }
+
+    /** The pictures of shape layers, drawn with the stills (see ShapeRenderer). */
+    val shapeRenderer: com.cuscus.ffmpeggui.ShapeRenderer by lazy { com.cuscus.ffmpeggui.ShapeRenderer(cacheJanitor) }
 
     /** The drawing of a picture, laid over it at export. */
     val drawingRenderer: DrawingRenderer by lazy { AndroidDrawingRenderer(cacheJanitor) }

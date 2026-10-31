@@ -12,6 +12,7 @@ import com.cuscus.ffmpeggui.core.model.StackSlot
 import com.cuscus.ffmpeggui.core.model.TextOverlay
 import com.cuscus.ffmpeggui.core.model.VideoPlacement
 import com.cuscus.ffmpeggui.core.model.movedLayers
+import com.cuscus.ffmpeggui.core.model.movedLayersTo
 import com.cuscus.ffmpeggui.core.model.stackOrder
 import com.cuscus.ffmpeggui.core.project.ModelJson
 import org.junit.Assert.assertEquals
@@ -44,6 +45,26 @@ class StackingExportTest {
         assertEquals(listOf(StackSlot(true, 0), StackSlot(false, 0), StackSlot(true, 1)), movedLayers(order, 1, LayerMove.TO_FRONT))
         assertEquals(listOf(StackSlot(false, 0), StackSlot(true, 0), StackSlot(true, 1)), movedLayers(order, 2, LayerMove.TO_BACK))
         assertEquals(order, movedLayers(order, 2, LayerMove.FORWARD))
+        assertEquals(order, movedLayers(order, 0, LayerMove.BACKWARD))
+    }
+
+    @Test
+    fun `a layer dragged in the list lands where it is dropped`() {
+        // Bottom first: text 0, text 1, picture 0, picture 1.
+        val order = stackOrder(listOf(0, 1), listOf(2, 3))
+        val a = StackSlot(true, 0)
+        val b = StackSlot(true, 1)
+        val c = StackSlot(false, 0)
+        val d = StackSlot(false, 1)
+        assertEquals(listOf(a, b, c, d), order)
+        assertEquals(listOf(b, c, a, d), movedLayersTo(order, 0, 2))
+        assertEquals(listOf(d, a, b, c), movedLayersTo(order, 3, 0))
+        assertEquals(listOf(a, c, d, b), movedLayersTo(order, 1, 3))
+        assertEquals(order, movedLayersTo(order, 2, 2))
+        // Out of the stack: kept at its ends, or nothing moves.
+        assertEquals(listOf(b, c, d, a), movedLayersTo(order, 0, 99))
+        assertEquals(listOf(c, a, b, d), movedLayersTo(order, 2, -5))
+        assertEquals(order, movedLayersTo(order, 7, 0))
     }
 
     @Test

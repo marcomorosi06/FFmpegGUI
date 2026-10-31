@@ -44,6 +44,42 @@ class FfmpegAudioExtractor(context: Context, private val executor: FfmpegExecuto
         return executor.execute(command) { line -> progress.fraction(line, expected)?.let(onProgress) }
     }
 
+    /**
+     * Writes the sound of [sourceUri] to [target] as voice separation wants it:
+     * the first audio track on two channels (a mono one on both), at [rate],
+     * as raw 16-bit samples (little endian), its first sample at the file's time 0.
+     */
+    suspend fun extractStereo(sourceUri: String, target: File, durationMs: Long, rate: Int, onProgress: (Float) -> Unit = {}): ExecutionResult {
+        val input = ffmpegReadablePath(appContext, Uri.parse(sourceUri)) ?: return ExecutionResult.Failed(UNREADABLE)
+        target.parentFile?.mkdirs()
+        target.delete()
+        val command = FfmpegCommand(
+            listOf(
+                "-y", "-i", input,
+                "-map", "0:a:0", "-vn", "-sn", "-dn",
+                // As above: sample 0 is the file's time 0, the clock the picture and the edit are on.
+                "-af", "aresample=$rate:first_pts=0",
+                "-ac", "2",
+                "-c:a", "pcm_s16le", "-f", "s16le",
+                target.absolutePath,
+            ),
+        )
+        val expected = durationMs.takeIf { it > 0 }
+        return executor.execute(command) { line -> progress.fraction(line, expected)?.let(onProgress) }
+    }
+
+    /** Encodes the WAV file [wav] as FLAC into [target], losslessly (every channel kept). */
+    suspend fun encodeFlac(wav: File, target: File, durationMs: Long, onProgress: (Float) -> Unit = {}): ExecutionResult {
+        target.parentFile?.mkdirs()
+        target.delete()
+        val command = FfmpegCommand(
+            // The format is named: the target may end in something else than .flac (a part being written).
+            listOf("-y", "-i", wav.absolutePath, "-map", "0:a:0", "-c:a", "flac", "-compression_level", "5", "-f", "flac", target.absolutePath),
+        )
+        val expected = durationMs.takeIf { it > 0 }
+        return executor.execute(command) { line -> progress.fraction(line, expected)?.let(onProgress) }
+    }
+
     companion object {
         const val SAMPLE_RATE = 16_000
 

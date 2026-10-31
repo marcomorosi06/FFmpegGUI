@@ -4,7 +4,9 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
@@ -70,10 +72,23 @@ object AppIcon {
 @Composable
 fun appIconIsTeal(): Boolean = AppIcon.isTeal(LocalAppSettings.current.dynamicColor)
 
-/** The background of the app's icon, as the launcher shows it. */
+/** The background of the app's icon, as the launcher shows it; in the monochrome theme, its grey container. */
 @Composable
 fun appIconBackground(): Color =
-    colorResource(if (appIconIsTeal()) R.color.icon_teal_bg else R.color.icon_bg)
+    if (LocalAppSettings.current.monochrome) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        colorResource(if (appIconIsTeal()) R.color.icon_teal_bg else R.color.icon_bg)
+    }
+
+/**
+ * How the glyph is drawn in the app: as it is, or, in the monochrome theme, in
+ * the grey that goes on [appIconBackground] (its two parts still apart by
+ * their cut).
+ */
+@Composable
+fun appIconTint(): ColorFilter? =
+    if (LocalAppSettings.current.monochrome) ColorFilter.tint(MaterialTheme.colorScheme.onPrimaryContainer) else null
 
 /** The glyph of the app's icon (the launcher's 108 dp foreground layer). */
 @Composable

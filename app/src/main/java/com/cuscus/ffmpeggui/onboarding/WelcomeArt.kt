@@ -97,6 +97,7 @@ import com.cuscus.ffmpeggui.ui.expressive.PolygonShape
 import com.cuscus.ffmpeggui.ui.theme.DisplayFamily
 import com.cuscus.ffmpeggui.ui.theme.appIconBackground
 import com.cuscus.ffmpeggui.ui.theme.appIconGlyph
+import com.cuscus.ffmpeggui.ui.theme.appIconTint
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.PI
@@ -207,7 +208,7 @@ internal fun HelloHero(modifier: Modifier = Modifier) {
         modifier = modifier,
     ) { side ->
         // The glyph is drawn on the launcher's 108 dp layer, whose visible part is the inner 72 dp.
-        Image(painter = appIconGlyph(), contentDescription = null, modifier = Modifier.requiredSize(side * 1.5f))
+        Image(painter = appIconGlyph(), contentDescription = null, colorFilter = appIconTint(), modifier = Modifier.requiredSize(side * 1.5f))
     }
 }
 
@@ -602,7 +603,7 @@ internal fun NotificationArt(modifier: Modifier = Modifier) {
             if (done) {
                 Icon(Icons.Rounded.Check, contentDescription = null, tint = scheme.onPrimary, modifier = Modifier.size(26.dp))
             } else {
-                Image(painter = appIconGlyph(), contentDescription = null, modifier = Modifier.requiredSize(72.dp))
+                Image(painter = appIconGlyph(), contentDescription = null, colorFilter = appIconTint(), modifier = Modifier.requiredSize(72.dp))
             }
         }
         Spacer(modifier = Modifier.width(14.dp))
@@ -754,7 +755,7 @@ internal fun PhonePreview(modifier: Modifier = Modifier) {
                 color = appIconBackground(),
                 modifier = Modifier.size(52.dp),
             ) {
-                Image(painter = appIconGlyph(), contentDescription = null, modifier = Modifier.requiredSize(78.dp))
+                Image(painter = appIconGlyph(), contentDescription = null, colorFilter = appIconTint(), modifier = Modifier.requiredSize(78.dp))
             }
             Spacer(modifier = Modifier.width(12.dp))
             Column {

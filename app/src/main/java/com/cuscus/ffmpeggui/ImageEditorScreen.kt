@@ -39,8 +39,10 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BorderOuter
@@ -55,11 +57,17 @@ import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material.icons.rounded.FilterVintage
 import androidx.compose.material.icons.rounded.FormatColorText
 import androidx.compose.material.icons.rounded.Keyboard
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Opacity
 import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.Redo
 import androidx.compose.material.icons.rounded.RotateRight
+import androidx.compose.material.icons.rounded.RoundedCorner
+import androidx.compose.material.icons.rounded.AspectRatio
+import androidx.compose.material.icons.rounded.Polyline
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Title
@@ -89,6 +97,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -102,14 +112,21 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.cuscus.ffmpeggui.core.image.Raster
+import com.cuscus.ffmpeggui.core.image.alphaOf
+import com.cuscus.ffmpeggui.core.image.mergeAlpha
 import com.cuscus.ffmpeggui.core.image.borderPixels
 import com.cuscus.ffmpeggui.core.image.editedSize
 import com.cuscus.ffmpeggui.core.image.LAST_FRAME_MARGIN_MS
 import com.cuscus.ffmpeggui.core.image.pictureFrameMs
+import com.cuscus.ffmpeggui.core.image.pictureSize
+import com.cuscus.ffmpeggui.core.model.PictureCanvas
+import com.cuscus.ffmpeggui.core.vector.VectorImage
+import com.cuscus.ffmpeggui.core.image.roundsCorners
 import com.cuscus.ffmpeggui.core.model.CropRect
 import com.cuscus.ffmpeggui.core.model.Effects
 import com.cuscus.ffmpeggui.core.model.ImageBorder
@@ -179,6 +196,12 @@ import kotlin.math.roundToInt
 internal enum class ImageTool(@StringRes val labelRes: Int, val icon: ImageVector, val family: ToolFamily) {
     FRAME(R.string.image_tool_frame, Icons.Rounded.Movie, ToolFamily.PICTURE),
     CROP(R.string.image_tool_crop, Icons.Rounded.Crop, ToolFamily.PICTURE),
+    // From square to a circle: the whole picture's corners.
+    CORNERS(R.string.image_tool_corners, Icons.Rounded.RoundedCorner, ToolFamily.PICTURE),
+    // An SVG: how the picture is traced into shapes.
+    TRACE(R.string.image_tool_trace, Icons.Rounded.Polyline, ToolFamily.PICTURE),
+    // A canvas of its own, the picture a layer on it.
+    CANVAS(R.string.image_tool_canvas, Icons.Rounded.AspectRatio, ToolFamily.PICTURE),
     STRAIGHTEN(R.string.image_tool_straighten, Icons.Rounded.Transform, ToolFamily.PICTURE),
     ADJUST(R.string.tool_adjust, Icons.Rounded.Tune, ToolFamily.PICTURE),
     FILTERS(R.string.image_tool_filters, Icons.Rounded.FilterVintage, ToolFamily.PICTURE),
@@ -186,7 +209,11 @@ internal enum class ImageTool(@StringRes val labelRes: Int, val icon: ImageVecto
     DETAILS(R.string.image_tool_details, Icons.Rounded.Details, ToolFamily.PICTURE),
     HDR(R.string.image_tool_hdr, Icons.Rounded.HdrOn, ToolFamily.PICTURE),
     KEY(R.string.tool_key, Icons.Rounded.Colorize, ToolFamily.PICTURE),
+    // What is painted over goes, filled in with what should be behind it.
+    ERASE(R.string.tool_magic_erase, Icons.Rounded.AutoFixHigh, ToolFamily.PICTURE),
     DRAW(R.string.image_tool_draw, Icons.Rounded.Brush, ToolFamily.OVERLAY),
+    // Every text and sticker of the picture, in their stacking order.
+    LAYERS(R.string.image_tool_layers, Icons.Rounded.Layers, ToolFamily.OVERLAY),
     BORDER(R.string.image_tool_border, Icons.Rounded.BorderOuter, ToolFamily.PICTURE),
     TAGS(R.string.tool_tags, Icons.Rounded.Sell, ToolFamily.OUTPUT),
     COMMAND(R.string.tool_command, Icons.Rounded.Terminal, ToolFamily.OUTPUT),
@@ -203,16 +230,40 @@ internal enum class ImageTool(@StringRes val labelRes: Int, val icon: ImageVecto
     OPACITY(R.string.tool_opacity, Icons.Rounded.Opacity, ToolFamily.OVERLAY),
     STICKER_ADJUST(R.string.tool_adjust, Icons.Rounded.Tune, ToolFamily.OVERLAY),
     STICKER_KEY(R.string.tool_key, Icons.Rounded.Colorize, ToolFamily.OVERLAY),
+    STICKER_ERASE(R.string.tool_magic_erase, Icons.Rounded.AutoFixHigh, ToolFamily.OVERLAY),
     STICKER_CROP(R.string.tool_overlay_crop, Icons.Rounded.Crop, ToolFamily.OVERLAY),
     STICKER_BORDER(R.string.tool_border, Icons.Rounded.BorderOuter, ToolFamily.OVERLAY),
     STICKER_SHADOW(R.string.tool_shadow, Icons.Rounded.WbShade, ToolFamily.OVERLAY),
+    // How a sticker or a shape mixes with the picture.
+    BLEND(R.string.tool_blend, Icons.Rounded.Contrast, ToolFamily.OVERLAY),
+
+    // Tool of a selected shape.
+    SHAPE(R.string.tool_shape, Icons.Rounded.Category, ToolFamily.OVERLAY),
 }
 
-private val TEXT_TOOLS = listOf(ImageTool.TEXT_EDIT, ImageTool.TEXT_STYLE, ImageTool.LAYOUT)
+private val TEXT_TOOLS = listOf(ImageTool.TEXT_EDIT, ImageTool.TEXT_STYLE, ImageTool.LAYOUT, ImageTool.LAYERS)
 private val STICKER_TOOLS = listOf(
     ImageTool.LAYOUT, ImageTool.STICKER_CROP, ImageTool.ROTATE, ImageTool.STICKER_BORDER, ImageTool.STICKER_SHADOW,
-    ImageTool.OPACITY, ImageTool.STICKER_ADJUST, ImageTool.STICKER_KEY,
+    ImageTool.OPACITY, ImageTool.BLEND, ImageTool.STICKER_ADJUST, ImageTool.STICKER_KEY, ImageTool.STICKER_ERASE, ImageTool.LAYERS,
 )
+
+/** The tools of a selected shape: what it is first; no key (it is drawn) and no other picture. */
+private val SHAPE_TOOLS = listOf(
+    ImageTool.SHAPE, ImageTool.LAYOUT, ImageTool.ROTATE, ImageTool.STICKER_BORDER, ImageTool.STICKER_SHADOW,
+    ImageTool.OPACITY, ImageTool.BLEND, ImageTool.LAYERS,
+)
+
+/**
+ * The tools of the picture itself on its canvas: placed, turned and looked as
+ * a sticker; its crop, colours and key are the picture's own tools.
+ */
+private val PHOTO_TOOLS = listOf(
+    ImageTool.LAYOUT, ImageTool.ROTATE, ImageTool.STICKER_BORDER, ImageTool.STICKER_SHADOW,
+    ImageTool.OPACITY, ImageTool.BLEND, ImageTool.LAYERS, ImageTool.CANVAS,
+)
+
+/** Tools that stay open whatever is selected (or not) on the picture. */
+private val SELECTION_FREE_TOOLS = setOf(ImageTool.DRAW, ImageTool.LAYERS)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -242,8 +293,22 @@ fun ImageEditorScreen(
     onRemoveImageOverlay: (String) -> Unit,
     onUpdateImage: (String, String?, (ImageOverlay) -> ImageOverlay) -> Unit,
     onDuplicateOverlay: (String) -> String?,
+    /** Puts another file (the magic eraser's result) in the place of the picture's own: one step of undo. */
+    onReplacePicture: (String, Uri) -> Unit = { _, _ -> },
     /** Moves a sticker among the stickers (layers). */
     onArrangeImage: (String, LayerMove) -> Unit = { _, _ -> },
+    /** Puts a text or sticker at a place of the stack, counted from the bottom (0): a drag in the layers list. */
+    onPlaceLayer: (String, Int) -> Unit = { _, _ -> },
+    /** Lays a new shape over the picture; the callback gets its id. */
+    onAddShape: (Long, (String) -> Unit) -> Unit = { _, _ -> },
+    /** Gives the picture a canvas of its own, or takes it away (null): see ConversionViewModel.setPictureCanvas. */
+    onPictureCanvas: (PictureCanvas?) -> Unit = {},
+    /** Centres the picture on its canvas, whole (false) or covering it (true). */
+    onFitPictureOnCanvas: (Boolean) -> Unit = {},
+    /** Changes a shape layer; the key groups quick changes into one undo step. */
+    onUpdateShape: (String, String?, (ShapeLayer) -> ShapeLayer) -> Unit = { _, _, _ -> },
+    /** Keeps where the picture goes on a screen wider than it is tall (the top bar's switch). */
+    onLandscapeLayout: (com.cuscus.ffmpeggui.settings.LandscapeLayout) -> Unit = {},
     /** The tags written into the picture (EXIF), where its format can hold them. */
     tags: MetadataTags,
     onTags: (String?, (MetadataTags) -> MetadataTags) -> Unit,
@@ -291,13 +356,19 @@ fun ImageEditorScreen(
     DisposableEffect(grabber) { onDispose { grabber?.close() } }
     val framePosition by rememberUpdatedState((clip?.startMs ?: 0L) + frameMs)
     var loadFailed by remember(source?.uri) { mutableStateOf(false) }
+    // A picture with transparent parts of its own, saved in a format that keeps them: they stay
+    // transparent (its steps read it opaque, its alpha is put back at the end, as the export does).
+    val keepsAlpha = format.holdsTransparency && !isVideo && source?.info?.hasAlpha == true
+    var sourceAlpha by remember(source?.uri) { mutableStateOf<Raster?>(null) }
     val sourceRaster by produceState<Raster?>(initialValue = null, source?.uri, described, grabber) {
         loadFailed = false
         val uri = source?.uri ?: return@produceState
         if (!described) return@produceState
         if (grabber == null) {
-            // Opaque, as the export reads it (rgb24): a transparent picture shows what it holds there.
-            value = withContext(Dispatchers.IO) { stillPicture(context, uri)?.toRaster()?.opaque() }
+            // Opaque, as the export reads it (rgb24); its own alpha apart, for a picture that keeps it.
+            val raw = withContext(Dispatchers.IO) { stillPicture(context, uri)?.toRaster() }
+            sourceAlpha = raw?.takeIf { keepsAlpha }?.let { withContext(Dispatchers.Default) { alphaOf(it) } }
+            value = raw?.let { withContext(Dispatchers.Default) { it.opaque() } }
             loadFailed = value == null
             return@produceState
         }
@@ -309,11 +380,16 @@ fun ImageEditorScreen(
         }
     }
     val currentRaster by rememberUpdatedState(sourceRaster)
+    val currentAlpha by rememberUpdatedState(sourceAlpha)
 
     // -- What the picture looks like, made off the main thread -----------------------------
     val cropping = selectedTool == ImageTool.CROP
     // While cropping, the whole (turned, straightened) picture shows under the crop frame.
     val viewEffects = if (cropping) wholeEffects.copy(crop = null) else wholeEffects
+    // The picture's own canvas, while it shows (cropping and comparing show the picture alone).
+    val shownCanvas = imageEdit.canvas?.sane()?.takeIf { !cropping && !comparing }
+    // Saved as an SVG, with the shapes tool open: the picture traced, shown over it.
+    val tracing = format == OutputFormat.SVG && selectedTool == ImageTool.TRACE
     // The cut-out as the chosen format holds it (white instead of transparency for JPG and BMP).
     val shownEdit = imageEdit.keyFor(format)
     val currentLook by rememberUpdatedState(shownEdit.look() to viewEffects.geometry())
@@ -335,6 +411,9 @@ fun ImageEditorScreen(
         var followSide = FOLLOW_START_PX
         var smallOf: Raster? = null
         val smalls = HashMap<Int, Raster>()
+        // The picture's own alpha at the same small sizes.
+        var smallAlphaOf: Raster? = null
+        val smallAlphas = HashMap<Int, Raster>()
         launch {
             var seq = 0
             snapshotFlow { currentRaster to currentLook }.distinctUntilChanged().collect { (raster, look) ->
@@ -348,6 +427,7 @@ fun ImageEditorScreen(
                 val quick = fullMs in 1..QUICK_RENDER_MS
                 val start = System.nanoTime()
                 val bitmap = withContext(Dispatchers.Default) {
+                    val alpha = currentAlpha
                     val raster = if (quick) {
                         ask.raster
                     } else {
@@ -357,7 +437,18 @@ fun ImageEditorScreen(
                         }
                         smalls.getOrPut(followSide) { fitted(ask.raster.toBitmap(), followSide).toRaster() }
                     }
-                    followRenderer.render(raster, ask.edit, ask.effects, subjectMaskFor(ask.edit, raster)).toBitmap()
+                    val shownAlpha = when {
+                        alpha == null -> null
+                        quick -> alpha
+                        else -> {
+                            if (smallAlphaOf !== alpha) {
+                                smallAlphaOf = alpha
+                                smallAlphas.clear()
+                            }
+                            smallAlphas.getOrPut(followSide) { fitted(alpha.toBitmap(), followSide).toRaster() }
+                        }
+                    }
+                    followRenderer.render(raster, ask.edit, ask.effects, subjectMaskFor(ask.edit, raster), shownAlpha).toBitmap()
                 }
                 val took = (System.nanoTime() - start) / 1_000_000L
                 if (quick) {
@@ -381,7 +472,7 @@ fun ImageEditorScreen(
                 val start = System.nanoTime()
                 // Dropped between steps when the look changes meanwhile.
                 val bitmap = withContext(Dispatchers.Default) {
-                    fullRenderer.render(ask.raster, ask.edit, ask.effects, subjectMaskFor(ask.edit, ask.raster)).toBitmap()
+                    fullRenderer.render(ask.raster, ask.edit, ask.effects, subjectMaskFor(ask.edit, ask.raster), currentAlpha).toBitmap()
                 }
                 fullMs = (System.nanoTime() - start) / 1_000_000L
                 if (ask.seq >= shownSeq) {
@@ -392,7 +483,20 @@ fun ImageEditorScreen(
             }
         }
     }
-    val original = remember(sourceRaster) { sourceRaster?.toBitmap() }
+    // The picture as it was, with its own transparency when it keeps it: as it was opened,
+    // before the magic eraser made another of it.
+    val firstUri = source?.originalUri
+    val firstPicture by produceState<android.graphics.Bitmap?>(initialValue = null, firstUri) {
+        val uri = firstUri ?: return@produceState
+        val raw = withContext(Dispatchers.IO) { stillPicture(context, uri)?.toRaster() } ?: return@produceState
+        value = withContext(Dispatchers.Default) { (if (keepsAlpha) raw else raw.opaque()).toBitmap() }
+    }
+    val current = remember(sourceRaster, sourceAlpha) {
+        val raster = sourceRaster
+        val alpha = sourceAlpha
+        if (raster != null && alpha != null) mergeAlpha(raster, alpha).toBitmap() else raster?.toBitmap()
+    }
+    val original = if (firstUri != null) firstPicture ?: current else current
 
     // -- The HDR look: its gain map made from the picture shown, as the export makes it ------
     val gainMaps = LocalStillGainMaps.current
@@ -466,11 +570,16 @@ fun ImageEditorScreen(
         }
     }
 
+    // The picture traced into shapes while the shapes tool is open (an SVG; see TracePanels).
+    val traced by rememberTraced(rendered, imageEdit.trace, tracing)
+
     // -- Sizes of the real picture ----------------------------------------------------------
     // Shape of the frame being cropped: turned and straightened, before the crop.
-    val uncropped = editedSize(imageEdit, wholeEffects.copy(crop = null), sourceWidth, sourceHeight)
+    val uncropped = pictureSize(imageEdit, wholeEffects.copy(crop = null), sourceWidth, sourceHeight)
     val cropFrameRatio = uncropped.first.toFloat() / uncropped.second
     val edited = editedSize(imageEdit, wholeEffects, sourceWidth, sourceHeight)
+    // The picture itself, turned and cropped (on a canvas, one of its layers).
+    val pictureFull = pictureSize(imageEdit, wholeEffects, sourceWidth, sourceHeight)
     val border = borderPixels(imageEdit, edited.first, edited.second)
     val fullSize = (edited.first + 2 * border) to (edited.second + 2 * border)
     val resultSize = outputSize(fullSize.first, fullSize.second, imageEdit.output.maxSide)
@@ -488,9 +597,11 @@ fun ImageEditorScreen(
             val tools = when {
                 id == null -> emptyList()
                 texts.any { it.id == id } -> TEXT_TOOLS
+                id == PHOTO_LAYER_ID -> PHOTO_TOOLS
+                stickers.any { it.id == id && it.shape != null } -> SHAPE_TOOLS
                 else -> STICKER_TOOLS
             }
-            if (selectedTool != null && selectedTool !in tools && selectedTool != ImageTool.DRAW) selectedTool = null
+            if (selectedTool != null && selectedTool !in tools && selectedTool !in SELECTION_FREE_TOOLS) selectedTool = null
             selectedOverlayId = id
         }
     }
@@ -502,7 +613,11 @@ fun ImageEditorScreen(
         if (id != null && selectedText == null && selectedSticker == null) {
             delay(SELECTION_GRACE_MS)
             if (id !in latestIds) {
-                if (selectedTool in TEXT_TOOLS || selectedTool in STICKER_TOOLS) selectedTool = null
+                if ((selectedTool in TEXT_TOOLS || selectedTool in STICKER_TOOLS || selectedTool in SHAPE_TOOLS || selectedTool in PHOTO_TOOLS) &&
+                    selectedTool !in SELECTION_FREE_TOOLS && selectedTool != ImageTool.CANVAS
+                ) {
+                    selectedTool = null
+                }
                 selectedOverlayId = null
             }
         }
@@ -525,8 +640,16 @@ fun ImageEditorScreen(
         if (uri != null) {
             onAddOverlay(uri, uri.lastPathSegment?.substringAfterLast("/") ?: stickerName, 0L) { id ->
                 selectedOverlayId = id
-                selectedTool = null
+                // Added from the layers list, the list stays open to show it.
+                if (selectedTool != ImageTool.LAYERS) selectedTool = null
             }
+        }
+    }
+    val addShape: () -> Unit = {
+        onAddShape(0L) { id ->
+            selectedOverlayId = id
+            // From the layers list, the list stays open to show it; else the shape's panel opens.
+            if (selectedTool != ImageTool.LAYERS) selectedTool = ImageTool.SHAPE
         }
     }
     val replacePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -544,17 +667,25 @@ fun ImageEditorScreen(
     val wholeItems = listOfNotNull(
         if (isVideo) item(ImageTool.FRAME) else null,
         item(ImageTool.CROP),
+        // Saved as an SVG: how it is traced, first in line.
+        if (format == OutputFormat.SVG) item(ImageTool.TRACE) else null,
+        item(ImageTool.CANVAS),
+        item(ImageTool.CORNERS),
         item(ImageTool.STRAIGHTEN),
         item(ImageTool.ADJUST),
         item(ImageTool.FILTERS),
         item(ImageTool.EFFECTS),
         item(ImageTool.DETAILS),
-        item(ImageTool.HDR),
+        // An Ultra HDR picture is the picture itself: not on a canvas.
+        if (imageEdit.canvas == null) item(ImageTool.HDR) else null,
         item(ImageTool.KEY),
+        item(ImageTool.ERASE),
         ToolbarItem(R.string.tool_text, Icons.Rounded.Title, enabled = !isManualMode, family = ToolFamily.OVERLAY, onClick = addText),
         ToolbarItem(R.string.image_tool_sticker, Icons.Rounded.AddPhotoAlternate, enabled = !isManualMode, family = ToolFamily.OVERLAY) {
             stickerPicker.launch(arrayOf("image/*"))
         },
+        ToolbarItem(R.string.tool_shape, Icons.Rounded.Category, enabled = !isManualMode, family = ToolFamily.OVERLAY, onClick = addShape),
+        item(ImageTool.LAYERS),
         item(ImageTool.DRAW),
         item(ImageTool.BORDER),
         // Only where the file can carry them (see AndroidPictureTagger).
@@ -563,6 +694,8 @@ fun ImageEditorScreen(
     )
     val overlayItems = when {
         selectedText != null -> TEXT_TOOLS.map(::item)
+        selectedSticker?.isPhoto == true -> PHOTO_TOOLS.map(::item)
+        selectedSticker?.shape != null -> SHAPE_TOOLS.map(::item)
         selectedSticker != null -> STICKER_TOOLS.map(::item) +
             ToolbarItem(R.string.tool_replace, Icons.Rounded.SwapHoriz, enabled = !isManualMode, family = ToolFamily.OVERLAY) {
                 replacePicker.launch(arrayOf("image/*"))
@@ -570,7 +703,8 @@ fun ImageEditorScreen(
         else -> null
     }
     // What is done to the selected text or sticker as a whole, floating over the picture.
-    val overlayActions = (selectedText?.id ?: selectedSticker?.id)?.let { id ->
+    // (The picture on its canvas is neither copied nor deleted: it goes with its canvas.)
+    val overlayActions = (selectedText?.id ?: selectedSticker?.id?.takeIf { it != PHOTO_LAYER_ID })?.let { id ->
         listOf(
             ClipAction(R.string.tool_duplicate, Icons.Rounded.ContentCopy, enabled = !isManualMode) {
                 onDuplicateOverlay(id)?.let { copyId ->
@@ -595,15 +729,25 @@ fun ImageEditorScreen(
     val contentAlpha by animateFloatAsState(if (isManualMode) 0.3f else 1f, label = "manualAlpha")
     val wholeLabel = stringResource(R.string.image_whole)
     val untitledText = stringResource(R.string.tool_text)
+    val layersScope = pluralStringResource(R.plurals.layers_count, texts.size + stickers.size, texts.size + stickers.size)
     val scopeLabel = when {
         selectedText != null -> selectedText.text.ifBlank { untitledText }
+        selectedSticker?.shape != null -> stringResource(selectedSticker.shape.kind.labelRes)
+        selectedSticker?.isPhoto == true -> stringResource(R.string.canvas_picture)
         selectedSticker != null -> selectedSticker.fileName.ifBlank { stickerName }
         else -> wholeLabel
     }
 
     // -- The parts of the editor ----------------------------------------------------------------
-    val topBar: @Composable () -> Unit = {
+    // On a screen wider than it is tall: where the picture is (true: right of the tools), for the switch.
+    val topBar: @Composable (playerSide: Boolean?) -> Unit = { playerSide ->
         EditorTopBar(
+            playerRight = playerSide,
+            onSwapSides = { right ->
+                onLandscapeLayout(
+                    if (right) com.cuscus.ffmpeggui.settings.LandscapeLayout.PLAYER_LEFT else com.cuscus.ffmpeggui.settings.LandscapeLayout.PLAYER_RIGHT,
+                )
+            },
             fileName = fileName,
             formatLabel = stringResource(format.labelRes),
             onClose = {
@@ -630,14 +774,30 @@ fun ImageEditorScreen(
                 zones = zoneTint?.takeIf { showZones && selectedTool == ImageTool.HDR && !comparing && !cropping },
                 failed = source == null || loadFailed,
                 border = if (comparing || cropping) null else imageEdit.border,
+                // The corners as the export rounds them; the whole picture while cropping.
+                corners = if (comparing || cropping) 0f else imageEdit.corners,
+                cornerFill = imageEdit.cornerFillFor(format)?.let { Color(0xFF000000L or it.toLong()) },
+                canvas = shownCanvas,
+                vector = traced.first.takeIf { tracing && shownCanvas == null },
+                canvasFill = shownCanvas?.let { c ->
+                    val fill = c.background
+                    when {
+                        fill == null -> if (format.holdsTransparency) null else Color.White
+                        // A see-through colour shows over the checkerboard as it would over anything.
+                        format.holdsTransparency -> Color(fill)
+                        else -> Color(fill or 0xFF000000L)
+                    }
+                },
                 showOverlays = !comparing && !cropping,
-                transparent = !comparing && shownEdit.isTransparent,
+                // A cut-out shows a checkerboard through it, and so does a picture's own transparency.
+                transparent = (sourceAlpha != null) || (!comparing && shownEdit.isTransparent),
                 crop = if (cropping) wholeEffects.crop ?: CropRect() else null,
                 grid = selectedTool == ImageTool.STRAIGHTEN,
                 cropAspect = cropAspect,
                 onCrop = { crop -> onUpdateEffects(null) { it.copy(crop = crop) } },
                 texts = texts,
-                stickers = stickers,
+                // The picture is a layer only while its canvas shows.
+                stickers = if (shownCanvas != null) stickers else stickers.filter { !it.isPhoto },
                 selectedId = selectedOverlayId,
                 onUpdateText = onUpdateText,
                 onUpdateImage = onUpdateImage,
@@ -690,7 +850,7 @@ fun ImageEditorScreen(
     val panelArea: @Composable (ImageTool, Boolean) -> Unit = { tool, side ->
         ToolPanel(
             title = stringResource(tool.labelRes),
-            scope = scopeLabel,
+            scope = if (tool == ImageTool.LAYERS) layersScope else scopeLabel,
             icon = tool.icon,
             family = tool.family,
             onContentHeight = if (tool == selectedTool) ({ height -> panelContentPx = height }) else null,
@@ -721,6 +881,18 @@ fun ImageEditorScreen(
                         if (aspect.ratio != null) onUpdateEffects(null) { it.copy(crop = fitCrop(aspect, null, cropFrameRatio)) }
                     },
                 )
+                ImageTool.CORNERS -> ImageCornersPanel(corners = imageEdit.corners, cornerColor = imageEdit.cornerColor, format = format, onChange = onImageEdit)
+                ImageTool.TRACE -> ImageTracePanel(trace = imageEdit.trace, traced = traced.first, working = traced.second, onChange = onImageEdit)
+                ImageTool.CANVAS -> ImageCanvasPanel(
+                    canvas = imageEdit.canvas,
+                    pictureWidth = pictureFull.first,
+                    pictureHeight = pictureFull.second,
+                    format = format,
+                    enabled = !isManualMode,
+                    onCanvas = onPictureCanvas,
+                    onFit = onFitPictureOnCanvas,
+                    onSelectPicture = { select(PHOTO_LAYER_ID) },
+                )
                 ImageTool.STRAIGHTEN -> ImageStraightenPanel(imageEdit, onImageEdit)
                 ImageTool.ADJUST -> ImageAdjustPanel(imageEdit.tone, onImageEdit)
                 ImageTool.FILTERS -> ImageFiltersPanel(imageEdit, thumbnails?.first, onImageEdit)
@@ -740,6 +912,50 @@ fun ImageEditorScreen(
                     enabled = !isManualMode,
                 )
                 ImageTool.TAGS -> AudioTagsContent(tags, onTags, picture = true)
+                ImageTool.LAYERS -> ImageLayersPanel(
+                    texts = texts,
+                    stickers = stickers,
+                    selectedId = selectedOverlayId,
+                    enabled = !isManualMode,
+                    onSelect = select,
+                    onPlace = onPlaceLayer,
+                    onArrange = onArrangeImage,
+                    onDuplicate = { id ->
+                        val isText = texts.any { it.id == id }
+                        onDuplicateOverlay(id)?.let { copyId ->
+                            // Set off a little, so that the copy shows.
+                            if (isText) {
+                                onUpdateText(copyId, "copy") { it.copy(x = nudged(it.x), y = nudged(it.y)) }
+                            } else {
+                                onUpdateImage(copyId, "copy") { it.copy(x = nudged(it.x), y = nudged(it.y)) }
+                            }
+                            selectedOverlayId = copyId
+                        }
+                    },
+                    onDelete = { id ->
+                        if (texts.any { it.id == id }) onRemoveTextOverlay(id) else onRemoveImageOverlay(id)
+                        if (selectedOverlayId == id) selectedOverlayId = null
+                    },
+                    onAddText = addText,
+                    onAddSticker = { stickerPicker.launch(arrayOf("image/*")) },
+                    onAddShape = addShape,
+                )
+                ImageTool.SHAPE -> selectedSticker?.let { sticker ->
+                    sticker.shape?.let { shape ->
+                        ShapeLayerPanel(
+                            shape = shape,
+                            onShape = { key, change -> onUpdateShape(sticker.id, key, change) },
+                            enabled = !isManualMode,
+                        )
+                    }
+                }
+                ImageTool.BLEND -> selectedSticker?.let { sticker ->
+                    ImageBlendPanel(
+                        blend = sticker.blend,
+                        onBlend = { mode -> onUpdateImage(sticker.id, null) { it.copy(blend = mode) } },
+                        enabled = !isManualMode,
+                    )
+                }
                 ImageTool.DRAW -> ImageDrawPanel(
                     brush = brush,
                     onBrush = { brush = it },
@@ -842,6 +1058,19 @@ fun ImageEditorScreen(
                         onOpacity = { opacity -> onUpdateImage(sticker.id, "opacity") { it.copy(opacity = opacity) } },
                     )
                 }
+                ImageTool.ERASE -> source?.takeIf { described && !isVideo }?.let { picture ->
+                    com.cuscus.ffmpeggui.erase.MagicEraseContent(picture.uri, enabled = !isManualMode) { erased ->
+                        onReplacePicture(picture.id, erased)
+                    }
+                }
+                ImageTool.STICKER_ERASE -> selectedSticker?.let { sticker ->
+                    val uri = sticker.uri
+                    if (uri != null && !sticker.isVideo) {
+                        com.cuscus.ffmpeggui.erase.MagicEraseContent(uri, enabled = !isManualMode) { erased ->
+                            onUpdateImage(sticker.id, "erase") { it.copy(uri = erased) }
+                        }
+                    }
+                }
                 ImageTool.STICKER_KEY -> selectedSticker?.let { sticker ->
                     ColorKeyContent(
                         key = sticker.key,
@@ -901,14 +1130,20 @@ fun ImageEditorScreen(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background),
         ) {
-            val sideBySide = maxWidth > maxHeight && maxHeight < IMAGE_TOOLS_HEIGHT + IMAGE_CHROME_HEIGHT + IMAGE_MIN_STAGE_HEIGHT
+            val landscape = maxWidth > maxHeight
+            val landscapeLayout = com.cuscus.ffmpeggui.ui.theme.LocalAppSettings.current.landscapeLayout
+            // Or always, on a screen wider than it is tall, when the settings put the picture on a side.
+            val sideBySide = landscapeLayout.forcesSides(landscape) ||
+                (landscape && maxHeight < IMAGE_TOOLS_HEIGHT + IMAGE_CHROME_HEIGHT + IMAGE_MIN_STAGE_HEIGHT)
+            val playerRight = sideBySide && landscapeLayout == com.cuscus.ffmpeggui.settings.LandscapeLayout.PLAYER_RIGHT
+            val playerSide = if (landscape) playerRight else null
             // A large screen: an open tool's panel beside the picture, the tool row under both.
             val studio = !sideBySide && maxWidth >= STUDIO_MIN_WIDTH && maxHeight >= STUDIO_MIN_HEIGHT
             if (studio) {
                 val motion = MaterialTheme.motionScheme
                 val panelWidth = (maxWidth * SIDE_PANEL_SHARE).coerceIn(SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH)
                 Column(modifier = Modifier.fillMaxSize().imePadding()) {
-                    topBar()
+                    topBar(playerSide)
                     Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                             stage(Modifier.weight(1f).fillMaxWidth())
@@ -934,16 +1169,23 @@ fun ImageEditorScreen(
                     Box(modifier = Modifier.fillMaxWidth().height(IMAGE_TOOLS_HEIGHT)) { toolbarArea() }
                 }
             } else if (sideBySide) {
-                Row(modifier = Modifier.fillMaxSize().imePadding()) {
-                    Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        topBar()
-                        stage(Modifier.weight(1f).fillMaxWidth())
-                    }
-                    Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        controls()
-                        toolsPane(Modifier.fillMaxWidth().weight(1f))
-                    }
-                }
+                SideBySide(
+                    playerRight = playerRight,
+                    toolsShown = true,
+                    modifier = Modifier.fillMaxSize().imePadding(),
+                    player = {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            topBar(playerSide)
+                            stage(Modifier.weight(1f).fillMaxWidth())
+                        }
+                    },
+                    tools = {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            controls()
+                            toolsPane(Modifier.fillMaxWidth().weight(1f))
+                        }
+                    },
+                )
             } else {
                 val density = LocalDensity.current
                 // A panel never takes more than a share of the screen: the picture is what is
@@ -963,7 +1205,7 @@ fun ImageEditorScreen(
                     label = "imageToolsHeight",
                 )
                 Column(modifier = Modifier.fillMaxSize().imePadding()) {
-                    topBar()
+                    topBar(playerSide)
                     stage(Modifier.weight(1f).fillMaxWidth())
                     controls()
                     toolsPane(Modifier.fillMaxWidth().height(toolsHeight))
@@ -1022,6 +1264,20 @@ private fun PictureStage(
     zones: Bitmap?,
     failed: Boolean,
     border: ImageBorder?,
+    /** How round the whole picture's corners are (see ImageEdit.corners). */
+    corners: Float,
+    /** What fills the cut-off corners (see ImageEdit.cornerFillFor); null: they are see-through. */
+    cornerFill: Color?,
+    /**
+     * A canvas of its own (see ImageEdit.canvas): the frame is the canvas, and
+     * the picture is the layer [PHOTO_LAYER_ID] among [stickers]; null: the
+     * picture is the frame.
+     */
+    canvas: PictureCanvas?,
+    /** What fills the canvas: a colour, or null for a checkerboard (transparent). */
+    canvasFill: Color?,
+    /** The picture traced into shapes (an SVG being made), shown in its place; null: the picture. */
+    vector: VectorImage?,
     showOverlays: Boolean,
     /** The picture has transparent parts (a cut-out): a checkerboard shows through them. */
     transparent: Boolean,
@@ -1042,7 +1298,16 @@ private fun PictureStage(
     onStroke: (Stroke) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    BoxWithConstraints(contentAlignment = Alignment.Center, modifier = modifier) {
+    val zoom = rememberStageZoom()
+    // The canvas at zoom 1, in pixels: how far a zoomed one may be moved.
+    val fitted = remember { FloatArray(2) }
+    BoxWithConstraints(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            // Zoomed in, the canvas stays inside the stage.
+            .clipToBounds()
+            .stageZoomGestures(zoom, contentWidth = { fitted[0] }, contentHeight = { fitted[1] }),
+    ) {
         if (picture == null) {
             if (failed) {
                 Text(
@@ -1056,8 +1321,8 @@ private fun PictureStage(
             return@BoxWithConstraints
         }
         val image = remember(picture) { picture.asImageBitmap() }
-        // With the picture 1 wide: its height, the border, the whole.
-        val ratio = picture.width.toFloat() / picture.height.coerceAtLeast(1)
+        // With the frame (the picture, or its canvas) 1 wide: its height, the border, the whole.
+        val ratio = if (canvas != null) canvas.width.toFloat() / canvas.height.coerceAtLeast(1) else picture.width.toFloat() / picture.height.coerceAtLeast(1)
         val pictureH = 1f / ratio
         val frame = (border?.widthFraction?.coerceIn(0f, 0.25f) ?: 0f) * min(1f, pictureH)
         val wholeW = 1f + 2f * frame
@@ -1067,10 +1332,18 @@ private fun PictureStage(
         val pictureWidthPx = scale
         val pictureHeightPx = scale * pictureH
         val framePx = scale * frame
+        fitted[0] = scale * wholeW
+        fitted[1] = scale * wholeH
+        // Rounded as the export rounds the whole picture: by corners x half its shorter side.
+        val rounded = roundsCorners(corners)
+        val radiusPx = corners.coerceIn(0f, 1f) * min(wholeW, wholeH) * scale / 2f
         with(density) {
             Box(
                 modifier = Modifier
                     .size((scale * wholeW).toDp(), (scale * wholeH).toDp())
+                    .zoomedBy(zoom)
+                    .then(if (rounded && cornerFill != null) Modifier.background(cornerFill) else Modifier)
+                    .then(if (rounded) Modifier.clip(RoundedCornerShape(radiusPx.toDp())) else Modifier)
                     .background(border?.let { Color(it.color) } ?: Color.Transparent),
             ) {
                 Box(
@@ -1080,30 +1353,47 @@ private fun PictureStage(
                         // A touch on the picture itself lets the selected text or sticker go.
                         .pointerInput(Unit) { detectTapGestures { onSelect(null) } },
                 ) {
-                    if (transparent) Checkerboard(modifier = Modifier.fillMaxSize())
-                    Image(bitmap = image, contentDescription = null, contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
-                    if (zones != null) {
+                    if (canvas != null) {
+                        // The canvas: its colour, or a checkerboard where it is transparent; the
+                        // picture is one of the layers on it.
+                        if (canvasFill == null || canvasFill.alpha < 1f) Checkerboard(modifier = Modifier.fillMaxSize())
+                        if (canvasFill != null) Box(modifier = Modifier.fillMaxSize().background(canvasFill))
+                    } else {
+                        if (transparent) Checkerboard(modifier = Modifier.fillMaxSize())
+                        Image(bitmap = image, contentDescription = null, contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
+                    }
+                    if (vector != null) {
+                        // The shapes as the SVG draws them, over a checkerboard where none is.
+                        Checkerboard(modifier = Modifier.fillMaxSize())
+                        VectorPreview(vector, modifier = Modifier.fillMaxSize())
+                    }
+                    if (zones != null && canvas == null) {
                         val tint = remember(zones) { zones.asImageBitmap() }
                         Image(bitmap = tint, contentDescription = null, contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
                     }
                     if (showOverlays) {
-                        // Captions and stickers in their order, as the picture is made.
-                        StackedOverlays(
-                            texts = texts,
-                            images = stickers,
-                            canvasWidth = pictureWidthPx,
-                            canvasHeight = pictureHeightPx,
-                            colorMatrix = null,
-                            outputMs = null,
-                            clipMs = null,
-                            selectedOverlayId = selectedId,
-                            onUpdateText = onUpdateText,
-                            onUpdateImage = onUpdateImage,
-                            onSelectOverlay = onSelect,
-                            playing = { false },
-                            fadeLevel = { 1f },
-                        )
-                        DrawingLayer(strokes = strokes, active = drawing, brush = brush, onStroke = onStroke)
+                        // Only what lies on the picture shows: a text or sticker moved partly off
+                        // it is cut at its edge, as in the export, instead of covering the editor.
+                        Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
+                            // Captions and stickers in their order, as the picture is made.
+                            StackedOverlays(
+                                texts = texts,
+                                images = stickers,
+                                canvasWidth = pictureWidthPx,
+                                canvasHeight = pictureHeightPx,
+                                colorMatrix = null,
+                                outputMs = null,
+                                clipMs = null,
+                                selectedOverlayId = selectedId,
+                                onUpdateText = onUpdateText,
+                                onUpdateImage = onUpdateImage,
+                                onSelectOverlay = onSelect,
+                                playing = { false },
+                                fadeLevel = { 1f },
+                                pictures = if (canvas != null) mapOf(PHOTO_LAYER_ID to picture) else emptyMap(),
+                            )
+                            DrawingLayer(strokes = strokes, active = drawing, brush = brush, onStroke = onStroke)
+                        }
                     }
                     if (grid) {
                         val lineColor = Color.White.copy(alpha = 0.55f)
@@ -1128,6 +1418,12 @@ private fun PictureStage(
                 }
             }
         }
+        ZoomPill(
+            zoom = zoom,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 8.dp),
+        )
     }
 }
 
@@ -1162,8 +1458,16 @@ private fun DrawingLayer(strokes: List<Stroke>, active: Boolean, brush: BrushSet
                             live.clear()
                             live += listOf(startX, startY)
                             var moved = false
+                            var cancelled = false
                             while (true) {
                                 val event = awaitPointerEvent()
+                                // A second finger: this is a pinch to zoom, not a line. The stroke
+                                // is dropped and the fingers are left to the stage.
+                                if (event.changes.count { it.pressed } > 1) {
+                                    moved = false
+                                    cancelled = true
+                                    break
+                                }
                                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
                                 if (!change.pressed) break
                                 val x = (change.position.x / w).coerceIn(0f, 1f)
@@ -1183,7 +1487,7 @@ private fun DrawingLayer(strokes: List<Stroke>, active: Boolean, brush: BrushSet
                                 change.consume()
                             }
                             // A tap leaves a dot of the brush; a shape needs a drag.
-                            if (moved || freeHand) {
+                            if (!cancelled && (moved || freeHand)) {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 currentOnStroke(currentBrush.stroke(live.toList()))
                             }

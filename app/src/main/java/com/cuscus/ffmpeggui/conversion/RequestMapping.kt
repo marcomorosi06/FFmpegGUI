@@ -5,6 +5,7 @@ import com.cuscus.ffmpeggui.AudioClip
 import com.cuscus.ffmpeggui.ConversionSettings
 import com.cuscus.ffmpeggui.EditorSource
 import com.cuscus.ffmpeggui.ImageOverlay
+import com.cuscus.ffmpeggui.isPhoto
 import com.cuscus.ffmpeggui.core.engine.CommandMode
 import com.cuscus.ffmpeggui.core.engine.MediaSources
 import com.cuscus.ffmpeggui.core.engine.NamedSource
@@ -24,6 +25,7 @@ import com.cuscus.ffmpeggui.core.model.SplitMode
 import com.cuscus.ffmpeggui.core.model.Stabilization
 import com.cuscus.ffmpeggui.core.time.parseTimecodeMs
 import com.cuscus.ffmpeggui.core.subtitles.SourceWords
+import com.cuscus.ffmpeggui.effects.transitionEffects
 
 /*
  * Translation from the editor state (URIs, timecode strings) to the
@@ -66,8 +68,21 @@ internal fun ConversionSettings.footage(): EditFootage {
     }
     val clipIds = clips.map { it.id }.toSet()
     // A picture of a clip that the whole-video trim has cut away is not drawn.
-    val pictures = imageOverlays.filter { it.uri != null && (it.clipId == null || it.clipId in clipIds) }
+    // (The picture itself laid on its canvas is a layer of the picture editor, not a file laid over.)
+    val pictures = imageOverlays.filter { it.uri != null && !it.isPhoto && (it.clipId == null || it.clipId in clipIds) } +
+        // The effects laid over the cuts that an effect transition joins.
+        transitionEffects(clips, wholeEffects)
     return EditFootage(files, segments, pictures)
+}
+
+/**
+ * Where the separated voice of a file is (see VoiceSeparator), or null when it
+ * has none: set by the view model when the smart features are there. A clip
+ * with its voice and rest set apart takes its sound from it.
+ */
+internal object VoiceStemLookup {
+    @Volatile
+    var of: (EditorSource) -> java.io.File? = { null }
 }
 
 /** Describes what to do, without saying where the files are. */
@@ -114,6 +129,8 @@ private fun ConversionSettings.toRequestOf(
             isStill = file.isStill,
             hdr = file.info?.hdr ?: VideoHdr.NONE,
             frameRate = file.info?.frameRate ?: 0f,
+            hasAlpha = file.info?.hasAlpha ?: false,
+            voiceStem = if (file.isStill) null else VoiceStemLookup.of(file)?.absolutePath,
         )
     }.ifEmpty { listOf(SourceInfo()) },
     segments = footage.segments.ifEmpty { listOf(Segment(source = 0)) },
@@ -149,6 +166,7 @@ private fun ConversionSettings.toRequestOf(
             normalize = clip.normalize,
             effects = clip.effects,
             keyframes = clip.keyframes,
+            aiVoice = clip.aiVoice,
         )
     } + overlaySounds(footage).map { overlay ->
         // The sound of a video laid over the picture: it plays with the video and fades with it.
@@ -163,31 +181,9 @@ private fun ConversionSettings.toRequestOf(
         )
     },
     textOverlays = textOverlays.filter { it.clipId == null || it.clipId in footage.clipIds },
-    imageOverlays = footage.pictures.map {
-        ImagePlacement(
-            x = it.x,
-            y = it.y,
-            widthFraction = it.scaleW,
-            opacity = it.opacity,
-            clipId = it.clipId,
-            startMs = it.startMs,
-            endMs = it.endMs,
-            fadeInSeconds = it.fadeInSeconds,
-            fadeOutSeconds = it.fadeOutSeconds,
-            rotationDegrees = it.rotationDegrees,
-            flipHorizontal = it.flipHorizontal,
-            flipVertical = it.flipVertical,
-            brightness = it.brightness,
-            contrast = it.contrast,
-            saturation = it.saturation,
-            video = it.video?.let { media -> OverlayVideo(media.trimStartMs, media.trimEndMs) },
-            key = it.key,
-            keyframes = it.keyframes,
-            aspect = it.aspect,
-            look = it.look,
-            layer = it.layer,
-        )
-    },
+    imageOverlays = footage.pictures.map { it.toPlacement() },
+    // The picture on its canvas: placed as its layer says.
+    photoPlacement = imageOverlays.firstOrNull { it.isPhoto }?.takeIf { format.isImage && imageEdit.canvas != null }?.toPlacement(),
     // The subtitle file is timed against the main file; without it there is nothing to burn.
     subtitleSource = if (subtitleUri != null) footage.mainFileIndex else null,
     // Spoken subtitles: the words of every file that plays, each following its own clips.
@@ -212,6 +208,7 @@ private fun ConversionSettings.toRequestOf(
     },
     image = imageEdit.keyFor(format),
     metadata = tags,
+    compression = compression,
     cover = coverFor(format) != null,
 )
 
@@ -265,8 +262,8 @@ private fun ConversionSettings.audibleSounds(): List<AudioClip> = audioClips.fil
 
 /** A hand-edited command wins over everything; the custom format is always hand-written. */
 internal fun ConversionSettings.commandMode(format: OutputFormat): CommandMode = when {
-    isManualMode -> CommandMode.Manual(manualCommandOverride)
-    format == OutputFormat.CUSTOM -> CommandMode.Manual(customCommand)
+    isManualMode -> CommandMode.Manual(manualCommandOverride, commandFiles)
+    format == OutputFormat.CUSTOM -> CommandMode.Manual(customCommand, commandFiles)
     else -> CommandMode.Generated
 }
 
@@ -279,3 +276,32 @@ private fun EditorSource.stagedName(): String {
     val name = fileName.ifBlank { "input" }
     return if (isStill) name.substringBeforeLast('.') + ".png" else name
 }
+
+/** A picture laid over the video (or the picture itself on its canvas) as the request places it. */
+internal fun ImageOverlay.toPlacement(): ImagePlacement = ImagePlacement(
+    x = x,
+    y = y,
+    widthFraction = scaleW,
+    opacity = opacity,
+    clipId = clipId,
+    startMs = startMs,
+    endMs = endMs,
+    fadeInSeconds = fadeInSeconds,
+    fadeOutSeconds = fadeOutSeconds,
+    rotationDegrees = rotationDegrees,
+    flipHorizontal = flipHorizontal,
+    flipVertical = flipVertical,
+    brightness = brightness,
+    contrast = contrast,
+    saturation = saturation,
+    // An effect plays its whole file over and over, filling the frame (that of a transition, once).
+    video = if (effect != null && video == null) OverlayVideo(loop = true) else video?.let { media -> OverlayVideo(media.trimStartMs, media.trimEndMs) },
+    key = key,
+    keyframes = keyframes,
+    aspect = aspect,
+    look = look,
+    layer = layer,
+    blend = blend,
+    cover = effect != null,
+    hueDegrees = if (effect != null) hue else 0f,
+)

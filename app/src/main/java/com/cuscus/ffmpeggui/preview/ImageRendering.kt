@@ -8,6 +8,8 @@ import android.os.Build
 import com.cuscus.ffmpeggui.core.image.ImageStage
 import com.cuscus.ffmpeggui.core.image.Raster
 import com.cuscus.ffmpeggui.core.image.imageStages
+import com.cuscus.ffmpeggui.core.image.mergeAlpha
+import com.cuscus.ffmpeggui.core.image.shapeAlpha
 import com.cuscus.ffmpeggui.core.model.Effects
 import com.cuscus.ffmpeggui.core.model.ImageEdit
 import com.cuscus.ffmpeggui.core.model.ImageEffect
@@ -163,8 +165,15 @@ suspend fun renderPicture(source: Raster, edit: ImageEdit, effects: Effects, sub
 class PictureRenderer {
     private var geometryKey: Any? = null
     private var geometryResult: Raster? = null
+    private var alphaKey: Any? = null
+    private var alphaResult: Raster? = null
 
-    suspend fun render(source: Raster, edit: ImageEdit, effects: Effects, subjectMask: Raster? = null): Raster {
+    /**
+     * [sourceAlpha]: the source's own transparency ([com.cuscus.ffmpeggui.core.image.alphaOf]
+     * the picture, at the size of [source]) when the picture keeps it; it goes through
+     * the geometry too (kept like the picture's) and is multiplied back in at the end.
+     */
+    suspend fun render(source: Raster, edit: ImageEdit, effects: Effects, subjectMask: Raster? = null, sourceAlpha: Raster? = null): Raster {
         val stages = imageStages(edit, effects, source.width, source.height, subjectMask)
         val split = stages.indexOfFirst { !it.isGeometry }.let { if (it < 0) stages.size else it }
         val geometry = stages.subList(0, split)
@@ -184,7 +193,14 @@ class PictureRenderer {
             currentCoroutineContext().ensureActive()
             raster = stage.apply(raster)
         }
-        return raster
+        if (sourceAlpha == null) return raster
+        val shapedKey = sourceAlpha to geometry
+        val shaped = alphaResult?.takeIf { shapedKey == alphaKey } ?: shapeAlpha(sourceAlpha, stages).also {
+            alphaKey = shapedKey
+            alphaResult = it
+        }
+        currentCoroutineContext().ensureActive()
+        return mergeAlpha(raster, shaped)
     }
 }
 

@@ -31,6 +31,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Brush
 import androidx.compose.material.icons.rounded.CenterFocusStrong
@@ -44,8 +45,10 @@ import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Verified
@@ -98,7 +101,19 @@ import com.cuscus.ffmpeggui.speech.SpeechEngine
 import com.cuscus.ffmpeggui.speech.SpeechModel
 import com.cuscus.ffmpeggui.speech.SpeechModelStore
 import com.cuscus.ffmpeggui.speech.SpeechVariant
+import com.cuscus.ffmpeggui.translate.TranslationFeatureUi
+import com.cuscus.ffmpeggui.translate.TranslationSettingsSection
 import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
+import com.cuscus.ffmpeggui.voice.VoiceModel
+import com.cuscus.ffmpeggui.dub.DubEngine
+import com.cuscus.ffmpeggui.dub.DubModel
+import com.cuscus.ffmpeggui.erase.EraseEngine
+import com.cuscus.ffmpeggui.erase.EraseModel
+import com.cuscus.ffmpeggui.erase.EraseVariant
+import com.cuscus.ffmpeggui.dub.PiperFeatureUi
+import com.cuscus.ffmpeggui.dub.PiperSettingsSection
+import com.cuscus.ffmpeggui.dub.PiperVoiceStore
+import com.cuscus.ffmpeggui.voice.VoiceSeparator
 import java.util.Locale
 
 /*
@@ -131,6 +146,51 @@ class SmartFeaturesUi(
     val onStopTest: () -> Unit,
     val onUnload: () -> Unit,
     val cutout: CutoutFeatureUi,
+    /** The translation models (any number of language pairs). */
+    val translation: TranslationFeatureUi? = null,
+    /** The voice model, which sets a voice apart from the rest of a sound. */
+    val voice: VoiceFeatureUi? = null,
+    /** The dubbing model, which says the subtitles in their language. */
+    val dub: DubFeatureUi? = null,
+    /** The magic eraser's models (see EraseModel). */
+    val erase: EraseFeatureUi? = null,
+    /** Every model tries ONNX Runtime's XNNPACK kernels (see AiKernels). */
+    val fastKernels: Boolean = true,
+    val onFastKernels: (Boolean) -> Unit = {},
+)
+
+/** The dubbing model's state and actions (see DubModel). */
+class DubFeatureUi(
+    val model: SpeechModelStore.State,
+    /** The model is in memory now. */
+    val loaded: Boolean,
+    /** False while the video is being dubbed (the model is in use). */
+    val idle: Boolean,
+    val onImport: (Uri) -> Unit,
+    val onStopImport: () -> Unit,
+    val onVerify: () -> Unit,
+    val onDelete: () -> Unit,
+    val onUnload: () -> Unit,
+    /** The Piper voices imported. */
+    val piper: PiperFeatureUi? = null,
+)
+
+/** The voice model's state and actions (see VoiceModel), and the voices kept. */
+class VoiceFeatureUi(
+    val model: SpeechModelStore.State,
+    /** The model is in memory now. */
+    val loaded: Boolean,
+    /** False while a voice is being set apart (the model is in use). */
+    val idle: Boolean,
+    /** Files whose voice is set apart and kept, and the space they take. */
+    val keptFiles: Int,
+    val keptBytes: Long,
+    val onImport: (List<Uri>) -> Unit,
+    val onStopImport: () -> Unit,
+    val onVerify: () -> Unit,
+    val onDelete: () -> Unit,
+    val onUnload: () -> Unit,
+    val onDeleteKept: () -> Unit,
 )
 
 /** The cut-out model's state and actions, for the same page. */
@@ -157,6 +217,21 @@ class CutoutFeatureUi(
     val refine: RefineFeatureUi,
 )
 
+/** The magic eraser's models: the one chosen, where each is, and the chosen one's actions. */
+class EraseFeatureUi(
+    val variant: EraseVariant,
+    val variants: Map<EraseVariant, SpeechModelStore.State>,
+    val onChoose: (EraseVariant) -> Unit,
+    val loaded: Boolean,
+    /** False while a picture is being erased (the model is in use). */
+    val idle: Boolean,
+    val onImport: (EraseVariant, Uri) -> Unit,
+    val onStopImport: (EraseVariant) -> Unit,
+    val onVerify: (EraseVariant) -> Unit,
+    val onDelete: (EraseVariant) -> Unit,
+    val onUnload: () -> Unit,
+)
+
 /** The correcting model's state and actions (see RefineModel). */
 class RefineFeatureUi(
     val model: SpeechModelStore.State,
@@ -169,13 +244,11 @@ class RefineFeatureUi(
     val onUnload: () -> Unit,
 )
 
+/** The speech model's page: which build, its card, and its speed test. */
 @Composable
-internal fun SmartSettings(smart: SmartFeaturesUi) {
+internal fun SpeechSection(smart: SmartFeaturesUi) {
     val context = LocalContext.current
-    SmartIntro()
-
     // Subtitles from speech.
-    SectionTitle(stringResource(R.string.smart_section_speech), stringResource(R.string.smart_speech_intro))
     val speech = SpeechModel.of(smart.variant)
     VariantChooser(
         options = listOf(
@@ -235,9 +308,14 @@ internal fun SmartSettings(smart: SmartFeaturesUi) {
     )
     if (smart.model is SpeechModelStore.State.Ready) SpeedTestCard(smart)
 
+}
+
+/** The cut-out's page: which model, its card and test, then the model that corrects it with brushes. */
+@Composable
+internal fun CutoutSection(smart: SmartFeaturesUi) {
+    val context = LocalContext.current
     // The subject cut out of a picture.
     val cutout = smart.cutout
-    SectionTitle(stringResource(R.string.smart_section_cutout), stringResource(R.string.cutout_intro))
     val cutter = CutoutModel.of(cutout.variant)
     VariantChooser(
         options = listOf(
@@ -316,6 +394,43 @@ internal fun SmartSettings(smart: SmartFeaturesUi) {
         onUnload = refine.onUnload,
     )
 
+}
+
+/** Kokoro's card, then the Piper voices. */
+@Composable
+internal fun DubSection(dub: DubFeatureUi) {
+    val context = LocalContext.current
+    ModelCard(
+        spec = ModelSpec(
+            title = stringResource(R.string.dub_model_title, DubModel.NAME),
+            importing = stringResource(R.string.smart_model_importing),
+            downloadText = stringResource(R.string.dub_step_download_text, Formatter.formatShortFileSize(context, DubModel.ARCHIVE_BYTES)),
+            downloads = listOf(DubModel.ARCHIVE_NAME to DubModel.ARCHIVE_URL),
+            importText = stringResource(R.string.dub_step_import_text, DubModel.ARCHIVE_NAME),
+            installedBytes = DubModel.INSTALLED_BYTES,
+            notTheModel = stringResource(R.string.dub_problem_not_model, DubModel.ARCHIVE_NAME),
+            busy = stringResource(R.string.dub_busy),
+            deleteTitle = stringResource(R.string.dub_delete_title),
+            deleteText = R.string.dub_delete_text,
+            unloadMinutes = (DubEngine.IDLE_UNLOAD_MS / 60_000).toInt(),
+            oneFile = true,
+        ),
+        model = dub.model,
+        loaded = dub.loaded,
+        idle = dub.idle,
+        onImport = { uris -> uris.firstOrNull()?.let(dub.onImport) },
+        onStopImport = dub.onStopImport,
+        onVerify = dub.onVerify,
+        onDelete = dub.onDelete,
+        onUnload = dub.onUnload,
+    )
+    dub.piper?.let { PiperSettingsSection(it) }
+}
+
+/** Where each model comes from: its page, its maker and its licence. */
+@Composable
+internal fun AboutModelsSection() {
+    val context = LocalContext.current
     SettingsGroup(
         title = stringResource(R.string.smart_about_model),
         rows = listOf<@Composable (androidx.compose.ui.graphics.Shape) -> Unit>(
@@ -366,6 +481,61 @@ internal fun SmartSettings(smart: SmartFeaturesUi) {
             { shape ->
                 SettingsRow(
                     shape = shape,
+                    icon = Icons.Rounded.AutoFixHigh,
+                    title = EraseModel.MIGAN_NAME,
+                    summary = stringResource(R.string.erase_model_summary, EraseModel.MIGAN_MAKER, EraseModel.MIGAN_LICENCE),
+                    badge = MaterialShapes.Puffy,
+                    onClick = { openLink(context, EraseModel.MIGAN_PAGE_URL) },
+                    trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
+                )
+            },
+            { shape ->
+                SettingsRow(
+                    shape = shape,
+                    icon = Icons.Rounded.AutoFixHigh,
+                    title = EraseModel.LAMA_NAME,
+                    summary = stringResource(R.string.erase_model_summary, EraseModel.LAMA_MAKER, EraseModel.LAMA_LICENCE),
+                    badge = MaterialShapes.PuffyDiamond,
+                    onClick = { openLink(context, EraseModel.LAMA_PAGE_URL) },
+                    trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
+                )
+            },
+            { shape ->
+                SettingsRow(
+                    shape = shape,
+                    icon = Icons.Rounded.Mic,
+                    title = DubModel.NAME,
+                    summary = stringResource(R.string.dub_model_summary, DubModel.MAKER, DubModel.LICENCE),
+                    badge = MaterialShapes.Burst,
+                    onClick = { openLink(context, DubModel.MODEL_PAGE_URL) },
+                    trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
+                )
+            },
+            { shape ->
+                SettingsRow(
+                    shape = shape,
+                    icon = Icons.Rounded.Speed,
+                    title = "Piper",
+                    summary = stringResource(R.string.piper_summary),
+                    badge = MaterialShapes.Cookie6Sided,
+                    onClick = { openLink(context, PiperVoiceStore.VOICES_PAGE_URL) },
+                    trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
+                )
+            },
+            { shape ->
+                SettingsRow(
+                    shape = shape,
+                    icon = Icons.Rounded.RecordVoiceOver,
+                    title = VoiceModel.NAME,
+                    summary = stringResource(R.string.voice_model_summary, VoiceModel.MAKER, VoiceModel.LICENCE),
+                    badge = MaterialShapes.Flower,
+                    onClick = { openLink(context, VoiceModel.MODEL_PAGE_URL) },
+                    trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
+                )
+            },
+            { shape ->
+                SettingsRow(
+                    shape = shape,
                     icon = Icons.Rounded.Brush,
                     title = RefineModel.NAME,
                     summary = stringResource(R.string.refine_model_summary, RefineModel.MAKER, RefineModel.LICENCE),
@@ -398,6 +568,202 @@ internal fun SmartSettings(smart: SmartFeaturesUi) {
             },
         ),
     )
+}
+
+/**
+ * The voice model's section: its card (download, import, checks) and, once
+ * voices have been set apart, how many are kept and the space they take,
+ * with a way to remove them all.
+ */
+@Composable
+internal fun VoiceSettingsSection(voice: VoiceFeatureUi) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val files = VoiceModel.FILES.files.joinToString(", ") { it.name }
+    val archive = VoiceModel.FILES.archiveDownload
+    ModelCard(
+        spec = ModelSpec(
+            title = stringResource(R.string.voice_model_title, VoiceModel.NAME),
+            importing = stringResource(R.string.smart_model_importing),
+            downloadText = stringResource(R.string.voice_step_download_text, Formatter.formatShortFileSize(context, VoiceModel.FILES.archive?.bytes ?: 0L)),
+            downloads = listOfNotNull(archive?.let { it.file to it.url }),
+            importText = stringResource(R.string.smart_step_import_files_or_archive, files),
+            installedBytes = VoiceModel.FILES.installedBytes,
+            notTheModel = stringResource(R.string.voice_problem_not_model, files),
+            busy = stringResource(R.string.voice_busy),
+            deleteTitle = stringResource(R.string.voice_delete_title),
+            deleteText = R.string.voice_delete_text,
+            unloadMinutes = (VoiceSeparator.IDLE_UNLOAD_MS / 60_000).toInt(),
+        ),
+        model = voice.model,
+        loaded = voice.loaded,
+        idle = voice.idle,
+        onImport = voice.onImport,
+        onStopImport = voice.onStopImport,
+        onVerify = voice.onVerify,
+        onDelete = voice.onDelete,
+        onUnload = voice.onUnload,
+    )
+    if (voice.keptFiles > 0) {
+        var confirm by remember { mutableStateOf(false) }
+        SettingsGroup(
+            title = stringResource(R.string.voice_kept_title),
+            rows = listOf<@Composable (androidx.compose.ui.graphics.Shape) -> Unit>(
+                { shape ->
+                    SettingsRow(
+                        shape = shape,
+                        icon = Icons.Rounded.Delete,
+                        title = stringResource(R.string.voice_kept_delete),
+                        summary = pluralStringResource(
+                            R.plurals.voice_kept_summary,
+                            voice.keptFiles,
+                            voice.keptFiles,
+                            Formatter.formatShortFileSize(context, voice.keptBytes),
+                        ),
+                        badge = MaterialShapes.Cookie6Sided,
+                        // Not while a voice is being set apart: its file would go with the others.
+                        enabled = voice.idle,
+                        onClick = { confirm = true },
+                    )
+                },
+            ),
+        )
+        if (confirm) {
+            ConfirmDialog(
+                icon = Icons.Rounded.RecordVoiceOver,
+                title = stringResource(R.string.voice_kept_delete_title),
+                text = pluralStringResource(
+                    R.plurals.voice_kept_delete_text,
+                    voice.keptFiles,
+                    voice.keptFiles,
+                    Formatter.formatShortFileSize(context, voice.keptBytes),
+                ),
+                confirm = stringResource(R.string.voice_kept_delete_confirm),
+                onConfirm = {
+                    haptics.performHapticFeedback(HapticFeedbackType.Reject)
+                    confirm = false
+                    voice.onDeleteKept()
+                },
+                onDismiss = { confirm = false },
+            )
+        }
+    }
+}
+
+/** The magic eraser's two models, as the cut-out's: a choice of tiles, then the chosen one's card. */
+@Composable
+internal fun EraseSettingsSection(erase: EraseFeatureUi) {
+    val context = LocalContext.current
+    VariantChooser(
+        options = listOf(
+            VariantOption(
+                title = stringResource(R.string.erase_variant_fast),
+                tag = stringResource(R.string.smart_variant_simple),
+                text = stringResource(R.string.erase_variant_fast_text, EraseModel.MIGAN_NAME, Formatter.formatShortFileSize(context, EraseModel.MIGAN.installedBytes)),
+                icon = Icons.Rounded.Speed,
+                state = erase.variants[EraseVariant.FAST],
+                selected = erase.variant == EraseVariant.FAST,
+                onSelect = { erase.onChoose(EraseVariant.FAST) },
+            ),
+            VariantOption(
+                title = stringResource(R.string.erase_variant_precise),
+                tag = stringResource(R.string.smart_variant_best),
+                text = stringResource(R.string.erase_variant_precise_text, EraseModel.LAMA_NAME, Formatter.formatShortFileSize(context, EraseModel.LAMA.installedBytes)),
+                icon = Icons.Rounded.CenterFocusStrong,
+                state = erase.variants[EraseVariant.PRECISE],
+                selected = erase.variant == EraseVariant.PRECISE,
+                onSelect = { erase.onChoose(EraseVariant.PRECISE) },
+            ),
+        ),
+        enabled = erase.idle,
+    )
+    val model = EraseModel.of(erase.variant)
+    val file = model.files.first()
+    val variant = erase.variant
+    ModelCard(
+        spec = ModelSpec(
+            title = stringResource(R.string.erase_model_title, model.name),
+            importing = stringResource(R.string.smart_model_importing),
+            downloadText = stringResource(R.string.erase_step_download_text, Formatter.formatShortFileSize(context, model.installedBytes)),
+            downloads = model.downloads.map { it.file to it.url },
+            importText = stringResource(
+                if (file.sha256.isEmpty()) R.string.erase_step_import_unpinned else R.string.erase_step_import_text,
+                file.name,
+            ),
+            installedBytes = model.installedBytes,
+            notTheModel = stringResource(R.string.erase_problem_not_model, file.name),
+            busy = stringResource(R.string.erase_busy),
+            deleteTitle = stringResource(R.string.erase_delete_title),
+            deleteText = R.string.erase_delete_text,
+            unloadMinutes = (EraseEngine.IDLE_UNLOAD_MS / 60_000).toInt(),
+            oneFile = true,
+        ),
+        model = erase.variants[variant] ?: SpeechModelStore.State.Missing,
+        loaded = erase.loaded,
+        idle = erase.idle,
+        onImport = { uris -> uris.firstOrNull()?.let { erase.onImport(variant, it) } },
+        onStopImport = { erase.onStopImport(variant) },
+        onVerify = { erase.onVerify(variant) },
+        onDelete = { erase.onDelete(variant) },
+        onUnload = erase.onUnload,
+    )
+}
+
+/**
+ * How the models run: one switch for ONNX Runtime's XNNPACK kernels, for all
+ * of them, and plainly why the phone's GPU and NPU are not among the choices.
+ */
+@Composable
+internal fun AccelerationCard(fast: Boolean, onFast: (Boolean) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val haptics = LocalHapticFeedback.current
+    val spin by animateFloatAsState(if (fast) 0f else -90f, MaterialTheme.motionScheme.slowSpatialSpec(), label = "kernelsTurn")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(if (fast) scheme.primaryContainer else scheme.surfaceContainerHigh)
+            .clickable(role = androidx.compose.ui.semantics.Role.Switch) {
+                haptics.performHapticFeedback(if (fast) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
+                onFast(!fast)
+            }
+            .padding(16.dp),
+    ) {
+        val content = if (fast) scheme.onPrimaryContainer else scheme.onSurface
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            MorphingContainer(
+                from = MaterialShapes.Cookie4Sided,
+                to = MaterialShapes.SoftBurst,
+                morphed = fast,
+                color = if (fast) scheme.primary else scheme.surfaceContainerHighest,
+                modifier = Modifier.graphicsLayer { rotationZ = spin }.size(52.dp),
+            ) {
+                Icon(
+                    Icons.Rounded.Speed,
+                    contentDescription = null,
+                    tint = if (fast) scheme.onPrimary else scheme.onSurfaceVariant,
+                    modifier = Modifier.graphicsLayer { rotationZ = -spin }.size(26.dp),
+                )
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.smart_fast_kernels), style = SettingsRowTitle, color = content)
+                Text(
+                    stringResource(if (fast) R.string.smart_fast_kernels_on else R.string.smart_fast_kernels_off),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = content.copy(alpha = 0.8f),
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            androidx.compose.material3.Switch(checked = fast, onCheckedChange = null)
+        }
+        Text(
+            stringResource(R.string.smart_fast_kernels_text),
+            style = MaterialTheme.typography.bodySmall,
+            color = content.copy(alpha = 0.8f),
+            modifier = Modifier.padding(top = 10.dp),
+        )
+    }
 }
 
 /** The title of a feature on the page, with a line about it. */
@@ -433,23 +799,6 @@ private class ModelSpec(
     /** A single file is picked (not an archive or several files). */
     val oneFile: Boolean = false,
 )
-
-/**
- * What the smart subtitles are, in one line, and why the model comes through
- * the browser: plainly, as the app's privacy by design asks.
- */
-@Composable
-private fun SmartIntro() {
-    val scheme = MaterialTheme.colorScheme
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(horizontal = 4.dp)) {
-        Text(stringResource(R.string.smart_intro_text), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
-        Row(verticalAlignment = Alignment.Top) {
-            Icon(Icons.Rounded.Lock, contentDescription = null, tint = scheme.onSurfaceVariant, modifier = Modifier.size(16.dp).padding(top = 2.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(stringResource(R.string.smart_privacy_note), style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-        }
-    }
-}
 
 /**
  * The model on this phone: the two steps to get it, an import as it goes, the

@@ -8,6 +8,8 @@ FFmpeg GUI
   Copyright (c) 2026 Marco Morosi.
   Source code: EUPL-1.2. The APK as a whole: GPL-3.0 (EUPL Article 5).
   Files: ffmpeg-gui/NOTICE.txt, ffmpeg-gui/EUPL-1.2.txt
+  The video effects (assets/effects/) are part of FFmpeg GUI: every frame
+  is drawn by its own scripts/generate-effects.py, under the same licence.
 
 Each component below keeps its own licence. Paths are relative to this
 folder.
@@ -102,6 +104,9 @@ Media3 1.10.1 (ExoPlayer, Session)
 Guava (used by Media3) ......... Apache-2.0        guava/LICENSE.txt
 Material Components for Android 1.12.0
                                  Apache-2.0        material-components/LICENSE.txt
+AndroidSVG 1.4 (com.caverock:androidsvg-aar), Copyright 2013-2018 Cave Rock
+  Software Ltd: opens SVG files and draws parts of drawings in the SVG editor
+                                 Apache-2.0        androidsvg/LICENSE.txt
 LLVM libc++ (libc++_shared.so, Android NDK)
                                  Apache-2.0 WITH LLVM-exception
                                                    llvm-libcxx/LICENSE.txt
@@ -119,8 +124,32 @@ anti-vocale (credited for the on-device transcription approach)
 
 Not part of the APK
 -------------------------------------------------------------------------
-The AI models (Parakeet, IS-Net, U2-NetP, SlimSAM) are not in the app: the
-user downloads them, under their own licences. Build tools (Gradle, the
+The AI models are not in the app: the user downloads them, under their
+own licences:
+  Parakeet TDT 0.6B v3, by NVIDIA ......... CC-BY-4.0
+  IS-Net and U2-NetP, by Xuebin Qin et al. . Apache-2.0 (ONNX by rembg, MIT)
+  SlimSAM, by Zigeng Chen et al. ........... Apache-2.0 (ONNX by Xenova)
+  Opus-MT, by the University of Helsinki ... CC-BY-4.0  (ONNX by Xenova)
+  Spleeter 2stems, by Deezer ............... MIT        (ONNX, int8, by sherpa-onnx,
+                                                       Apache-2.0)
+                                                       spleeter/LICENSE.txt
+  Kokoro-82M v1.0, by hexgrad .............. Apache-2.0 (multi-language build
+                                                       by sherpa-onnx, Apache-2.0, with
+                                                       eSpeak NG's data, GPL-3.0, and
+                                                       jieba's dictionaries, MIT)
+                                                       kokoro/LICENSE.txt,
+                                                       sherpa-onnx/espeak-ng/
+  MI-GAN, by Picsart AI Research ........... MIT        magic-eraser/README.txt
+  LaMa, by Samsung AI Center ............... Apache-2.0 (ONNX by Carve)
+                                                       magic-eraser/README.txt
+  Piper voices (VITS), imported by the user  each its own licence (its
+                                                       MODEL_CARD); Piper, MIT
+                                                       piper/LICENSE.txt
+The app reads their files with its own code (SentencePiece models and
+vocabularies of Opus-MT included, and Spleeter's spectrogram and masks, as
+sherpa-onnx computes them, written again in Kotlin); nothing of theirs is
+copied into it. Spleeter's licence is kept here all the same, as its
+results (the voices set apart) are made with it. Build tools (Gradle, the
 Android Gradle Plugin, R8, the Nix toolchain, GitHub Actions) and test
 libraries (JUnit) are used to build or test the app and are not
 distributed with it.

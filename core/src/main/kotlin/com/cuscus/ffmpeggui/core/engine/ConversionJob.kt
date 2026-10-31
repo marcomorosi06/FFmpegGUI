@@ -21,8 +21,14 @@ sealed interface CommandMode {
     /** The command is derived from the request. */
     data object Generated : CommandMode
 
-    /** The user wrote (or edited) the command line; see ManualCommandResolver. */
-    data class Manual(val commandLine: String) : CommandMode
+    /**
+     * The user wrote (or edited) the command line; see ManualCommandResolver.
+     * [files] are the extra files the command may name by their aliases.
+     */
+    data class Manual(
+        val commandLine: String,
+        val files: List<com.cuscus.ffmpeggui.core.command.CommandFile> = emptyList(),
+    ) : CommandMode
 }
 
 /** One unit of work for the [ConversionEngine]. */

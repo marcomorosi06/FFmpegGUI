@@ -6,6 +6,7 @@ import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.Layout
 import com.cuscus.ffmpeggui.ui.theme.LocalAppSettings
 import com.cuscus.ffmpeggui.settings.ThemeMode
+import com.cuscus.ffmpeggui.effects.leadMs
 import com.cuscus.ffmpeggui.core.model.VideoHdr
 import com.cuscus.ffmpeggui.ui.theme.appColorScheme
 import com.cuscus.ffmpeggui.ui.theme.onBlack
@@ -24,6 +25,8 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -75,6 +78,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.annotation.StringRes
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.cuscus.ffmpeggui.preview.silentEnds
 import com.cuscus.ffmpeggui.core.model.Split
@@ -130,6 +134,9 @@ import com.cuscus.ffmpeggui.playback.NowPlaying
 import com.cuscus.ffmpeggui.preview.PreviewSnapshot
 import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
 import kotlinx.coroutines.delay
+import com.cuscus.ffmpeggui.settings.LandscapeLayout
+import com.cuscus.ffmpeggui.core.preview.FrameStep
+import com.cuscus.ffmpeggui.core.preview.StepClip
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.conflate
@@ -259,6 +266,18 @@ fun ConfigScreen(
     /** Moves a picture among the pictures (layers). */
     /** Moves a caption or picture (its id) up or down among those laid with it. */
     onArrangeImage: (String, LayerMove) -> Unit = { _, _ -> },
+    /** Puts a text, picture or shape at a place of the stack, counted from the bottom (0): a drag in the layers list. */
+    onPlaceLayer: (String, Int) -> Unit = { _, _ -> },
+    /** Lays a new shape over the video from a moment of it; the callback gets its id. */
+    onAddShape: (Long, (String) -> Unit) -> Unit = { _, _ -> },
+    /** Lays one of the app's effects (its name) over the video from a moment of it; the callback gets its id. */
+    onAddEffect: (String, Long, (String) -> Unit) -> Unit = { _, _, _ -> },
+    /** Makes an effect (its id) another of the app's effects (a name). */
+    onChangeEffect: (String, String) -> Unit = { _, _ -> },
+    /** Changes a shape layer; the key groups quick changes into one undo step. */
+    onUpdateShape: (String, String?, (ShapeLayer) -> ShapeLayer) -> Unit = { _, _, _ -> },
+    /** Keeps where the player goes on a screen wider than it is tall (the top bar's switch). */
+    onLandscapeLayout: (LandscapeLayout) -> Unit = {},
     /** Moves or trims a text or overlay: its new span, as one undo step. */
     onSetOverlaySpan: (String, LaneSpan<*>) -> Unit = { _, _ -> },
     /** Copies a text or picture right after itself; returns the copy's id. */
@@ -267,6 +286,10 @@ fun ConfigScreen(
     onSplitOverlay: (String, Long) -> String? = { _, _ -> null },
     // Subtitles: a file, or made from what is said, and how they look
     subtitles: SubtitleEditing = SubtitleEditing(),
+    // The voice set apart from the rest of the sound
+    voice: VoiceEditing = VoiceEditing(),
+    // The dub in one go: listen, translate, set the voice apart, dub
+    autoDub: com.cuscus.ffmpeggui.dub.AutoDubUi = com.cuscus.ffmpeggui.dub.AutoDubUi(),
     // Stream copy
     useStreamCopy: Boolean = false,
     onUseStreamCopy: (Boolean) -> Unit = {},
@@ -315,6 +338,33 @@ fun ConfigScreen(
     }
     /** Shows a position of the editor's timeline (the clips end to end, before the trim). */
     val seekTimeline: (Long) -> Unit = { timelineMs -> seekPreview((timelineMs - trimStartMs).coerceAtLeast(0L)) }
+    /**
+     * Shows a position of the timeline while it is dragged: the preview follows
+     * the finger frame by frame, then shows the last one exactly (see PreviewSeek.scrubbing).
+     */
+    val scrubTimeline: (Long) -> Unit = { timelineMs ->
+        previewSeek = PreviewSeek((timelineMs - trimStartMs).coerceAtLeast(0L), (previewSeek?.token ?: 0) + 1, scrubbing = true)
+    }
+
+    /**
+     * Moves the playhead one frame of the footage [forward] or back, paused (see
+     * FrameStep): the frames of each clip's own file; [held] while an arrow is held.
+     * False at either end.
+     */
+    fun stepFrame(forward: Boolean, held: Boolean = false): Boolean {
+        val steps = playingClips.map { clip ->
+            val source = sources.firstOrNull { it.id == clip.sourceId }
+            StepClip(fileStartMs = clip.startMs, lengthMs = clip.lengthMs, frameRate = source?.info?.frameRate ?: 0f)
+        }
+        val target = FrameStep.target(steps, playback.playheadMs.longValue, forward) ?: return false
+        playback.isPlaying.value = false
+        // Set at once, so that a held arrow steps on from where it landed, not from a stale tick.
+        playback.playheadMs.longValue = target
+        // Held, the steps come many a second: the preview follows them as it does a dragged
+        // timeline (scrubbing), and shows the frame it stops on exactly; one tap, exactly at once.
+        previewSeek = PreviewSeek(target, (previewSeek?.token ?: 0) + 1, scrubbing = held)
+        return true
+    }
 
     // -- Keyframes: the playhead on their clocks --------------------------------------
     // While the preview stands still: playing, the panels keep the values they showed (the
@@ -434,9 +484,12 @@ fun ConfigScreen(
         }
     }
     val untitledText = stringResource(R.string.tool_text)
+    val wholeLayers = textOverlays.count { it.clipId == null } + imageOverlays.count { it.clipId == null && it.uri != null }
+    val layersScope = pluralStringResource(R.plurals.layers_count, wholeLayers, wholeLayers)
     val scopeLabel = when {
         selectedSound != null -> selectedSound.name
         selectedText != null -> selectedText.text.ifBlank { untitledText }
+        selectedImage?.shape != null -> stringResource(selectedImage.shape.kind.labelRes)
         selectedImage != null -> selectedImage.fileName
         selectedClip != null -> stringResource(R.string.scope_clip, selectedIndex + 1)
         else -> stringResource(R.string.scope_whole)
@@ -485,7 +538,8 @@ fun ConfigScreen(
             val tools = textOverlays.firstOrNull { it.id == overlayId }?.let { TEXT_TOOLS }
                 ?: imageOverlays.firstOrNull { it.id == overlayId }?.let { imageToolsFor(it, withSound = !gifMode) }
                 ?: emptyList()
-            if (selectedTool != null && selectedTool !in tools) selectedTool = null
+            // The layers list stays open whatever is chosen in it.
+            if (selectedTool != null && selectedTool !in tools && selectedTool != EditorTool.LAYERS) selectedTool = null
             selectOverlay(overlayId)
         }
     }
@@ -531,7 +585,8 @@ fun ConfigScreen(
         if (index < 0 || index >= playingClips.lastIndex) return
         val clip = playingClips[index]
         val start = playingStartOf(clipId) ?: return
-        val transitionMs = clip.effects.transition?.durationMs ?: 0L
+        // An effect is seen from its start, which comes before the cut.
+        val transitionMs = clip.effects.transition?.leadMs() ?: 0L
         // Footage of the clip played in that time (its end in playing order).
         val lead = ((transitionMs + TRANSITION_LEAD_MS) * clip.effects.effectiveSpeed).toLong().coerceAtMost(clip.lengthMs)
         seekPreview(if (clip.effects.reversed) start + lead else start + clip.lengthMs - lead)
@@ -548,7 +603,7 @@ fun ConfigScreen(
         if (index >= 0 && start != null) {
             val clip = playingClips[index]
             // Just before the join, on the clip going out.
-            val lead = ((clip.effects.transition?.durationMs ?: 0L) * clip.effects.effectiveSpeed).toLong() + JOIN_LEAD_MS
+            val lead = ((clip.effects.transition?.leadMs() ?: 0L) * clip.effects.effectiveSpeed).toLong() + JOIN_LEAD_MS
             seekPreview(if (clip.effects.reversed) start + lead.coerceAtMost(clip.lengthMs) else (start + clip.lengthMs - lead).coerceAtLeast(start))
         }
     }
@@ -755,13 +810,36 @@ fun ConfigScreen(
                 playback.snapshot.value.outputMs,
                 { id ->
                     selectOverlay(id)
-                    selectedTool = null
+                    // Added from the layers list, the list stays open to show it.
+                    if (selectedTool != EditorTool.LAYERS) selectedTool = null
                 },
                 { android.widget.Toast.makeText(context, overlayReadFailed, android.widget.Toast.LENGTH_SHORT).show() },
             )
         }
     }
     val addImage: () -> Unit = { imagePicker.launch(OVERLAY_TYPES) }
+    // The gallery of effects, opened from the effects lane; the effect picked goes at the playhead.
+    var effectPickerOpen by rememberSaveable { mutableStateOf(false) }
+    if (effectPickerOpen) {
+        EffectPickerSheet(
+            onPick = { name ->
+                effectPickerOpen = false
+                onAddEffect(name, playback.snapshot.value.outputMs) { id ->
+                    selectOverlay(id)
+                    selectedTool = null
+                }
+            },
+            onDismiss = { effectPickerOpen = false },
+        )
+    }
+    // A new shape at the playhead; its panel opens (or the layers list stays).
+    val addShape: () -> Unit = {
+        onAddShape(playback.snapshot.value.outputMs) { id ->
+            val keepLayers = selectedTool == EditorTool.LAYERS
+            selectOverlay(id)
+            selectedTool = if (keepLayers) EditorTool.LAYERS else EditorTool.OVERLAY_SHAPE
+        }
+    }
     val imageReplacePicker = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
     ) { uri: Uri? ->
@@ -804,6 +882,7 @@ fun ConfigScreen(
         item(EditorTool.TRIM_ALL, null),
         item(EditorTool.AUDIO_SILENCE, null),
         item(EditorTool.AUDIO, null),
+        item(EditorTool.VOICE_SPLIT, null),
         item(EditorTool.AUDIO_EQ, null),
         item(EditorTool.AUDIO_CLEAN, null),
         item(EditorTool.AUDIO_DYNAMICS, null),
@@ -822,6 +901,7 @@ fun ConfigScreen(
     val videoAudioItems = listOf(
         addSoundItem,
         item(EditorTool.VOLUME, null),
+        item(EditorTool.VOICE_SPLIT, null),
         item(EditorTool.AUDIO_EQ, null),
         item(EditorTool.AUDIO_CLEAN, null),
         item(EditorTool.AUDIO_DYNAMICS, null),
@@ -842,9 +922,17 @@ fun ConfigScreen(
                 audioRowOpen = true
             }
         },
+        // The whole dub in one tap: listen, translate, set the voice apart, dub.
+        if (gifMode) null else item(EditorTool.AUTO_DUB, null),
         if (gifMode) null else addSoundItem,
         ToolbarItem(R.string.tool_text, Icons.Rounded.Title, enabled = !isManualMode, family = ToolFamily.OVERLAY, onClick = addText),
         ToolbarItem(R.string.tool_image, Icons.Rounded.Image, enabled = !isManualMode, family = ToolFamily.OVERLAY, onClick = addImage),
+        ToolbarItem(R.string.tool_shape, Icons.Rounded.Category, enabled = !isManualMode, family = ToolFamily.OVERLAY, onClick = addShape),
+        // The gallery of the app's own effects (sparks, flames...), laid at the playhead.
+        ToolbarItem(R.string.tool_effects_add, Icons.Rounded.AutoAwesome, enabled = !isManualMode, family = ToolFamily.OVERLAY) {
+            effectPickerOpen = true
+        },
+        item(EditorTool.LAYERS, null),
         item(EditorTool.COLOR, null),
         item(EditorTool.KEY, null),
         // A GIF holds no HDR.
@@ -867,6 +955,7 @@ fun ConfigScreen(
                 item(EditorTool.CLIP_TRIM, clip.id),
                 item(EditorTool.SPEED, clip.id),
                 item(EditorTool.VOLUME, clip.id),
+                item(EditorTool.VOICE_SPLIT, clip.id),
                 item(EditorTool.FADE, clip.id),
             )
         }
@@ -877,6 +966,7 @@ fun ConfigScreen(
             if (selectedClipIsStill) item(EditorTool.MOTION, clip.id) else null,
             item(EditorTool.SPEED, clip.id),
             if (gifMode) null else item(EditorTool.VOLUME, clip.id),
+            if (gifMode || selectedClipIsStill) null else item(EditorTool.VOICE_SPLIT, clip.id),
             item(EditorTool.TRANSFORM, clip.id),
             item(EditorTool.FRAMING, clip.id),
             item(EditorTool.COLOR, clip.id),
@@ -920,6 +1010,8 @@ fun ConfigScreen(
     ) { selectedTool = tool }
     val overlayItems = when {
         selectedText != null -> TEXT_TOOLS.map(::overlayItem)
+        // A shape or an effect is the app's own: no other file can take its place.
+        selectedImage != null && (selectedImage.shape != null || selectedImage.isEffect) -> imageToolsFor(selectedImage, withSound = !gifMode).map(::overlayItem)
         selectedImage != null -> imageToolsFor(selectedImage, withSound = !gifMode).map(::overlayItem) +
                 ToolbarItem(R.string.tool_replace, Icons.Rounded.SwapHoriz, enabled = !isManualMode, family = ToolFamily.OVERLAY) {
                     imageReplacePicker.launch(OVERLAY_TYPES)
@@ -1012,7 +1104,9 @@ fun ConfigScreen(
     var panelContentPx by remember { mutableIntStateOf(0) }
 
     // The four parts of the editor, laid out below for the shape of the window.
-    val topBar: @Composable () -> Unit = {
+    // On a screen wider than it is tall the top bar has the switch that moves the player
+    // to the other side of the tools: [playerSide] says where it is (null: no switch).
+    val topBar: @Composable (playerSide: Boolean?) -> Unit = { playerSide ->
         EditorTopBar(
             fileName = fileName,
             formatLabel = stringResource(format.labelRes),
@@ -1024,6 +1118,8 @@ fun ConfigScreen(
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 showExportDialog = true
             },
+            playerRight = playerSide,
+            onSwapSides = { right -> onLandscapeLayout(if (right) LandscapeLayout.PLAYER_LEFT else LandscapeLayout.PLAYER_RIGHT) },
         )
     }
     // What the sound view of an audio file shows around its waveform.
@@ -1086,6 +1182,7 @@ fun ConfigScreen(
                 imageOverlays = imageOverlays,
                 subtitleCues = subtitles.fileCues,
                 spokenWords = subtitles.shownWords,
+                voiceStems = voice.stems,
                 subtitleStyle = subtitles.style,
                 subtitleFileStyled = subtitles.fileStyled,
                 subtitleFonts = subtitles.fonts,
@@ -1186,6 +1283,7 @@ fun ConfigScreen(
                 playback.isPlaying.value = false
                 selectedTool = EditorTool.EASING
             },
+            onStepFrame = { forward, held -> stepFrame(forward, held) },
         )
     }
     // Timeline and tools, or the panel of the open tool: always the same size, so the
@@ -1211,6 +1309,8 @@ fun ConfigScreen(
                     else -> LaneKind.entries
                 },
                 soundClips = audioMode,
+                // A GIF has no sound; an audio file's clips are drawn as their sound already.
+                clipWaveforms = !audioMode && !gifMode && LocalAppSettings.current.clipWaveforms,
                 selectedItemId = selectedSound?.id ?: selectedText?.id ?: selectedImage?.id,
                 onSelectClip = selectClip,
                 onTrimClip = onTrimClip,
@@ -1219,10 +1319,11 @@ fun ConfigScreen(
                 onSelectItem = { kind, id -> if (kind == LaneKind.SOUND) selectSound(id) else selectOverlay(id) },
                 onEditSound = { id, span -> updateSound(id, null) { it.copy(span = span, keyframes = it.keyframes.respanned(it.span.startMs, it.span.endMs, span.startMs, span.endMs)) } },
                 onEditOverlay = onSetOverlaySpan,
-                onScrub = seekTimeline,
+                onScrub = scrubTimeline,
                 onAddClip = { clipPicker.launch(if (audioMode) arrayOf("audio/*", "video/*") else arrayOf("video/*", "image/*")) },
                 onAdd = { kind ->
                     when (kind) {
+                        LaneKind.EFFECT -> effectPickerOpen = true
                         LaneKind.TEXT -> addText()
                         LaneKind.IMAGE -> addImage()
                         LaneKind.SOUND -> addSound()
@@ -1257,7 +1358,7 @@ fun ConfigScreen(
         // cannot edit what it no longer belongs to.
         ToolPanel(
             title = stringResource(tool.labelRes),
-            scope = scopeLabel,
+            scope = if (tool == EditorTool.LAYERS) layersScope else scopeLabel,
             icon = tool.icon,
             family = tool.family,
             onContentHeight = if (tool == selectedTool) {
@@ -1340,6 +1441,22 @@ fun ConfigScreen(
                     },
                     canRemoveOriginal = !audioMode || scopeClipId != null,
                 )
+                EditorTool.VOICE_SPLIT -> {
+                    // The clip's file, or those of every clip that plays (with sound).
+                    val scopeClips = if (selectedClip != null) listOf(selectedClip) else playingClips
+                    val sourceIds = scopeClips.map { it.sourceId }.distinct().filter { id ->
+                        val source = sources.firstOrNull { it.id == id }
+                        source != null && !source.isStill && source.info?.hasAudio != false
+                    }.toSet()
+                    val shown = selectedClip?.effects ?: playingClips.firstOrNull()?.effects ?: Effects.NONE
+                    VoiceSectionContent(
+                        voice = voice,
+                        clipId = scopeClipId,
+                        sourceIds = sourceIds,
+                        voiceLevel = shown.voiceLevel,
+                        backgroundLevel = shown.backgroundLevel,
+                    )
+                }
                 EditorTool.AUDIO_SILENCE -> {
                     // Measured on what plays, against the threshold being set.
                     val threshold = Math.pow(10.0, silenceThresholdDb / 20.0).toFloat()
@@ -1365,7 +1482,7 @@ fun ConfigScreen(
                 EditorTool.AUDIO_SPACE -> AudioSpaceContent(fxEffects, fxChange)
                 EditorTool.AUDIO_FX -> AudioEffectsContent(fxEffects, fxChange)
                 EditorTool.AUDIO_STEREO -> AudioStereoContent(fxEffects, fxChange)
-                EditorTool.AUDIO_TAGS -> AudioTagsContent(tags, onTags)
+                EditorTool.AUDIO_TAGS -> AudioTagsContent(tags, onTags, lyrics = subtitles.takeIf { format.isAudioOnly })
                 EditorTool.AUDIO_COVER -> AudioCoverContent(coverUri, format, splitMode != SplitMode.DISABLED, onSetCover)
                 EditorTool.AUDIO_PARTS -> AudioPartsContent(splitMode, splitValue, clock.outputDurationMs, onSplit)
                 EditorTool.SOUND_TRIM -> selectedSound?.let { sound ->
@@ -1469,7 +1586,8 @@ fun ConfigScreen(
                         hasNext = hasNext,
                         effectiveMs = effective,
                         onTransition = { transition ->
-                            val another = transition?.kind != clip.effects.transition?.kind
+                            val before = clip.effects.transition
+                            val another = transition?.kind != before?.kind || transition?.effect != before?.effect
                             onUpdateEffects(clip.id) { it.copy(transition = transition) }
                             if (another && transition != null) playTransition(clip.id)
                         },
@@ -1510,6 +1628,14 @@ fun ConfigScreen(
                     showZones = hdrZonesShown,
                     onShowZones = { hdrZonesShown = it },
                 )
+                EditorTool.OVERLAY_ERASE -> selectedImage?.let { image ->
+                    val uri = image.uri
+                    if (uri != null && !image.isVideo) {
+                        com.cuscus.ffmpeggui.erase.MagicEraseContent(uri, enabled = !isManualMode) { erased ->
+                            updateImage(image.id, "erase") { it.copy(uri = erased) }
+                        }
+                    }
+                }
                 EditorTool.OVERLAY_KEY -> selectedImage?.let { image ->
                     ColorKeyContent(
                         key = image.key,
@@ -1561,6 +1687,42 @@ fun ConfigScreen(
                 EditorTool.OVERLAY_SHADOW -> selectedImage?.let { image ->
                     OverlayShadowContent(look = image.look, onLook = lookChange(image.id))
                 }
+                EditorTool.OVERLAY_BLEND -> selectedImage?.let { image ->
+                    ImageBlendPanel(
+                        blend = image.blend,
+                        onBlend = { mode -> updateImage(image.id, null) { it.copy(blend = mode) } },
+                        enabled = !isManualMode,
+                    )
+                }
+                EditorTool.OVERLAY_SHAPE -> selectedImage?.let { image ->
+                    image.shape?.let { shape ->
+                        ShapeLayerPanel(
+                            shape = shape,
+                            onShape = { key, change -> onUpdateShape(image.id, key, change) },
+                            enabled = !isManualMode,
+                        )
+                    }
+                }
+                EditorTool.LAYERS -> ImageLayersPanel(
+                    // The whole video's: a clip's own texts and pictures stay with the clip.
+                    texts = textOverlays.filter { it.clipId == null },
+                    stickers = imageOverlays.filter { it.clipId == null && it.uri != null },
+                    selectedId = selectedOverlayId,
+                    enabled = !isManualMode,
+                    onSelect = { id -> if (id == null) selectOverlay(null) else selectFromPreview(id) },
+                    onPlace = onPlaceLayer,
+                    onArrange = onArrangeImage,
+                    onDuplicate = { id -> onDuplicateOverlay(id)?.let { copyId -> selectOverlay(copyId) } },
+                    onDelete = { id ->
+                        if (textOverlays.any { it.id == id }) onRemoveTextOverlay(id) else onRemoveImageOverlay(id)
+                        if (selectedOverlayId == id) selectOverlay(null)
+                    },
+                    onAddText = addText,
+                    onAddSticker = addImage,
+                    onAddShape = addShape,
+                    addPictureLabel = stringResource(R.string.layers_add_picture),
+                    untitledSticker = stringResource(R.string.layers_kind_sticker),
+                )
                 EditorTool.OVERLAY_ANIMATE -> {
                     val text = selectedText
                     val image = selectedImage
@@ -1671,6 +1833,22 @@ fun ConfigScreen(
                     }
                     else -> Unit
                 }
+                EditorTool.EFFECT -> selectedImage?.takeIf { it.isEffect }?.let { image ->
+                    EffectChoiceContent(
+                        current = image.effect,
+                        hue = image.hue,
+                        onPick = { name -> onChangeEffect(image.id, name) },
+                    )
+                }
+                EditorTool.EFFECT_LOOK -> selectedImage?.takeIf { it.isEffect }?.let { image ->
+                    EffectLookContent(
+                        name = image.effect.orEmpty(),
+                        opacity = image.opacity,
+                        hue = image.hue,
+                        onOpacity = { opacity -> updateImage(image.id, "opacity") { it.copy(opacity = opacity) } },
+                        onHue = { hue -> updateImage(image.id, "hue") { it.copy(hue = hue) } },
+                    )
+                }
                 EditorTool.IMAGE_OPACITY -> selectedImage?.let { image ->
                     ImageOpacityContent(
                         opacity = image.opacity,
@@ -1719,6 +1897,7 @@ fun ConfigScreen(
                     onResetManualMode = onResetManualMode,
                 )
                 EditorTool.SUBTITLE -> SubtitleSectionContent(subtitles)
+                EditorTool.AUTO_DUB -> com.cuscus.ffmpeggui.dub.AutoDubSectionContent(autoDub)
                 EditorTool.REMUX -> RemuxSectionContent(
                     useStreamCopy = useStreamCopy,
                     onUseStreamCopy = onUseStreamCopy,
@@ -1759,7 +1938,11 @@ fun ConfigScreen(
             // A window too low for the preview above the tools (a phone on its side)
             // puts them side by side. Measured without the keyboard, so that opening it
             // never switches layouts (which would take the focus away from the field).
-            val sideBySideNow = maxWidth > maxHeight && maxHeight < EDITOR_TOOLS_HEIGHT + EDITOR_CHROME_HEIGHT + MIN_PREVIEW_HEIGHT
+            // Or always, on a screen wider than it is tall, when the settings put the player on a side.
+            val landscape = maxWidth > maxHeight
+            val landscapeLayout = LocalAppSettings.current.landscapeLayout
+            val sideBySideNow = landscapeLayout.forcesSides(landscape) ||
+                (landscape && maxHeight < EDITOR_TOOLS_HEIGHT + EDITOR_CHROME_HEIGHT + MIN_PREVIEW_HEIGHT)
             // A large screen (a tablet on its side, a monitor): the timeline across the whole
             // width at the bottom, the preview above it, and an open tool's panel beside the
             // preview, so that the timeline and the preview stay in sight while it is open.
@@ -1770,11 +1953,15 @@ fun ConfigScreen(
             val frozenLayout = remember(previewFullscreen) { layoutNow }
             val (sideBySide, studio) = if (previewFullscreen) frozenLayout else layoutNow
             val full = previewFullscreen
+            // Side by side, the player is on the left unless the settings put it on the right.
+            val playerRight = sideBySide && landscapeLayout == LandscapeLayout.PLAYER_RIGHT
+            // The switch shows on a landscape screen, saying where the player is now.
+            val playerSide = if (landscape) playerRight else null
             if (studio) {
                 val motion = MaterialTheme.motionScheme
                 val panelWidth = (maxWidth * SIDE_PANEL_SHARE).coerceIn(SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH)
                 Column(modifier = Modifier.fillMaxSize().imePadding()) {
-                    if (!full) topBar()
+                    if (!full) topBar(playerSide)
                     Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                             previewPane(Modifier.weight(1f).fillMaxWidth())
@@ -1800,18 +1987,27 @@ fun ConfigScreen(
                     if (!full) Box(modifier = Modifier.fillMaxWidth().height(EDITOR_TOOLS_HEIGHT)) { timelineArea() }
                 }
             } else if (sideBySide) {
-                Row(modifier = Modifier.fillMaxSize().imePadding()) {
-                    Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        if (!full) topBar()
-                        previewPane(Modifier.weight(1f).fillMaxWidth())
-                    }
-                    if (!full) {
-                        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                            controls()
-                            toolsPane(Modifier.fillMaxWidth().weight(1f))
+                // The player keeps its place in the composition, so it is never built again
+                // (it would start over) when it changes side: only where it is laid changes.
+                SideBySide(
+                    playerRight = playerRight,
+                    toolsShown = !full,
+                    modifier = Modifier.fillMaxSize().imePadding(),
+                    player = {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            if (!full) topBar(playerSide)
+                            previewPane(Modifier.weight(1f).fillMaxWidth())
                         }
-                    }
-                }
+                    },
+                    tools = {
+                        if (!full) {
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                controls()
+                                toolsPane(Modifier.fillMaxWidth().weight(1f))
+                            }
+                        }
+                    },
+                )
             } else {
                 // An open panel grows to show all of its content, up to what leaves the
                 // preview a usable size; the timeline and tool row keep their height.
@@ -1828,7 +2024,7 @@ fun ConfigScreen(
                     label = "toolsHeight",
                 )
                 Column(modifier = Modifier.fillMaxSize().imePadding()) {
-                    if (!full) topBar()
+                    if (!full) topBar(playerSide)
                     previewPane(Modifier.weight(1f).fillMaxWidth())
                     if (!full) controls()
                     if (!full) toolsPane(Modifier.fillMaxWidth().height(toolsHeight))
@@ -1901,21 +2097,45 @@ private val TEXT_TOOLS = listOf(
     EditorTool.OVERLAY_TIMING,
 )
 
-/** The tools of a selected picture or video overlay, in toolbar order (Replace comes after). */
-private fun imageToolsFor(image: ImageOverlay, withSound: Boolean): List<EditorTool> = listOfNotNull(
-    EditorTool.OVERLAY_LAYOUT,
-    EditorTool.OVERLAY_CROP,
-    EditorTool.OVERLAY_ROTATE,
-    EditorTool.OVERLAY_BORDER,
-    EditorTool.OVERLAY_SHADOW,
-    EditorTool.OVERLAY_ADJUST,
-    EditorTool.OVERLAY_KEY,
-    EditorTool.IMAGE_OPACITY,
-    if (withSound && image.isVideo && image.hasAudio) EditorTool.OVERLAY_VOLUME else null,
-    EditorTool.OVERLAY_ANIMATE,
-    EditorTool.OVERLAY_FADE,
-    EditorTool.OVERLAY_TIMING,
-)
+/**
+ * The tools of a selected picture, video or shape overlay, in toolbar order
+ * (Replace comes after, but for a shape). A shape starts with what it is and
+ * has no crop, colours or key: it is drawn as asked.
+ */
+private fun imageToolsFor(image: ImageOverlay, withSound: Boolean): List<EditorTool> = if (image.isEffect) {
+    // One of the app's effects fills the frame as it is made: which, how strong, which colours, when.
+    listOf(EditorTool.EFFECT, EditorTool.EFFECT_LOOK, EditorTool.OVERLAY_FADE, EditorTool.OVERLAY_TIMING)
+} else if (image.shape != null) {
+    listOf(
+        EditorTool.OVERLAY_SHAPE,
+        EditorTool.OVERLAY_LAYOUT,
+        EditorTool.OVERLAY_ROTATE,
+        EditorTool.OVERLAY_BORDER,
+        EditorTool.OVERLAY_SHADOW,
+        EditorTool.IMAGE_OPACITY,
+        EditorTool.OVERLAY_BLEND,
+        EditorTool.OVERLAY_ANIMATE,
+        EditorTool.OVERLAY_FADE,
+        EditorTool.OVERLAY_TIMING,
+    )
+} else {
+    listOfNotNull(
+        EditorTool.OVERLAY_LAYOUT,
+        EditorTool.OVERLAY_CROP,
+        EditorTool.OVERLAY_ROTATE,
+        EditorTool.OVERLAY_BORDER,
+        EditorTool.OVERLAY_SHADOW,
+        EditorTool.OVERLAY_ADJUST,
+        EditorTool.OVERLAY_KEY,
+        if (image.isVideo) null else EditorTool.OVERLAY_ERASE,
+        EditorTool.IMAGE_OPACITY,
+        EditorTool.OVERLAY_BLEND,
+        if (withSound && image.isVideo && image.hasAudio) EditorTool.OVERLAY_VOLUME else null,
+        EditorTool.OVERLAY_ANIMATE,
+        EditorTool.OVERLAY_FADE,
+        EditorTool.OVERLAY_TIMING,
+    )
+}
 
 /** What can be laid over the video, or put in an overlay's place. */
 private val OVERLAY_TYPES = arrayOf("image/*", "video/*")
@@ -1923,8 +2143,9 @@ private val OVERLAY_TYPES = arrayOf("image/*", "video/*")
 private val OVERLAY_TOOLS = setOf(
     EditorTool.TEXT_EDIT, EditorTool.TEXT_STYLE, EditorTool.OVERLAY_LAYOUT, EditorTool.IMAGE_OPACITY,
     EditorTool.OVERLAY_FADE, EditorTool.OVERLAY_TIMING, EditorTool.OVERLAY_ROTATE, EditorTool.OVERLAY_ADJUST,
-    EditorTool.OVERLAY_VOLUME, EditorTool.OVERLAY_KEY, EditorTool.OVERLAY_CROP, EditorTool.OVERLAY_BORDER,
-    EditorTool.OVERLAY_SHADOW, EditorTool.OVERLAY_ANIMATE,
+    EditorTool.OVERLAY_VOLUME, EditorTool.OVERLAY_KEY, EditorTool.OVERLAY_ERASE, EditorTool.OVERLAY_CROP, EditorTool.OVERLAY_BORDER,
+    EditorTool.OVERLAY_SHADOW, EditorTool.OVERLAY_ANIMATE, EditorTool.OVERLAY_BLEND, EditorTool.OVERLAY_SHAPE,
+    EditorTool.EFFECT, EditorTool.EFFECT_LOOK,
 )
 
 /** The tools of a selected sound. */
@@ -1948,6 +2169,9 @@ private fun Modifier.ignoringTouches(): Modifier = pointerInput(Unit) {
 }
 
 /** Timeline and tool row, or the panel of the open tool. */
+/** Room between the frame arrows and play / pause. */
+private val FRAME_STEP_GAP = 2.dp
+
 private val EDITOR_TOOLS_HEIGHT = TIMELINE_HEIGHT + TOOLBAR_HEIGHT + 8.dp
 /** Height of the row with the clock, play / pause, undo and redo. */
 private val CONTROL_ROW_HEIGHT = 56.dp
@@ -1982,9 +2206,11 @@ internal fun EditorTheme(content: @Composable () -> Unit) {
         ThemeMode.DARK -> true
     }
     val dynamic = settings.dynamicColor
-    // The wallpaper's colours, or the icon's teal when dynamic colour is off (see the settings) or missing.
-    val scheme = remember(context, dark, dynamic) {
-        val app = appColorScheme(context, dark = dark, dynamic = dynamic)
+    val monochrome = settings.monochrome
+    // The wallpaper's colours, or the icon's teal when dynamic colour is off (see the settings)
+    // or missing; greys only in monochrome.
+    val scheme = remember(context, dark, dynamic, monochrome) {
+        val app = appColorScheme(context, dark = dark, dynamic = dynamic, monochrome = monochrome)
         if (dark) app.onBlack() else app
     }
     // The system bars take its background, their icons dark or light with it.
@@ -2013,13 +2239,21 @@ private fun footageHdr(timeline: Timeline, sources: List<EditorSource>): VideoHd
     }
 }
 
-/** Close on the left, the file and its target format, Export on the right. */
+/**
+ * Close on the left, the file and its target format, Export on the right; on a
+ * screen wider than it is tall ([playerRight] not null) the switch that moves
+ * the player to the other side of the tools before Export.
+ */
 @Composable
 internal fun EditorTopBar(
     fileName: String,
     formatLabel: String,
     onClose: () -> Unit,
     onExport: () -> Unit,
+    /** Where the player is (true: on the right of the tools); null shows no switch. */
+    playerRight: Boolean? = null,
+    /** The switch was tapped; it gets where the player was. */
+    onSwapSides: (Boolean) -> Unit = {},
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -2045,6 +2279,7 @@ internal fun EditorTopBar(
                 color = MaterialTheme.colorScheme.primary,
             )
         }
+        if (playerRight != null) SwapSidesButton(playerRight = playerRight, onSwap = { onSwapSides(playerRight) })
         // Expressive button: it changes shape (rounder to squarer) under the finger.
         Button(
             onClick = onExport,
@@ -2059,7 +2294,14 @@ internal fun EditorTopBar(
     }
 }
 
-/** Clock on the left, play / pause in the middle, the keyframe diamond, undo and redo on the right. */
+/**
+ * Clock on the left, play / pause in the middle between the frame arrows, and on
+ * the right the keyframe diamond (with, on a keyframe, the button of its curve
+ * springing out beside it), undo and redo. Nothing ever overlaps: the right
+ * group is laid first, play / pause stays in the middle as long as it fits and
+ * moves left when it does not, and the clock takes what is left, two lines or
+ * the time alone when that is short.
+ */
 @Composable
 private fun ControlRow(
     playback: PreviewPlayback,
@@ -2071,80 +2313,125 @@ private fun ControlRow(
     keyframeAt: (PreviewSnapshot) -> Boolean? = { null },
     onToggleKeyframe: () -> Unit = {},
     onEasing: () -> Unit = {},
+    /**
+     * Moves the playhead one frame forward (true) or back, [held] while an arrow is
+     * held (the preview then follows as it scrubs); false at either end.
+     */
+    onStepFrame: (forward: Boolean, held: Boolean) -> Boolean = { _, _ -> false },
 ) {
     val haptic = LocalHapticFeedback.current
     var isPlaying by playback.isPlaying
     val currentKeyframeAt by rememberUpdatedState(keyframeAt)
     val onKeyframe by remember(playback) { derivedStateOf { currentKeyframeAt(playback.snapshot.value) == true } }
     val easingLabel = stringResource(R.string.tool_easing)
-    // The clock on the left, play / pause in the middle, the diamond, undo and redo on the
-    // right; on a keyframe, its curve button halfway between play / pause and the diamond.
+    val motion = MaterialTheme.motionScheme
     Layout(
         modifier = Modifier
             .fillMaxWidth()
             .height(CONTROL_ROW_HEIGHT)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 8.dp),
         content = {
-            PlaybackClock(playback = playback)
-            MorphingPlayButton(
-                isPlaying = isPlaying,
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    isPlaying = !isPlaying
-                },
-                playDescription = stringResource(R.string.action_play),
-                pauseDescription = stringResource(R.string.action_pause),
-            )
-            // On a keyframe, the way it moves on to the next one can be chosen. Always in a
-            // box of its own: hidden, the box is still there (empty), so the layout below
-            // always finds its four children.
-            Box {
-                AnimatedVisibility(
-                    visible = onKeyframe,
-                    enter = fadeIn() + scaleIn(),
-                    exit = fadeOut() + scaleOut(),
-                ) {
-                    IconButton(onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
-                        onEasing()
-                    }) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier.semantics { contentDescription = easingLabel },
-                        ) {
-                            EasingGlyph(color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                }
+            AdaptiveClock(playback = playback)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(FRAME_STEP_GAP)) {
+                FrameStepButton(forward = false, enabled = true, onStep = { held -> onStepFrame(false, held) })
+                MorphingPlayButton(
+                    isPlaying = isPlaying,
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        isPlaying = !isPlaying
+                    },
+                    playDescription = stringResource(R.string.action_play),
+                    pauseDescription = stringResource(R.string.action_pause),
+                )
+                FrameStepButton(forward = true, enabled = true, onStep = { held -> onStepFrame(true, held) })
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // On a keyframe, the way it moves on to the next one: a tonal pill that grows
+                // out of the diamond (the group widens with it, so it never covers the arrows).
+                AnimatedVisibility(
+                    visible = onKeyframe,
+                    enter = expandHorizontally(motion.fastSpatialSpec(), expandFrom = Alignment.End) + fadeIn(motion.fastEffectsSpec()),
+                    exit = shrinkHorizontally(motion.fastSpatialSpec(), shrinkTowards = Alignment.End) + fadeOut(motion.fastEffectsSpec()),
+                ) {
+                    FilledTonalIconButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+                            onEasing()
+                        },
+                        modifier = Modifier.size(width = 44.dp, height = 36.dp).semantics { contentDescription = easingLabel },
+                    ) {
+                        EasingGlyph(color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                }
                 KeyframeButton(playback = playback, keyframeAt = keyframeAt, onToggle = onToggleKeyframe)
-                IconButton(onClick = onUndo, enabled = canUndo) {
+                IconButton(onClick = onUndo, enabled = canUndo, modifier = Modifier.size(width = CONTROL_ICON_WIDTH, height = 48.dp)) {
                     Icon(Icons.Rounded.Undo, contentDescription = stringResource(R.string.editor_undo))
                 }
-                IconButton(onClick = onRedo, enabled = canRedo) {
+                IconButton(onClick = onRedo, enabled = canRedo, modifier = Modifier.size(width = CONTROL_ICON_WIDTH, height = 48.dp)) {
                     Icon(Icons.Rounded.Redo, contentDescription = stringResource(R.string.editor_redo))
                 }
             }
         },
     ) { measurables, constraints ->
         val loose = constraints.copy(minWidth = 0, minHeight = 0)
-        val (clock, play, curve, right) = measurables.map { it.measure(loose) }
         val width = constraints.maxWidth
         val height = constraints.maxHeight
+        val gap = CONTROL_GAP.roundToPx()
+        val right = measurables[2].measure(loose)
+        val centre = measurables[1].measure(loose)
+        val rightLeft = width - right.width
+        // In the middle while it fits, else as far right as it can be beside the group.
+        val centreLeft = minOf((width - centre.width) / 2, rightLeft - gap - centre.width).coerceAtLeast(0)
+        val clock = measurables[0].measure(loose.copy(maxWidth = (centreLeft - gap).coerceAtLeast(0)))
         layout(width, height) {
             fun centreY(p: Placeable) = (height - p.height) / 2
             clock.place(0, centreY(clock))
-            val playLeft = (width - play.width) / 2
-            play.place(playLeft, centreY(play))
-            val rightLeft = width - right.width
+            centre.place(centreLeft, centreY(centre))
             right.place(rightLeft, centreY(right))
-            // Halfway between the end of play / pause and the start of the diamond.
-            val gapCentre = (playLeft + play.width + rightLeft) / 2
-            curve.place(gapCentre - curve.width / 2, centreY(curve))
         }
     }
 }
+
+/**
+ * The time and the length of the video, as wide as there is room for: on one
+ * line, on two (the time above, the length below, smaller), or the time alone.
+ */
+@Composable
+private fun AdaptiveClock(playback: PreviewPlayback) {
+    val times by remember(playback) {
+        derivedStateOf { playback.snapshot.value.let { formatClock(it.outputMs) to formatClock(it.outputDurationMs) } }
+    }
+    val style = MaterialTheme.typography.labelLargeEmphasized.copy(fontFeatureSettings = "tnum")
+    val small = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum")
+    val colors = MaterialTheme.colorScheme
+    BoxWithConstraints(contentAlignment = Alignment.CenterStart) {
+        when {
+            maxWidth >= CLOCK_WIDE -> Text(
+                text = stringResource(R.string.value_time_of_total, times.first, times.second),
+                style = style,
+                color = colors.onSurfaceVariant,
+                maxLines = 1,
+            )
+            maxWidth >= CLOCK_STACKED -> Column {
+                Text(times.first, style = style, color = colors.onSurface, maxLines = 1)
+                Text(times.second, style = small, color = colors.onSurfaceVariant, maxLines = 1)
+            }
+            maxWidth >= CLOCK_NARROW -> Text(times.first, style = small, color = colors.onSurface, maxLines = 1)
+            else -> Spacer(modifier = Modifier.width(0.dp))
+        }
+    }
+}
+
+/** Room the clock needs on one line, on two, and for the time alone. */
+private val CLOCK_WIDE = 124.dp
+private val CLOCK_STACKED = 58.dp
+private val CLOCK_NARROW = 44.dp
+
+/** Least room between the clock, the play group and the right group. */
+private val CONTROL_GAP = 6.dp
+
+/** Width of undo and redo: their touch target keeps its height, the row saves a little. */
+private val CONTROL_ICON_WIDTH = 44.dp
 
 /**
  * The keyframe diamond: an outline when a keyframe can be put at the playhead on

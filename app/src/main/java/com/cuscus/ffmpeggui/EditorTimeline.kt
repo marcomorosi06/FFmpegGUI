@@ -50,6 +50,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
@@ -219,6 +220,11 @@ fun EditorTimeline(
     kinds: List<LaneKind> = LaneKind.entries,
     /** The clips are drawn as their sound's waveform rather than as frames. */
     soundClips: Boolean = false,
+    /**
+     * The sound of each video clip's own file drawn along the bottom of its frames
+     * (see drawClipSoundBand), to cut and line sounds up by ear and eye.
+     */
+    clipWaveforms: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -247,8 +253,10 @@ fun EditorTimeline(
     val untitledImage = stringResource(R.string.tool_image)
 
     // Everything placed on the video, each kind on as many rows as its overlaps need.
-    val items = remember(textOverlays, imageOverlays, sounds, untitledText, untitledImage) {
-        laneItems(textOverlays, imageOverlays, sounds, untitledText, untitledImage)
+    val shapeNames = ShapeKind.entries.associateWith { stringResource(it.labelRes) }
+    val effectNames = effectLabels()
+    val items = remember(textOverlays, imageOverlays, sounds, untitledText, untitledImage, shapeNames, effectNames) {
+        laneItems(textOverlays, imageOverlays, sounds, untitledText, untitledImage, shapeNames) { effectNames[it] ?: it }
     }
     val lanes = remember(items, density, kinds) {
         LaneLayout(
@@ -504,6 +512,7 @@ fun EditorTimeline(
     }
 
     val addLabels = mapOf(
+        LaneKind.EFFECT to stringResource(R.string.lane_effect),
         LaneKind.TEXT to stringResource(R.string.lane_text),
         LaneKind.IMAGE to stringResource(R.string.lane_image),
         LaneKind.SOUND to stringResource(R.string.lane_audio),
@@ -517,23 +526,29 @@ fun EditorTimeline(
     // Each kind wears its tool family's tone (see ToolFamily): captions and pictures the
     // overlay tone, sounds the sound tone. A selected item takes the full tone.
     val itemColors = mapOf(
+        LaneKind.EFFECT to colors.primaryContainer,
         LaneKind.TEXT to colors.secondaryContainer,
         LaneKind.IMAGE to colors.secondary.copy(alpha = 0.45f),
         LaneKind.SOUND to colors.tertiaryContainer,
     )
     val selectedColors = mapOf(
+        LaneKind.EFFECT to colors.primary,
         LaneKind.TEXT to colors.secondary,
         LaneKind.IMAGE to colors.secondary,
         LaneKind.SOUND to colors.tertiary,
     )
     val soundWave = colors.onTertiaryContainer.copy(alpha = 0.45f)
+    // A clip's own sound, over its frames: the sound tone, lightened to read on the dark band.
+    val clipWave = androidx.compose.ui.graphics.lerp(colors.tertiary, Color.White, 0.55f)
     val selectedSoundWave = colors.onTertiary.copy(alpha = 0.55f)
     val mutedStyle = remember(muted) { TextStyle(fontSize = 10.sp, color = muted) }
     val itemStyle = remember(onSurface) { TextStyle(fontSize = 10.sp, color = onSurface) }
     val onSecondary = colors.onSecondary
     val onTertiary = colors.onTertiary
-    val selectedStyles = remember(onSecondary, onTertiary) {
+    val onPrimaryItem = colors.onPrimary
+    val selectedStyles = remember(onSecondary, onTertiary, onPrimaryItem) {
         mapOf(
+            LaneKind.EFFECT to TextStyle(fontSize = 10.sp, color = onPrimaryItem),
             LaneKind.TEXT to TextStyle(fontSize = 10.sp, color = onSecondary),
             LaneKind.IMAGE to TextStyle(fontSize = 10.sp, color = onSecondary),
             LaneKind.SOUND to TextStyle(fontSize = 10.sp, color = onTertiary),
@@ -863,6 +878,21 @@ fun EditorTimeline(
                         drawClipWaveform(viewState.waveform(source.uri), clip, rect.left, rect.right, trackTop, trackHeight, pxPerMs, primary)
                     } else if (source != null) {
                         drawFilmstrip(cache, source.uri, source.isStill, clip, rect.left, rect.right, trackTop, trackHeight, pxPerMs)
+                        // Its own sound along the bottom (a picture, or a file without sound, has none).
+                        if (clipWaveforms && !source.isStill && source.info?.hasAudio != false) {
+                            drawClipSoundBand(
+                                waveform = viewState.waveform(source.uri),
+                                clip = clip,
+                                left = rect.left,
+                                right = rect.right,
+                                bottom = trackTop + trackHeight,
+                                height = trackHeight * SOUND_BAND_SHARE,
+                                pxPerMs = pxPerMs,
+                                color = clipWave,
+                                silent = clip.effects.muted || clip.effects.volume <= 0f,
+                                bright = clip.id == selectedClipId,
+                            )
+                        }
                     }
                 }
                 // A clip with effects of its own carries a dot; a clip at another speed says so.
@@ -1137,8 +1167,8 @@ fun EditorTimeline(
     }
 }
 
-/** What can be placed freely on the video, each kind on rows of its own. */
-enum class LaneKind { TEXT, IMAGE, SOUND }
+/** What can be placed freely on the video, each kind on rows of its own: effects first, as they lie on top. */
+enum class LaneKind { EFFECT, TEXT, IMAGE, SOUND }
 
 /** One text, picture or sound on its lane: when it plays, on which row, how it is labelled. */
 private class LaneEntry(
@@ -1160,18 +1190,27 @@ private fun laneItems(
     sounds: List<AudioClip>,
     untitledText: String,
     untitledImage: String,
+    /** The name of each kind of shape, for shape layers. */
+    shapeNames: Map<ShapeKind, String>,
+    /** The name of each of the app's effects, by its library name. */
+    effectName: (String) -> String,
 ): List<LaneEntry> {
     // Captions and pictures bound to a clip (from older projects) have no place of their own.
     val freeTexts = texts.filter { it.clipId == null }
-    val freePictures = pictures.filter { it.clipId == null }
+    val freePictures = pictures.filter { it.clipId == null && !it.isEffect }
+    val effects = pictures.filter { it.clipId == null && it.isEffect }
     val textRows = TimeSpan.rows(freeTexts.map { it.span })
     val pictureRows = TimeSpan.rows(freePictures.map { it.laneSpan })
+    val effectRows = TimeSpan.rows(effects.map { it.laneSpan })
     val soundRows = TimeSpan.rows(sounds.map { it.span })
-    return freeTexts.mapIndexed { i, t ->
+    return effects.mapIndexed { i, e ->
+        // An effect is marked with a sparkle.
+        LaneEntry(LaneKind.EFFECT, e.id, e.laneSpan, effectRows[i], "\u2726 " + effectName(e.effect.orEmpty()), e.fadeInSeconds, e.fadeOutSeconds, e.keyframes)
+    } + freeTexts.mapIndexed { i, t ->
         LaneEntry(LaneKind.TEXT, t.id, t.span, textRows[i], t.text.ifBlank { untitledText }, t.fadeInSeconds, t.fadeOutSeconds, t.keyframes)
     } + freePictures.mapIndexed { i, p ->
         // A video is marked with a play sign; trimming it trims the part of its file it plays.
-        val name = p.fileName.ifBlank { untitledImage }
+        val name = p.shape?.let { shapeNames[it.kind] } ?: p.fileName.ifBlank { untitledImage }
         LaneEntry(LaneKind.IMAGE, p.id, p.laneSpan, pictureRows[i], if (p.isVideo) "\u25B6 $name" else name, p.fadeInSeconds, p.fadeOutSeconds, p.keyframes)
     } + sounds.mapIndexed { i, s ->
         LaneEntry(LaneKind.SOUND, s.id, s.span, soundRows[i], s.name, s.fadeInSeconds, s.fadeOutSeconds, s.keyframes)
@@ -1690,6 +1729,62 @@ private fun DrawScope.drawClipWaveform(
     }
 }
 
+/**
+ * A video clip's own sound, along the bottom [height] of its frames: a dark
+ * band fading up into the picture, and on it the peaks of the clip's part of
+ * its file, one bar every few pixels, growing up from the bottom (loud is
+ * tall), so that a cut or a clap can be found by eye. A [silent] clip (muted,
+ * or at no volume) shows its sound faintly; the [bright] one (selected) at full
+ * strength. Flat bars while the file is still being read.
+ */
+private fun DrawScope.drawClipSoundBand(
+    waveform: Waveform?,
+    clip: Clip,
+    left: Float,
+    right: Float,
+    bottom: Float,
+    height: Float,
+    pxPerMs: Float,
+    color: Color,
+    silent: Boolean,
+    bright: Boolean,
+) {
+    val top = bottom - height
+    val from = max(left, 0f)
+    val to = min(right, size.width)
+    if (to <= from) return
+    drawRect(
+        brush = Brush.verticalGradient(
+            0f to Color.Transparent,
+            0.35f to Color.Black.copy(alpha = 0.45f),
+            1f to Color.Black.copy(alpha = 0.7f),
+            startY = top - height * 0.35f,
+            endY = bottom,
+        ),
+        topLeft = Offset(from, top - height * 0.35f),
+        size = Size(to - from, height * 1.35f),
+    )
+    val step = 3.dp.toPx()
+    val bar = 2.dp.toPx()
+    val floor = bottom - 3.dp.toPx()
+    val tallest = height - 6.dp.toPx()
+    val alpha = when {
+        silent -> 0.3f
+        bright -> 1f
+        else -> 0.85f
+    }
+    val tint = color.copy(alpha = alpha)
+    var x = from
+    while (x < to) {
+        val fromMs = clip.startMs + ((x - left) / pxPerMs).toLong()
+        val toMs = clip.startMs + ((x + step - left) / pxPerMs).toLong()
+        val peak = waveform?.peakBetween(fromMs, toMs) ?: 0.04f
+        val tall = (peak.coerceIn(0f, 1f) * tallest).coerceAtLeast(bar)
+        drawRoundRect(tint, Offset(x, floor - tall), Size(bar, tall), CornerRadius(bar / 2f))
+        x += step
+    }
+}
+
 /** "0:05", "1:30"; "0:05.5" [withTenths]. */
 private fun formatRulerTime(ms: Long, withTenths: Boolean): String {
     val seconds = ms / 1000
@@ -1904,6 +1999,9 @@ private const val WAVEFORM_WORKERS = 2
 
 private val RULER_HEIGHT = 20.dp
 private val TRACK_HEIGHT = 56.dp
+
+/** Share of a clip's height its own sound takes, along its bottom. */
+private const val SOUND_BAND_SHARE = 0.42f
 
 /** Size of the button on the join between two clips, and how far from it a tap still takes it. */
 private val JUNCTION_RADIUS = 11.dp

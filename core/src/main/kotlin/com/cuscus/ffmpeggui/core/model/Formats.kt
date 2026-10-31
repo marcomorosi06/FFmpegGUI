@@ -27,6 +27,9 @@ enum class OutputFormat(
     BMP("bmp", FormatCategory.IMAGE),
     TIFF("tiff", FormatCategory.IMAGE),
 
+    /** Shapes traced from the picture (see core.vector.VectorTracer): FFmpeg writes a PNG, then it is traced. */
+    SVG("svg", FormatCategory.IMAGE),
+
     /** What is said in the file, written down by the speech model (no FFmpeg involved). */
     TXT("txt", FormatCategory.TEXT),
 
@@ -59,11 +62,11 @@ enum class OutputFormat(
      * and the platform's encoder turns it into this format (WEBP).
      */
     val needsPlatformEncoder: Boolean
-        get() = this == WEBP
+        get() = this == WEBP || this == SVG
 
     /** True when a picture file of this format can keep transparent parts. */
     val holdsTransparency: Boolean
-        get() = this == PNG || this == WEBP || this == TIFF
+        get() = this == PNG || this == WEBP || this == TIFF || this == SVG
 
     /** True when the picture is compressed with loss, so it has a quality. */
     val hasImageQuality: Boolean

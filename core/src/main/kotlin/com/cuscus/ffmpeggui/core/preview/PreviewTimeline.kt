@@ -254,6 +254,17 @@ class PreviewTimeline(
         return (a / speed).toLong()..(b / speed).toLong()
     }
 
+    /**
+     * Where the exported video cuts from clip [gap] to the next one (where the
+     * next one starts, the video's own speed and direction applied), ms; null
+     * past the last clip.
+     */
+    fun cutOutputMs(gap: Int): Long? {
+        if (gap < 0 || gap + 1 > timings.lastIndex) return null
+        val joined = joinedStarts[gap + 1]
+        return Math.round((if (reversed) joinedDurationMs - joined else joined) / speed)
+    }
+
     /** Where clip [segment] starts playing in the joined video, ms. */
     fun joinedStartMs(segment: Int): Long = joinedStarts.getOrNull(segment)?.let { Math.round(it) } ?: 0L
 

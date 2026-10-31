@@ -44,6 +44,8 @@ data class MediaPaths(
     val hdrPictures: HdrPictures? = null,
     /** The 3D LUT of the video's HDR look (see HdrVideoLook), when it has one. */
     val hdrLut: String? = null,
+    /** The stats the first x265 pass writes and the second reads (the compressor fitting a size). */
+    val passLog: String? = null,
 ) {
     companion object {
         /**
@@ -68,6 +70,7 @@ data class MediaPaths(
             cover = if (request.coverWriting() == CoverWriting.ATTACHED_PICTURE) "cover.jpg" else null,
             coverTags = if (request.coverWriting() == CoverWriting.PICTURE_TAG) "cover_tags.txt" else null,
             hdrLut = if (request.effects.hdrLook != null) "hdr_look.cube" else null,
+            passLog = if (request.twoPassVideo()) "x265_2pass.log" else null,
         )
 
         private fun outputAlias(request: ConversionRequest): String = when {
@@ -77,6 +80,17 @@ data class MediaPaths(
             request.format.extension.isEmpty() -> "output"
             else -> "output.${request.format.extension}"
         }
+    }
+
+    /** Every file name of this instance, for the command studio (see [aliasesFor]). */
+    fun aliasEntries(): List<CommandAlias> = buildList {
+        inputs.forEach { add(CommandAlias(it, AliasKind.INPUT)) }
+        imageOverlays.forEach { add(CommandAlias(it, AliasKind.OVERLAY)) }
+        sounds.forEach { add(CommandAlias(it, AliasKind.SOUND)) }
+        subtitles?.let { add(CommandAlias(it, AliasKind.SUBTITLES)) }
+        listOfNotNull(concatList, subtitleFonts, stabilizationTransforms, cover, coverTags, hdrLut, passLog)
+            .forEach { add(CommandAlias(it, AliasKind.OTHER)) }
+        add(CommandAlias(output, AliasKind.OUTPUT))
     }
 
     /**
@@ -96,6 +110,8 @@ data class MediaPaths(
         link(stabilizationTransforms, real.stabilizationTransforms)
         link(cover, real.cover)
         link(coverTags, real.coverTags)
+        link(hdrLut, real.hdrLut)
+        link(passLog, real.passLog)
         sounds.zip(real.sounds).forEach { (alias, target) -> map[alias] = target }
         imageOverlays.zip(real.imageOverlays).forEach { (alias, target) -> map[alias] = target }
         return map
@@ -109,3 +125,41 @@ data class MediaPaths(
  * map leaves the picture as it is).
  */
 data class HdrPictures(val finalPng: String, val plainPng: String)
+
+/** What a file name in a hand-written command stands for. */
+enum class AliasKind { INPUT, OVERLAY, SOUND, SUBTITLES, OTHER, EXTRA, OUTPUT }
+
+/** A file name a hand-written command may use, and what it stands for. */
+data class CommandAlias(val alias: String, val kind: AliasKind)
+
+/**
+ * A file the user added for a hand-written command only, known there as
+ * [alias] ("logo.png"). [uri] is where it is kept, [name] its own name.
+ */
+data class CommandFile(val alias: String, val uri: String, val name: String) {
+    companion object {
+        private val VALID = Regex("""[A-Za-z][A-Za-z0-9_-]{0,47}\.[A-Za-z0-9]{1,8}""")
+        private val OUTPUT = Regex("""output(_%\d*d)?(\.[A-Za-z0-9]+)?""")
+
+        /** A name the command can use: plain, with an extension, never taken for the output. */
+        fun isValidAlias(alias: String): Boolean = VALID.matches(alias) && !OUTPUT.matches(alias)
+
+        /** A free name for [fileName]: its own, made plain, or numbered when taken. */
+        fun aliasFor(fileName: String, taken: Set<String>): String {
+            val ext = fileName.substringAfterLast('.', "").filter { it.isLetterOrDigit() }.take(8).ifEmpty { "bin" }.lowercase()
+            val base = fileName.substringBeforeLast('.')
+                .map { if (it.isLetterOrDigit() && it.code < 128) it else '_' }
+                .joinToString("")
+                .trim('_')
+                .take(40)
+                .let { if (it.firstOrNull()?.isLetter() == true) it else "file_$it".trimEnd('_') }
+            var candidate = "$base.$ext"
+            var n = 2
+            while (candidate in taken || !isValidAlias(candidate)) {
+                candidate = "${base.take(36)}_$n.$ext"
+                if (n++ > 999) return "file_${taken.size + 1}.$ext"
+            }
+            return candidate
+        }
+    }
+}

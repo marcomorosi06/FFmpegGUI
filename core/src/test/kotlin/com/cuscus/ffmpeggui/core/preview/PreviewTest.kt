@@ -271,4 +271,18 @@ class PreviewTest {
         assertNull(SubtitleRetimer().retime("1\n00:00:08,000 --> 00:00:09,000\ngone\n", cuts, sourceIndex = 0))
         assertNull(SubtitleRetimer().retime("", cuts, sourceIndex = 0))
     }
+
+    @Test
+    fun `a hue turn goes from red towards green as FFmpeg's hue filter does`() {
+        assertNull(hueColorMatrix(0f))
+        assertNull(hueColorMatrix(360f))
+        // What hue=h=120 made of 0xFF4100 here: 0x00D011.
+        val turned = applyColorMatrix(0xFFFF4101L, hueColorMatrix(120f))
+        assertEquals(0L, (turned shr 16) and 0xFF)
+        assertEquals(208.0, ((turned shr 8) and 0xFF).toDouble(), 3.0)
+        assertEquals(17.0, (turned and 0xFF).toDouble(), 3.0)
+        // Grey stays grey.
+        val grey = applyColorMatrix(0xFF808080L, hueColorMatrix(77f))
+        listOf(16, 8, 0).forEach { shift -> assertEquals(128.0, ((grey shr shift) and 0xFF).toDouble(), 1.0) }
+    }
 }

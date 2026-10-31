@@ -4,6 +4,7 @@ import com.cuscus.ffmpeggui.core.command.CommandBuilder
 import com.cuscus.ffmpeggui.core.command.FfmpegCommand
 import com.cuscus.ffmpeggui.core.command.ManualCommandResolver
 import com.cuscus.ffmpeggui.core.model.ConversionRequest
+import com.cuscus.ffmpeggui.core.model.Effects
 import com.cuscus.ffmpeggui.core.model.EncodingSettings
 import com.cuscus.ffmpeggui.core.model.HardwareEncoder
 import com.cuscus.ffmpeggui.core.model.ImagePlacement
@@ -526,6 +527,46 @@ class ConversionEngineTest {
             listOf("-i", File(stager.directory, "0_input.mov").path, "-c", "copy", expectedOutput),
             executor.commands.single().arguments,
         )
+    }
+
+    @Test
+    fun `manual command reaches the files added for it, and fails when one cannot be read`() = runBlocking {
+        val stager = FakeStager()
+        val executor = FakeExecutor()
+        val outputDir = temp.newFolder("out")
+        val logo = com.cuscus.ffmpeggui.core.command.CommandFile("logo.png", "content://logo", "My Logo.png")
+        val job = ConversionJob(
+            request.copy(format = OutputFormat.CUSTOM),
+            MediaSources(listOf(main)),
+            CommandMode.Manual("ffmpeg -i input.mov -i logo.png -filter_complex overlay output.mp4", listOf(logo)),
+        )
+
+        val outcome = engine(executor, stager, outputDir).run(job)
+
+        assertEquals(ConversionOutcome.Success(File(outputDir, "clip_99.mp4").path), outcome)
+        assertEquals(File(stager.directory, "1_My Logo.png").path, executor.commands.single().arguments[3])
+
+        val lost = job.copy(mode = CommandMode.Manual("ffmpeg -i input.mov output.mp4", listOf(logo.copy(uri = "content://missing"))))
+        val failed = engine(FakeExecutor(), FakeStager(), temp.newFolder("out2")).run(lost)
+        assertEquals(ConversionOutcome.Failure(FailureReason.SOURCE_UNREADABLE, "My Logo.png"), failed)
+    }
+
+    @Test
+    fun `manual command finds the LUT of the HDR look`() = runBlocking {
+        val stager = FakeStager()
+        val executor = FakeExecutor()
+        val outputDir = temp.newFolder("out")
+        // The command as the preview shows it, edited by hand.
+        val job = ConversionJob(
+            request.copy(effects = Effects(hdrLook = 0.5f)),
+            MediaSources(listOf(main)),
+            CommandMode.Manual("ffmpeg -i input.mov -vf \"lut3d=file='hdr_look.cube'\" output.mp4"),
+        )
+
+        val outcome = engine(executor, stager, outputDir).run(job)
+
+        assertEquals(ConversionOutcome.Success(File(outputDir, "clip_99.mp4").path), outcome)
+        assertEquals("lut3d=file='${File(stager.directory, "hdr_look.cube").path}'", executor.commands.single().arguments[3])
     }
 
     @Test

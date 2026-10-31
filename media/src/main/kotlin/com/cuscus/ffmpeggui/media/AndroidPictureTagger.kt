@@ -9,7 +9,8 @@ import com.cuscus.ffmpeggui.core.model.OutputFormat
 
 /**
  * [PictureTagger] on the platform's EXIF writer: the title goes into the image
- * description, then the artist and the copyright. JPG can always hold them,
+ * description, then the artist, the copyright and every other tag kept from
+ * the source or added (MetadataTags.custom, by EXIF name). JPG can always hold them,
  * PNG and WEBP from Android 11 ([canTag]); BMP and TIFF are not written.
  */
 class AndroidPictureTagger : PictureTagger {
@@ -23,6 +24,13 @@ class AndroidPictureTagger : PictureTagger {
             set(ExifInterface.TAG_IMAGE_DESCRIPTION, tags.title)
             set(ExifInterface.TAG_ARTIST, tags.artist)
             set(ExifInterface.TAG_COPYRIGHT, tags.copyright)
+            // Every other tag kept or added, by its EXIF name (the file FFmpeg wrote has none).
+            for (tag in tags.custom) {
+                val name = tag.key.trim()
+                if (name.isEmpty() || tag.value.isBlank()) continue
+                runCatching { exif.setAttribute(name, tag.value.trim()) }
+                    .onFailure { Log.w(TAG, "Tag $name not written: ${it.message}") }
+            }
             exif.saveAttributes()
             true
         } catch (e: Exception) {

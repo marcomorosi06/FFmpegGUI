@@ -40,8 +40,19 @@ enum class TransitionKind(val xfade: String) {
 /**
  * The transition from a clip into the one after it: its [kind], [durationMs]
  * long (made shorter when a clip is too short for it, see [effectiveMs]).
+ *
+ * With an [effect] (the name of one of the app's own transition effects, a
+ * fairy's wand, an explosion), the clips meet with a cut instead, and the
+ * effect is laid over the cut by whoever builds the request: [kind] and
+ * [durationMs] are then not used.
  */
-data class Transition(val kind: TransitionKind = TransitionKind.FADE, val durationMs: Long = DEFAULT_MS) {
+data class Transition(
+    val kind: TransitionKind = TransitionKind.FADE,
+    val durationMs: Long = DEFAULT_MS,
+    val effect: String? = null,
+) {
+    /** True when the clips meet with a cut under an effect (see [effect]). */
+    val isEffect: Boolean get() = effect != null
 
     companion object {
         const val DEFAULT_MS = 500L
@@ -69,6 +80,8 @@ data class Transition(val kind: TransitionKind = TransitionKind.FADE, val durati
 fun transitionLengths(transitions: List<Transition?>, playedMs: List<Long?>): List<Long> =
     (0 until (playedMs.size - 1).coerceAtLeast(0)).map { i ->
         val transition = transitions.getOrNull(i) ?: return@map 0L
+        // An effect is laid over a cut: the clips do not overlap.
+        if (transition.isEffect) return@map 0L
         val a = playedMs[i] ?: return@map 0L
         val b = playedMs[i + 1] ?: return@map 0L
         Transition.effectiveMs(transition.durationMs, a, b)

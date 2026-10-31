@@ -50,11 +50,16 @@ import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.Compress
 import androidx.compose.material.icons.rounded.Photo
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Draw
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
@@ -92,6 +97,7 @@ import com.cuscus.ffmpeggui.ui.expressive.PolygonShape
 import com.cuscus.ffmpeggui.ui.expressive.springPress
 import com.cuscus.ffmpeggui.ui.theme.appIconBackground
 import com.cuscus.ffmpeggui.ui.theme.appIconGlyph
+import com.cuscus.ffmpeggui.ui.theme.appIconTint
 import com.cuscus.ffmpeggui.ui.theme.DisplayFamily
 
 /*
@@ -116,6 +122,18 @@ fun HomeScreen(
     onOpenProject: (ProjectCard) -> Unit = {},
     onDuplicateProject: (ProjectCard) -> Unit = {},
     onDeleteProject: (ProjectCard) -> Unit = {},
+    /** Opens the compressor: a file made smaller in one go. */
+    onCompress: () -> Unit = {},
+    /** Opens the SVG at this URI in the SVG editor. */
+    onEditSvg: (Uri) -> Unit = {},
+    /** Opens the SVG editor on an empty drawing. */
+    onNewSvg: () -> Unit = {},
+    /** The user's own blanks, newest first (see BlankSection). */
+    blankPresets: List<com.cuscus.ffmpeggui.core.model.BlankSpec> = emptyList(),
+    /** Makes a blank and opens it. */
+    onCreateBlank: (com.cuscus.ffmpeggui.core.model.BlankSpec) -> Unit = {},
+    onSaveBlank: (com.cuscus.ffmpeggui.core.model.BlankSpec) -> Unit = {},
+    onDeleteBlank: (com.cuscus.ffmpeggui.core.model.BlankSpec) -> Unit = {},
 ) {
     val context = LocalContext.current
     // Saveable: the camera app may run long enough for this activity to be recreated.
@@ -126,6 +144,10 @@ fun HomeScreen(
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let(onFileSelected) }
+
+    val svgPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let(onEditSvg) }
 
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CaptureVideo(),
@@ -166,6 +188,20 @@ fun HomeScreen(
             modifier = Modifier.padding(horizontal = 4.dp),
         )
     }
+    // The sheet that makes a blank: open (with the preset being edited, or none).
+    var blankSheet by remember { mutableStateOf(false) }
+    var blankInitial by remember { mutableStateOf<com.cuscus.ffmpeggui.core.model.BlankSpec?>(null) }
+    if (blankSheet) {
+        BlankSheet(
+            initial = blankInitial,
+            onDismiss = { blankSheet = false },
+            onCreate = { spec ->
+                blankSheet = false
+                onCreateBlank(spec)
+            },
+            onSave = onSaveBlank,
+        )
+    }
     val recent: @Composable ColumnScope.() -> Unit = {
         AnimatedVisibility(
             visible = projects.isNotEmpty(),
@@ -182,6 +218,17 @@ fun HomeScreen(
                 )
             }
         }
+        // Under the recent projects: starting from nothing, and the user's own starting points.
+        Spacer(modifier = Modifier.height(28.dp))
+        BlankSection(
+            presets = blankPresets,
+            onNew = { preset ->
+                blankInitial = preset
+                blankSheet = true
+            },
+            onCreate = onCreateBlank,
+            onDelete = onDeleteBlank,
+        )
     }
     // What to open: a file, one kind of file, a new recording. Lower on a phone on its side.
     val short = window.isShortLandscape
@@ -238,6 +285,15 @@ fun HomeScreen(
             Spacer(modifier = Modifier.width(12.dp))
             Text(text = stringResource(R.string.home_record_camera), style = MaterialTheme.typography.titleMediumEmphasized)
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        CompressTile(onClick = onCompress, height = if (short) 72.dp else 88.dp)
+        Spacer(modifier = Modifier.height(12.dp))
+        SvgEditorTile(
+            onOpen = { svgPicker.launch(arrayOf("image/svg+xml")) },
+            onNew = onNewSvg,
+            height = if (short) 72.dp else 88.dp,
+        )
 
         AnimatedVisibility(visible = noCamera, enter = expandVertically() + fadeIn()) {
             Text(
@@ -429,6 +485,7 @@ private fun AppTitle() {
             Image(
                 painter = appIconGlyph(),
                 contentDescription = null,
+                colorFilter = appIconTint(),
                 modifier = Modifier
                     .graphicsLayer { rotationZ = -turn }
                     .requiredSize(LOGO_SIZE * 1.5f),
@@ -537,6 +594,100 @@ private fun KindTile(
         }
         Spacer(modifier = Modifier.height(10.dp))
         Text(text = label, style = MaterialTheme.typography.titleSmallEmphasized, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+/**
+ * The compressor's door: a wide tile whose badge squeezes from a soft burst
+ * into a small pill under the finger, the tile squishing with it.
+ */
+@Composable
+private fun CompressTile(onClick: () -> Unit, height: Dp) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .springPress(interaction, pressedScale = 0.95f)
+            .height(height)
+            .clip(RoundedCornerShape(32.dp))
+            .background(scheme.primaryContainer)
+            .clickable(interactionSource = interaction, indication = LocalIndication.current, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp),
+    ) {
+        MorphingContainer(
+            from = MaterialShapes.SoftBurst,
+            to = MaterialShapes.Pill,
+            morphed = pressed,
+            color = scheme.primary,
+            modifier = Modifier.size(52.dp),
+        ) {
+            Icon(imageVector = Icons.Rounded.Compress, contentDescription = null, tint = scheme.onPrimary, modifier = Modifier.size(26.dp))
+        }
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.home_compress), style = MaterialTheme.typography.titleMediumEmphasized, color = scheme.onPrimaryContainer)
+            Text(
+                stringResource(R.string.home_compress_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onPrimaryContainer.copy(alpha = 0.8f),
+                maxLines = 2,
+            )
+        }
+    }
+}
+
+/**
+ * The SVG editor's door: a wide tertiary tile whose badge, a flower, folds
+ * into a twelve-sided cookie under the finger; a round + beside it starts an
+ * empty drawing.
+ */
+@Composable
+private fun SvgEditorTile(onOpen: () -> Unit, onNew: () -> Unit, height: Dp) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .springPress(interaction, pressedScale = 0.95f)
+            .height(height)
+            .clip(RoundedCornerShape(topStart = 32.dp, bottomStart = 32.dp, topEnd = 48.dp, bottomEnd = 48.dp))
+            .background(scheme.tertiaryContainer)
+            .clickable(interactionSource = interaction, indication = LocalIndication.current, role = Role.Button, onClick = onOpen)
+            .padding(start = 16.dp, end = 12.dp),
+    ) {
+        MorphingContainer(
+            from = MaterialShapes.Flower,
+            to = MaterialShapes.Cookie12Sided,
+            morphed = pressed,
+            color = scheme.tertiary,
+            modifier = Modifier.size(52.dp),
+        ) {
+            Icon(imageVector = Icons.Rounded.Draw, contentDescription = null, tint = scheme.onTertiary, modifier = Modifier.size(26.dp))
+        }
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.svg_home_title), style = MaterialTheme.typography.titleMediumEmphasized, color = scheme.onTertiaryContainer)
+            Text(
+                stringResource(R.string.svg_home_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onTertiaryContainer.copy(alpha = 0.8f),
+                maxLines = 2,
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        FilledIconButton(
+            onClick = onNew,
+            shapes = IconButtonDefaults.shapes(),
+            colors = IconButtonDefaults.filledIconButtonColors(containerColor = scheme.tertiary, contentColor = scheme.onTertiary),
+            modifier = Modifier.size(52.dp),
+        ) {
+            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.svg_home_blank), modifier = Modifier.size(28.dp))
+        }
     }
 }
 

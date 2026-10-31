@@ -59,6 +59,47 @@ fun eqColorMatrix(
     )
 }
 
+/**
+ * 4x5 colour matrix (as [eqColorMatrix]) equivalent to FFmpeg's `hue=h=`
+ * [degrees]: the chroma of BT.601 YUV turned by that angle, luma kept (red
+ * goes towards green as the angle grows). Null when nothing turns.
+ */
+fun hueColorMatrix(degrees: Float): FloatArray? {
+    val turn = ((degrees % 360f) + 360f) % 360f
+    if (turn < 0.5f || turn > 359.5f) return null
+    val a = Math.toRadians(turn.toDouble())
+    val cos = Math.cos(a)
+    val sin = Math.sin(a)
+    // RGB to YUV (Y, U, V rows), the chroma plane turned, back to RGB.
+    val toYuv = arrayOf(
+        doubleArrayOf(0.299, 0.587, 0.114),
+        doubleArrayOf(-0.168736, -0.331264, 0.5),
+        doubleArrayOf(0.5, -0.418688, -0.081312),
+    )
+    val toRgb = arrayOf(
+        doubleArrayOf(1.0, 0.0, 1.402),
+        doubleArrayOf(1.0, -0.344136, -0.714136),
+        doubleArrayOf(1.0, 1.772, 0.0),
+    )
+    val turned = Array(3) { row ->
+        when (row) {
+            0 -> toYuv[0]
+            1 -> DoubleArray(3) { k -> cos * toYuv[1][k] - sin * toYuv[2][k] }
+            else -> DoubleArray(3) { k -> sin * toYuv[1][k] + cos * toYuv[2][k] }
+        }
+    }
+    val result = FloatArray(20)
+    for (row in 0 until 3) {
+        for (column in 0 until 3) {
+            var value = 0.0
+            for (k in 0 until 3) value += toRgb[row][k] * turned[k][column]
+            result[row * 5 + column] = value.toFloat()
+        }
+    }
+    result[18] = 1f
+    return result
+}
+
 /** True when `eq` would be a no-op, so the preview can skip the colour filter. */
 fun isNeutralEq(brightness: Float, contrast: Float, saturation: Float): Boolean =
     brightness == 0f && contrast == 1f && saturation == 1f

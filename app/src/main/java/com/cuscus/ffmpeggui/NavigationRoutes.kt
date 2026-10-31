@@ -13,6 +13,11 @@ sealed class Screen(val route: String) {
     data object Settings : Screen("settings")
     data object About : Screen("about")
     data object Welcome : Screen("welcome")
+    /** The compressor: a file made smaller in one go. */
+    data object Compress : Screen("compress")
+    /** The voice of a file set apart from the rest of its sound, and the two mixed, in one go. */
+    /** The SVG editor: a drawing's shapes moved, sized, turned and arranged. */
+    data object SvgEditor : Screen("svg_editor")
 
     companion object {
         /** The page of one settings category. */

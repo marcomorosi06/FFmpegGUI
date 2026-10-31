@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Application
 import android.os.Bundle
 import com.cuscus.ffmpeggui.di.AppContainer
+import com.cuscus.ffmpeggui.effects.EffectLibrary
 import com.cuscus.ffmpeggui.media.FfmpegFonts
 import kotlin.concurrent.thread
 
@@ -35,10 +36,14 @@ class FfmpegGuiApp : Application() {
                 override fun onActivityDestroyed(activity: Activity) = Unit
             },
         )
+        // The effects' index (a small file); their copies are made below, off the main thread.
+        EffectLibrary.init(this)
         // Whatever an earlier run left in the cache is of no use any more.
         thread(name = "cache-sweep", isDaemon = true, priority = Thread.MIN_PRIORITY) {
+            EffectLibrary.ensureAll()
             container.scratchStorage.sweep()
             container.smartFeatures.transcriber.sweep()
+            container.smartFeatures.voiceSeparator.sweep()
             // Subtitles burnt in by libass find the phone's fonts through fontconfig.
             FfmpegFonts.configure(this)
         }

@@ -47,6 +47,8 @@ import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.VideoSettings
 import androidx.compose.material.icons.rounded.Balance
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Compress
@@ -71,7 +73,7 @@ import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Vibration
-import androidx.compose.material.icons.rounded.Wallpaper
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.rounded.WavingHand
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -122,6 +124,8 @@ import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
 import com.cuscus.ffmpeggui.ui.expressive.OptionTileRow
 import com.cuscus.ffmpeggui.ui.expressive.TileOption
 import com.cuscus.ffmpeggui.ui.theme.dynamicColorAvailable
+import com.cuscus.ffmpeggui.ui.theme.appColorScheme
+import androidx.compose.ui.graphics.luminance
 
 /*
  * The settings: a page of categories, each opening a page of its own, then the
@@ -132,6 +136,7 @@ import com.cuscus.ffmpeggui.ui.theme.dynamicColorAvailable
 /** The pages the settings are split into. */
 enum class SettingsCategory(val key: String) {
     APPEARANCE("appearance"),
+    EDITOR("editor"),
     VIBRATION("vibration"),
     EXPORTS("exports"),
     PROJECTS("projects"),
@@ -143,6 +148,7 @@ private class CategoryLook(val icon: ImageVector, val shape: RoundedPolygon, val
 
 private fun look(category: SettingsCategory): CategoryLook = when (category) {
     SettingsCategory.APPEARANCE -> CategoryLook(Icons.Rounded.Palette, MaterialShapes.Cookie9Sided, R.string.settings_appearance)
+    SettingsCategory.EDITOR -> CategoryLook(Icons.Rounded.VideoSettings, MaterialShapes.Gem, R.string.settings_editor)
     SettingsCategory.VIBRATION -> CategoryLook(Icons.Rounded.Vibration, MaterialShapes.SoftBurst, R.string.settings_vibration)
     SettingsCategory.EXPORTS -> CategoryLook(Icons.Rounded.SaveAlt, MaterialShapes.Clover4Leaf, R.string.settings_exports)
     SettingsCategory.PROJECTS -> CategoryLook(Icons.Rounded.History, MaterialShapes.Cookie7Sided, R.string.settings_projects)
@@ -155,6 +161,7 @@ private fun tone(category: SettingsCategory): ToneColors {
     val scheme = MaterialTheme.colorScheme
     return when (category) {
         SettingsCategory.APPEARANCE -> ToneColors(scheme.primaryContainer, scheme.onPrimaryContainer)
+        SettingsCategory.EDITOR -> ToneColors(scheme.secondaryContainer, scheme.onSecondaryContainer)
         SettingsCategory.VIBRATION -> ToneColors(scheme.tertiaryContainer, scheme.onTertiaryContainer)
         SettingsCategory.EXPORTS -> ToneColors(scheme.secondaryContainer, scheme.onSecondaryContainer)
         SettingsCategory.PROJECTS -> ToneColors(scheme.secondary, scheme.onSecondary)
@@ -330,7 +337,20 @@ private fun categorySummary(category: SettingsCategory, settings: AppSettings, s
     SettingsCategory.APPEARANCE -> stringResource(
         R.string.settings_appearance_summary,
         stringResource(themeLabel(settings.themeMode)),
-        stringResource(if (settings.dynamicColor && dynamicColorAvailable) R.string.settings_colors_wallpaper else R.string.settings_colors_teal),
+        stringResource(
+            when {
+                settings.monochrome -> R.string.settings_colors_monochrome
+                settings.dynamicColor && dynamicColorAvailable -> R.string.settings_colors_wallpaper
+                else -> R.string.settings_colors_teal
+            },
+        ),
+    )
+    SettingsCategory.EDITOR -> stringResource(
+        when (settings.landscapeLayout) {
+            LandscapeLayout.AUTO -> if (settings.clipWaveforms) R.string.settings_editor_summary_waves else R.string.settings_editor_summary_plain
+            LandscapeLayout.PLAYER_LEFT -> R.string.settings_landscape_left
+            LandscapeLayout.PLAYER_RIGHT -> R.string.settings_landscape_right
+        },
     )
     SettingsCategory.VIBRATION -> stringResource(if (settings.haptics) R.string.settings_on else R.string.settings_off)
     SettingsCategory.EXPORTS -> stringResource(
@@ -389,6 +409,11 @@ fun SettingsCategoryScreen(
     /** The smart features (the speech model and its test). */
     smart: SmartFeaturesUi? = null,
 ) {
+    // The smart features are a showcase of their own: a hub and a page per feature.
+    if (category == SettingsCategory.SMART && smart != null) {
+        SmartSettingsScreen(smart, onBack)
+        return
+    }
     val categoryLook = look(category)
     SettingsPage {
         SettingsHeader(
@@ -400,6 +425,7 @@ fun SettingsCategoryScreen(
         )
         when (category) {
             SettingsCategory.APPEARANCE -> AppearanceSettings(settings, onChange)
+            SettingsCategory.EDITOR -> EditorSettings(settings, onChange)
             SettingsCategory.VIBRATION -> VibrationSettings(settings, onChange)
             SettingsCategory.EXPORTS -> ExportSettings(
                 settings, onChange, exportsUsage, canDeleteExports, onDeleteExports,
@@ -407,7 +433,7 @@ fun SettingsCategoryScreen(
             )
             SettingsCategory.PROJECTS -> ProjectSettings(settings, onChange, projects, onDeleteProject, onDeleteAllProjects, onKeepProjects)
             SettingsCategory.NOTIFICATIONS -> NotificationSettings(settings, onChange)
-            SettingsCategory.SMART -> if (smart != null) SmartSettings(smart)
+            SettingsCategory.SMART -> Unit
         }
     }
 }
@@ -441,6 +467,68 @@ private fun AppearanceSettings(settings: AppSettings, onChange: ((AppSettings) -
             onSelect = { mode -> onChange { it.copy(themeMode = mode) } },
         )
     }
+    // Where the colours come from: three palettes, each shown by its own colours.
+    val context = LocalContext.current
+    val dark = scheme.surface.luminance() < 0.5f
+    val palette = when {
+        settings.monochrome -> Palette.MONOCHROME
+        settings.dynamicColor && dynamicColorAvailable -> Palette.WALLPAPER
+        else -> Palette.TEAL
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(scheme.surfaceContainerHigh)
+            .padding(16.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.settings_palette),
+            style = SettingsRowTitle,
+            color = scheme.onSurface,
+            modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+        )
+        Text(
+            text = stringResource(
+                when (palette) {
+                    Palette.WALLPAPER -> R.string.settings_dynamic_on
+                    Palette.TEAL -> if (dynamicColorAvailable) R.string.settings_dynamic_off else R.string.settings_dynamic_unavailable
+                    Palette.MONOCHROME -> R.string.settings_monochrome_summary
+                },
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = scheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, bottom = 10.dp),
+        )
+        OptionTileRow(
+            options = Palette.entries.filter { it != Palette.WALLPAPER || dynamicColorAvailable }.map { choice ->
+                val colors = remember(context, dark, choice) {
+                    appColorScheme(context, dark, dynamic = choice == Palette.WALLPAPER, monochrome = choice == Palette.MONOCHROME)
+                }
+                TileOption(
+                    value = choice,
+                    label = stringResource(
+                        when (choice) {
+                            Palette.WALLPAPER -> R.string.settings_palette_wallpaper
+                            Palette.TEAL -> R.string.settings_palette_teal
+                            Palette.MONOCHROME -> R.string.settings_palette_monochrome
+                        },
+                    ),
+                    preview = { PaletteSample(colors.primary, colors.secondary, colors.tertiary) },
+                )
+            },
+            selected = palette,
+            onSelect = { choice ->
+                onChange {
+                    when (choice) {
+                        Palette.WALLPAPER -> it.copy(dynamicColor = true, monochrome = false)
+                        Palette.TEAL -> it.copy(dynamicColor = false, monochrome = false)
+                        Palette.MONOCHROME -> it.copy(monochrome = true)
+                    }
+                }
+            },
+        )
+    }
     // The colours in use, live: they change as the switches below do.
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -469,25 +557,6 @@ private fun AppearanceSettings(settings: AppSettings, onChange: ((AppSettings) -
             { shape ->
                 SettingsSwitchRow(
                     shape = shape,
-                    icon = Icons.Rounded.Wallpaper,
-                    title = stringResource(R.string.settings_dynamic),
-                    summary = stringResource(
-                        when {
-                            !dynamicColorAvailable -> R.string.settings_dynamic_unavailable
-                            settings.dynamicColor -> R.string.settings_dynamic_on
-                            else -> R.string.settings_dynamic_off
-                        },
-                    ),
-                    checked = settings.dynamicColor && dynamicColorAvailable,
-                    onCheckedChange = { on -> onChange { it.copy(dynamicColor = on) } },
-                    badge = MaterialShapes.Cookie9Sided,
-                    colors = ToneColors(scheme.primaryContainer, scheme.onPrimaryContainer),
-                    enabled = dynamicColorAvailable,
-                )
-            },
-            { shape ->
-                SettingsSwitchRow(
-                    shape = shape,
                     icon = Icons.Rounded.InvertColors,
                     title = stringResource(R.string.settings_pure_black),
                     summary = stringResource(
@@ -498,6 +567,94 @@ private fun AppearanceSettings(settings: AppSettings, onChange: ((AppSettings) -
                     badge = MaterialShapes.Pill,
                     colors = ToneColors(scheme.inverseSurface, scheme.inverseOnSurface),
                     enabled = settings.themeMode != ThemeMode.LIGHT,
+                )
+            },
+        ),
+    )
+}
+
+/** Where the app's colours come from. */
+private enum class Palette { WALLPAPER, TEAL, MONOCHROME }
+
+/** A palette shown by its three accents, overlapping like swatches fanned out. */
+@Composable
+private fun PaletteSample(first: Color, second: Color, third: Color) {
+    Box(modifier = Modifier.fillMaxSize().padding(10.dp)) {
+        androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+            val r = size.minDimension * 0.3f
+            val cy = size.height / 2f
+            drawCircle(third, r, androidx.compose.ui.geometry.Offset(size.width / 2f + r * 0.95f, cy))
+            drawCircle(second, r, androidx.compose.ui.geometry.Offset(size.width / 2f, cy))
+            drawCircle(first, r, androidx.compose.ui.geometry.Offset(size.width / 2f - r * 0.95f, cy))
+        }
+    }
+}
+
+// -- Editor -------------------------------------------------------------------------------
+
+/** How the editors look and lay themselves out. */
+@Composable
+private fun EditorSettings(settings: AppSettings, onChange: ((AppSettings) -> AppSettings) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    // Where the player goes on a screen wider than it is tall: three pictures that morph when chosen.
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(scheme.surfaceContainerHigh)
+            .padding(16.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.settings_landscape),
+            style = SettingsRowTitle,
+            color = scheme.onSurface,
+            modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+        )
+        Text(
+            text = stringResource(
+                when (settings.landscapeLayout) {
+                    LandscapeLayout.AUTO -> R.string.settings_landscape_auto_summary
+                    LandscapeLayout.PLAYER_LEFT -> R.string.settings_landscape_left_summary
+                    LandscapeLayout.PLAYER_RIGHT -> R.string.settings_landscape_right_summary
+                },
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = scheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, bottom = 10.dp),
+        )
+        OptionTileRow(
+            options = LandscapeLayout.entries.map { layout ->
+                TileOption(
+                    value = layout,
+                    label = stringResource(
+                        when (layout) {
+                            LandscapeLayout.AUTO -> R.string.settings_landscape_auto
+                            LandscapeLayout.PLAYER_LEFT -> R.string.settings_landscape_left
+                            LandscapeLayout.PLAYER_RIGHT -> R.string.settings_landscape_right
+                        },
+                    ),
+                    preview = { color -> com.cuscus.ffmpeggui.LayoutSample(layout, color) },
+                )
+            },
+            selected = settings.landscapeLayout,
+            onSelect = { layout -> onChange { it.copy(landscapeLayout = layout) } },
+        )
+    }
+    SettingsGroup(
+        title = stringResource(R.string.settings_editor_timeline),
+        rows = listOf<@Composable (Shape) -> Unit>(
+            { shape ->
+                SettingsSwitchRow(
+                    shape = shape,
+                    icon = Icons.Rounded.GraphicEq,
+                    title = stringResource(R.string.settings_clip_waveforms),
+                    summary = stringResource(
+                        if (settings.clipWaveforms) R.string.settings_clip_waveforms_on else R.string.settings_clip_waveforms_off,
+                    ),
+                    checked = settings.clipWaveforms,
+                    onCheckedChange = { on -> onChange { it.copy(clipWaveforms = on) } },
+                    badge = MaterialShapes.Sunny,
+                    colors = ToneColors(scheme.tertiaryContainer, scheme.onTertiaryContainer),
                 )
             },
         ),

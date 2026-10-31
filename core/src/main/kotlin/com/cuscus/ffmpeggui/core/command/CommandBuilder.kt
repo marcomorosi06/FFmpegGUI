@@ -1,8 +1,14 @@
 package com.cuscus.ffmpeggui.core.command
 
+import com.cuscus.ffmpeggui.core.voice.VoiceStem
+
 import com.cuscus.ffmpeggui.core.audio.STEREO_UPMIX
 import com.cuscus.ffmpeggui.core.image.borderPixels
+import com.cuscus.ffmpeggui.core.image.cornerFilters
+import com.cuscus.ffmpeggui.core.image.roundsCorners
 import com.cuscus.ffmpeggui.core.image.editedSize
+import com.cuscus.ffmpeggui.core.image.fittedPhoto
+import com.cuscus.ffmpeggui.core.image.pictureSize
 import com.cuscus.ffmpeggui.core.image.pictureFrameMs
 import com.cuscus.ffmpeggui.core.image.imageStages
 import com.cuscus.ffmpeggui.core.model.TransitionKind
@@ -15,6 +21,7 @@ import com.cuscus.ffmpeggui.core.model.sequenceFormat
 import com.cuscus.ffmpeggui.core.model.HardwareEncoder
 import com.cuscus.ffmpeggui.core.model.ImagePlacement
 import com.cuscus.ffmpeggui.core.model.KeyProperty
+import com.cuscus.ffmpeggui.core.model.LayerBlend
 import com.cuscus.ffmpeggui.core.model.MotionKind
 import com.cuscus.ffmpeggui.core.model.OutputFormat
 import com.cuscus.ffmpeggui.core.model.Resolution
@@ -49,10 +56,28 @@ class CommandBuilder(fonts: FontProvider) {
     private val audioFilters = AudioFilters()
 
     fun build(request: ConversionRequest, paths: MediaPaths): FfmpegCommand {
-        return buildFor(request.withStillsForward(), paths)
+        return buildFor(request.withStillsForward(), paths, pass = 0)
     }
 
-    private fun buildFor(request: ConversionRequest, paths: MediaPaths): FfmpegCommand {
+    /**
+     * True when the compressor's video is made in two x265 passes (to fit a
+     * size): [buildFirstPass] runs before [build].
+     */
+    fun needsFirstPass(request: ConversionRequest): Boolean = request.twoPassVideo()
+
+    /**
+     * The first of the two x265 passes: the very command of the second, its
+     * video measured into the stats file ([MediaPaths.passLog]) and nothing
+     * written.
+     */
+    fun buildFirstPass(request: ConversionRequest, paths: MediaPaths): FfmpegCommand {
+        require(needsFirstPass(request)) { "No first pass is needed" }
+        val args = buildFor(request.withStillsForward(), paths, pass = 1).arguments.toMutableList()
+        args.removeAt(args.lastIndex)
+        return FfmpegCommand(args + listOf("-f", "null", "-"))
+    }
+
+    private fun buildFor(request: ConversionRequest, paths: MediaPaths, pass: Int): FfmpegCommand {
         require(request.format != OutputFormat.CUSTOM || request.frameExtraction != FrameExtraction.Disabled) {
             "The custom format requires a hand-written command"
         }
@@ -70,10 +95,32 @@ class CommandBuilder(fonts: FontProvider) {
                 if (request.encoding.streamCopy && request.sources.none { it.isStill }) {
                     streamCopy(request, paths)
                 } else {
-                    transcode(request, paths)
+                    transcode(request, paths, pass)
                 }
         }
-        return FfmpegCommand(args)
+        return FfmpegCommand(oneMovFlags(args))
+    }
+
+    /**
+     * [args] with every "-movflags" made one (at the last one's place): FFmpeg
+     * keeps only the last, so "+faststart" from the compressor and
+     * "+use_metadata_tags" from the tags would otherwise undo each other.
+     */
+    internal fun oneMovFlags(args: List<String>): List<String> {
+        val at = args.indices.filter { args[it] == "-movflags" && it + 1 < args.size }
+        if (at.size < 2) return args
+        val flags = at.flatMap { i -> args[i + 1].split('+').filter { it.isNotBlank() } }.distinct()
+        val out = ArrayList<String>(args.size)
+        var i = 0
+        while (i < args.size) {
+            if (i in at) {
+                if (i == at.last()) out += listOf("-movflags", flags.joinToString("") { "+$it" })
+                i += 2
+            } else {
+                out += args[i++]
+            }
+        }
+        return out
     }
 
     /**
@@ -105,8 +152,9 @@ class CommandBuilder(fonts: FontProvider) {
             !(request.encoding.streamCopy && request.sources.none { it.isStill }) &&
             request.frameExtraction == FrameExtraction.Disabled &&
             request.segmenting() == null &&
-            // An HDR video is encoded by x265, in 10 bits.
-            !hdrOutput(request)
+            // An HDR video is encoded by x265, in 10 bits; so is the compressor's.
+            !hdrOutput(request) &&
+            request.compression == null
 
     /** The same request encoded by x264: what the engine falls back on when the phone's encoder fails. */
     fun withoutHardwareEncoder(request: ConversionRequest): ConversionRequest =
@@ -268,14 +316,14 @@ class CommandBuilder(fonts: FontProvider) {
             // An audio file keeps only the sound: no video, nor the cover the source may have.
             request.format.isAudioOnly -> args += "-vn"
         }
-        args += coverArguments(cover, coverInput = 1, request.format, copyPicture = false)
+        args += coverArguments(cover, coverInput = 1, request.format, copyPicture = false, stripAll = request.metadata.stripAll)
         args += metadata(request)
         args += segmenting(request, forceKeyFrames = false)
         args += paths.output
         return args
     }
 
-    private fun transcode(request: ConversionRequest, paths: MediaPaths): List<String> {
+    private fun transcode(request: ConversionRequest, paths: MediaPaths, pass: Int = 0): List<String> {
         val format = request.format
         val outputSeconds = request.expectedOutputDurationMs()?.let { it / 1000.0 }
 
@@ -334,9 +382,9 @@ class CommandBuilder(fonts: FontProvider) {
             val graph = footage.graph.toMutableList()
             if (format.hasVideo) {
                 graph += if (wholeOverlays.isEmpty()) {
-                    videoGraph(footage.video, videoChain, videoTail, wholeOverlays, wholeFrameWidth(request))
+                    videoGraph(footage.video, videoChain, videoTail, wholeOverlays, wholeFrameSize(request))
                 } else {
-                    videoGraph(footage.video, videoBefore, videoTail, wholeOverlays, wholeFrameWidth(request), videoCaptions, videoAfter)
+                    videoGraph(footage.video, videoBefore, videoTail, wholeOverlays, wholeFrameSize(request), videoCaptions, videoAfter)
                 }
             }
             if (sounds.isNotEmpty()) {
@@ -398,12 +446,13 @@ class CommandBuilder(fonts: FontProvider) {
             hardwareKbps = if (usesHardwareEncoder(request)) hardwareKbps(request) else null,
             x264Preset = request.encoding.cpuSpeed.preset,
             hdr = hdrOutput(request),
+            x265 = x265For(request, paths, pass),
         )
         // HDR kept or made: the video says so, whatever the filters left on its frames.
         (keptHdr(request) ?: VideoHdr.HLG.takeIf { hdrLookOut(request) != null })?.let { hdr ->
             args += listOf("-color_primaries", "bt2020", "-color_trc", hdr.transfer.orEmpty(), "-colorspace", "bt2020nc")
         }
-        args += coverArguments(cover, coverInput, format, copyPicture = true)
+        args += coverArguments(cover, coverInput, format, copyPicture = true, stripAll = request.metadata.stripAll)
         if (format.hasAudio) args += metadata(request)
         args += segmenting(request, forceKeyFrames = format.hasVideo)
         args += paths.output
@@ -483,12 +532,21 @@ class CommandBuilder(fonts: FontProvider) {
         // HDR footage tone mapped first (see VideoHdr).
         val width = source.width.takeIf { it > 0 } ?: DEFAULT_IMAGE_SIDE
         val height = source.height.takeIf { it > 0 } ?: DEFAULT_IMAGE_SIDE
-        val picture = toneMapFilters(source.hdr, "gbrp") + "format=rgb24" + imageStages(edit, request.effects, width, height).map { it.filter }
+        val stages = imageStages(edit, request.effects, width, height)
+        // A picture with transparent parts of its own, saved in a format that keeps them: its
+        // steps read it opaque as always, while its alpha goes through the same geometry and is
+        // multiplied back in at the end (see withSourceAlpha, the preview's port of it).
+        val ownAlpha = request.keepsPictureAlpha
+        val picture = toneMapFilters(source.hdr, "gbrp") + "format=rgb24" + stages.map { it.filter } +
+            (if (ownAlpha) listOf(OWN_ALPHA_MERGE) else emptyList())
+        val transparent = edit.isTransparent || ownAlpha
         // Captions and pictures stacked in their order, as in a video.
         val captions = request.wholeTextOverlays.filter { it.text.isNotBlank() }.map { it.layer to videoFilters.drawtext(it, timed = false) }
         // An Ultra HDR picture is also written losslessly as it comes out, and without what
         // lies on it (see HdrPictures): the picture is split before the captions.
-        val hdr = paths.hdrPictures?.takeIf { request.format == OutputFormat.JPG }
+        val hdr = paths.hdrPictures?.takeIf { request.format == OutputFormat.JPG && edit.canvas == null }
+        // A canvas of its own: the file is the canvas, the picture one of its layers.
+        val canvas = edit.canvas?.sane()
 
         val (editedW, editedH) = editedSize(edit, request.effects, width, height)
         val tail = mutableListOf<String>()
@@ -506,23 +564,77 @@ class CommandBuilder(fonts: FontProvider) {
             tail += scale
             plainTail += scale
         }
+        // Rounded corners last, on the whole picture at its size, filled as chosen (by default
+        // transparent where the format holds it, black elsewhere; an Ultra HDR JPG rounds both
+        // its pictures alike).
+        val rounded = roundsCorners(edit.corners)
+        val corners = cornerFilters(edit.corners, edit.cornerFillFor(request.format), keepAlpha = request.format.holdsTransparency)
+        tail += corners
+        plainTail += corners
+        // The compressor's PNG in 256 colours, after everything else.
+        val palette = request.compression?.pngPalette == true && request.format == OutputFormat.PNG
+        if (palette) tail += PNG_PALETTE_FILTER
 
         // One picture has no clock: every picture lies on it, whole, without fades.
         val overlays = pictures.mapIndexed { index, placement ->
-            OverlayInput(1 + index, placement.copy(startMs = 0L, endMs = null, fadeInSeconds = 0f, fadeOutSeconds = 0f, video = null))
+            OverlayInput("${1 + index}:v", placement.copy(startMs = 0L, endMs = null, fadeInSeconds = 0f, fadeOutSeconds = 0f, video = null))
         }
         val graph = mutableListOf<String>()
-        if (hdr == null) {
-            graph += overlayGraph("0:v", picture, overlays, prefix = "w", output = if (tail.isEmpty()) VIDEO_OUT else "pic", frameWidth = editedW, keepAlpha = edit.isTransparent, captions = captions)
+        if (canvas != null) {
+            // The canvas, one frame of its colour (transparent: black, see-through).
+            val fill = canvas.background?.let { argb ->
+                val alpha = ((argb ushr 24) and 0xFF).toInt()
+                // A format without transparency gets an opaque canvas: what is see-through becomes white.
+                if (request.format.holdsTransparency) String.format(java.util.Locale.US, "0x%06X%02X", argb and 0xFFFFFF, alpha) else String.format(java.util.Locale.US, "0x%06X", argb and 0xFFFFFF)
+            } ?: if (request.format.holdsTransparency) "black@0" else "white"
+            graph += "color=c=$fill:s=${canvas.width}x${canvas.height}:r=1:d=1,format=rgba[$CANVAS]"
+            // The picture made as always (with its own transparency put back), then laid as a layer.
+            val input = if (ownAlpha) {
+                graph += "[0:v]format=rgba,split[$OWN_PICTURE][$OWN_ALPHA_IN]"
+                graph += "[$OWN_ALPHA_IN]" + (listOf("alphaextract") + stages.filter { it.isGeometry }.map { it.filter }).joinToString(",") + "[$OWN_ALPHA]"
+                OWN_PICTURE
+            } else {
+                "0:v"
+            }
+            graph += "[$input]${picture.joinToString(",")}[$PHOTO]"
+            val (pictureW, pictureH) = pictureSize(edit, request.effects, width, height)
+            val photo = (request.photoPlacement ?: fittedPhoto(canvas, pictureW, pictureH))
+                .copy(clipId = null, startMs = 0L, endMs = null, fadeInSeconds = 0f, fadeOutSeconds = 0f, video = null)
+            graph += overlayGraph(
+                CANVAS,
+                emptyList(),
+                listOf(OverlayInput(PHOTO, photo)) + overlays,
+                prefix = "w",
+                output = if (tail.isEmpty()) VIDEO_OUT else "pic",
+                frameWidth = canvas.width,
+                frameHeight = canvas.height,
+                // Mixed in RGB, so that the colours stay as they are, and the canvas's transparency kept.
+                keepAlpha = true,
+                captions = captions,
+            )
+            if (tail.isNotEmpty()) graph += "[pic]${tail.joinToString(",")}[$VIDEO_OUT]"
+        } else if (hdr == null) {
+            val input = if (ownAlpha) {
+                graph += "[0:v]format=rgba,split[$OWN_PICTURE][$OWN_ALPHA_IN]"
+                graph += "[$OWN_ALPHA_IN]" + (listOf("alphaextract") + stages.filter { it.isGeometry }.map { it.filter }).joinToString(",") + "[$OWN_ALPHA]"
+                OWN_PICTURE
+            } else {
+                "0:v"
+            }
+            graph += overlayGraph(input, picture, overlays, prefix = "w", output = if (tail.isEmpty()) VIDEO_OUT else "pic", frameWidth = editedW, frameHeight = editedH, keepAlpha = transparent, captions = captions)
             if (tail.isNotEmpty()) graph += "[pic]${tail.joinToString(",")}[$VIDEO_OUT]"
         } else {
             graph += "[0:v]${picture.joinToString(",")},split[$HDR_ALL][$HDR_PLAIN_IN]"
-            graph += overlayGraph(HDR_ALL, emptyList(), overlays, prefix = "w", output = "pic", frameWidth = editedW, captions = captions)
+            graph += overlayGraph(HDR_ALL, emptyList(), overlays, prefix = "w", output = "pic", frameWidth = editedW, frameHeight = editedH, captions = captions)
             graph += "[pic]${(tail + "split").joinToString(",")}[$VIDEO_OUT][$HDR_FINAL]"
             graph += "[$HDR_PLAIN_IN]${plainTail.joinOrPassthrough("null")}[$HDR_PLAIN]"
         }
         args += listOf("-filter_complex", graph.joinToString(";"), "-map", "[$VIDEO_OUT]", "-frames:v", "1", "-update", "1")
-        args += imageEncoderArguments(request.format, edit.output.quality, alpha = edit.isTransparent && request.format.holdsTransparency)
+        val canvasAlpha = canvas != null && canvas.seeThrough
+        args += imageEncoderArguments(request.format, edit.output.quality, alpha = (transparent || rounded || canvasAlpha) && request.format.holdsTransparency, palette = palette)
+        // The compressor's PNG (or the PNG a WEBP is made from) as small as deflate makes it.
+        // (A palette picture is best left unfiltered.)
+        if (request.compression != null && request.format == OutputFormat.PNG) args += if (palette) PNG_PALETTE_STRONGEST else PNG_STRONGEST
         args += paths.output
         if (hdr != null) {
             for ((label, path) in listOf(HDR_FINAL to hdr.finalPng, HDR_PLAIN to hdr.plainPng)) {
@@ -601,7 +713,21 @@ class CommandBuilder(fonts: FontProvider) {
             )
         }
 
-        val inputArguments = segments.flatMap { seekedInput(it, request, paths, limitWithDuration = true) } + overlayArguments
+        // A clip whose voice and rest are set apart takes its sound from its file's stems (see
+        // VoiceStem), read from the same part of that file: an input of its own, after the pictures.
+        val stemInputs = HashMap<Int, Int>()
+        val stemArguments = mutableListOf<String>()
+        if (withAudio && clipEffects) {
+            segments.forEachIndexed { index, segment ->
+                val source = request.sources[segment.source]
+                val stem = source.voiceStem
+                if (stem != null && segment.effects.splitsVoice && source.hasAudio && !source.isStill) {
+                    stemInputs[index] = segments.size + overlayCount + stemInputs.size
+                    stemArguments += stemInput(segment, stem)
+                }
+            }
+        }
+        val inputArguments = segments.flatMap { seekedInput(it, request, paths, limitWithDuration = true) } + overlayArguments + stemArguments
         val firstOverlayInput = segments.size
         val graph = mutableListOf<String>()
 
@@ -664,6 +790,7 @@ class CommandBuilder(fonts: FontProvider) {
                             prefix = "c$index",
                             output = if (tail.isEmpty()) label else "co$index",
                             frameWidth = clipFrame(request, segment)?.first ?: DEFAULT_IMAGE_SIDE,
+                            frameHeight = clipFrame(request, segment)?.second ?: 0,
                             captions = captions,
                             post = fades,
                         )
@@ -684,7 +811,10 @@ class CommandBuilder(fonts: FontProvider) {
                 }
             }
             if (audio) {
-                val chain = if (clipEffects) {
+                val stemInput = stemInputs[index]
+                val input = if (stemInput != null) "$stemInput:a" else "$index:a"
+                val stemMix = if (stemInput != null) listOf(VoiceStem.panFilter(segment.effects.voiceLevel, segment.effects.backgroundLevel)) else emptyList()
+                val chain = stemMix + if (clipEffects) {
                     audioFilters.clipChain(segment.effects, playedSeconds, times.sound, footageSeconds, label = "ac$index")
                 } else {
                     emptyList()
@@ -697,11 +827,11 @@ class CommandBuilder(fonts: FontProvider) {
                     }
                     // A cross-fade needs both sounds in one rate and layout.
                     transitions -> {
-                        graph += "[$index:a]${(chain + TRANSITION_SOUND).joinToString(",")}[sa$index]"
+                        graph += "[$input]${(chain + TRANSITION_SOUND).joinToString(",")}[sa$index]"
                         concatInputs.append("[sa$index]")
                     }
                     chain.isNotEmpty() -> {
-                        graph += "[$index:a]${chain.joinToString(",")}[sa$index]"
+                        graph += "[$input]${chain.joinToString(",")}[sa$index]"
                         concatInputs.append("[sa$index]")
                     }
                     else -> concatInputs.append("[$index:a]")
@@ -722,7 +852,7 @@ class CommandBuilder(fonts: FontProvider) {
 
         return Footage(
             inputArguments = inputArguments,
-            inputCount = segments.size + overlayCount,
+            inputCount = segments.size + overlayCount + stemInputs.size,
             graph = graph,
             video = VIDEO_JOINED,
             audio = if (audio) AUDIO_JOINED else null,
@@ -762,6 +892,19 @@ class CommandBuilder(fonts: FontProvider) {
             }
         }
         args += listOf("-i", paths.inputs[segment.source])
+        return args
+    }
+
+    /**
+     * The stems of a clip's file (see VoiceStem) as an input, from the same
+     * part of the file as the clip: a WAV or FLAC file seeks to the sample.
+     */
+    private fun stemInput(segment: Segment, path: String): List<String> {
+        val args = mutableListOf<String>()
+        if (segment.startMs > 0) args += listOf("-ss", formatTimecode(segment.startMs))
+        val end = segment.endMs
+        if (end != null) args += listOf("-t", formatTimecode((end - segment.startMs).coerceAtLeast(0L)))
+        args += listOf("-i", path)
         return args
     }
 
@@ -809,6 +952,12 @@ class CommandBuilder(fonts: FontProvider) {
      */
     private fun overlayInputArguments(placement: ImagePlacement, path: String): List<String> {
         val video = placement.video
+        if (video != null && placement.clipId == null && video.loop) {
+            // The whole file over and over, for as long as it shows (to the end of the video when open).
+            val args = mutableListOf("-stream_loop", "-1")
+            placement.endMs?.let { end -> args += listOf("-t", formatTimecode((end - placement.startMs.coerceAtLeast(0L)).coerceAtLeast(1L))) }
+            return args + listOf("-i", path)
+        }
         if (video != null && placement.clipId == null) {
             val args = mutableListOf<String>()
             if (video.trimStartMs > 0) args += listOf("-ss", formatTimecode(video.trimStartMs))
@@ -830,6 +979,17 @@ class CommandBuilder(fonts: FontProvider) {
      * scale2ref closed the video it measured against once the single frame of a
      * picture was through, and the export waited for frames forever.
      */
+    /**
+     * The scale of a picture filling a frame [frameWidth] x [frameHeight] (even
+     * sides), its shape kept and what overflows cut evenly from both sides.
+     */
+    private fun coverScale(frameWidth: Int, frameHeight: Int): String {
+        val width = (frameWidth.coerceAtLeast(2) / 2) * 2
+        if (frameHeight <= 0) return "scale=w=$width:h='max(2,trunc(ow/dar/2)*2)'"
+        val height = (frameHeight.coerceAtLeast(2) / 2) * 2
+        return "scale=w=$width:h=$height:force_original_aspect_ratio=increase,crop=w=$width:h=$height"
+    }
+
     private fun overlayScale(frameWidth: Int, fraction: Float): String {
         val width = (Math.floor(frameWidth.coerceAtLeast(2) * fraction / 2.0) * 2).toInt().coerceAtLeast(2)
         return "scale=w=$width:h='max(2,trunc(ow/dar/2)*2)'"
@@ -871,11 +1031,18 @@ class CommandBuilder(fonts: FontProvider) {
      * on its canvas as the whole video is, at the output's height. Worked out as
      * the filters do it; [DEFAULT_IMAGE_SIDE] when the files' sizes are not known.
      */
-    internal fun wholeFrameWidth(request: ConversionRequest): Int {
+    internal fun wholeFrameWidth(request: ConversionRequest): Int = wholeFrameSize(request).first
+
+    /**
+     * Width and height of the frame the pictures of the whole video land on (see
+     * [wholeFrameWidth]); the height is 0 when the files' sizes are not known.
+     */
+    internal fun wholeFrameSize(request: ConversionRequest): Pair<Int, Int> {
+        val unknown = DEFAULT_IMAGE_SIDE to 0
         val segments = request.segments
-        val first = segments.firstOrNull() ?: return DEFAULT_IMAGE_SIDE
-        val source = request.sources.getOrNull(first.source) ?: return DEFAULT_IMAGE_SIDE
-        if (source.width <= 0 || source.height <= 0) return DEFAULT_IMAGE_SIDE
+        val first = segments.firstOrNull() ?: return unknown
+        val source = request.sources.getOrNull(first.source) ?: return unknown
+        if (source.width <= 0 || source.height <= 0) return unknown
         // As footage(): one untouched clip as it is; clips of other files or of other
         // shapes fitted into the first file's frame (even sides); else the first clip's.
         val joined = when {
@@ -894,18 +1061,27 @@ class CommandBuilder(fonts: FontProvider) {
         }
         val gif = request.encoding.gif
         when {
-            request.format == OutputFormat.GIF -> if (gif.width > 0) w = minOf(w, gif.width)
+            request.format == OutputFormat.GIF -> if (gif.width > 0 && gif.width < w) {
+                // scale=width:-2, as FFmpeg rounds it.
+                h = (Math.round(gif.width.toDouble() * h / (w * 2.0)) * 2).toInt()
+                w = gif.width
+            }
             request.encoding.resolution != Resolution.ORIGINAL && h > 0 -> {
                 // scale=-2:height, as FFmpeg rounds it.
                 val height = request.encoding.resolution.height
                 w = (Math.round(height.toDouble() * w / (h * 2.0)) * 2).toInt()
+                h = height
             }
         }
-        return w.coerceAtLeast(2)
+        return w.coerceAtLeast(2) to h.coerceAtLeast(2)
     }
 
     /** A picture overlay and the input it is read from. */
-    private data class OverlayInput(val input: Int, val placement: ImagePlacement)
+    /**
+     * A picture overlay and the stream it is read from: an input's ("1:v"), or a
+     * link of the graph (the picture itself on its canvas, see [PHOTO]).
+     */
+    private data class OverlayInput(val source: String, val placement: ImagePlacement)
 
     private fun overlayInputs(request: ConversionRequest, paths: MediaPaths, footage: Footage): List<OverlayInput> =
         overlayInputs(request, paths, footage.firstOverlayInput)
@@ -914,7 +1090,7 @@ class CommandBuilder(fonts: FontProvider) {
         require(paths.imageOverlays.size == request.imageOverlays.size) {
             "Expected ${request.imageOverlays.size} overlay paths, got ${paths.imageOverlays.size}"
         }
-        return request.imageOverlays.mapIndexed { index, placement -> OverlayInput(firstInput + index, placement) }
+        return request.imageOverlays.mapIndexed { index, placement -> OverlayInput("${firstInput + index}:v", placement) }
     }
 
     /**
@@ -927,12 +1103,12 @@ class CommandBuilder(fonts: FontProvider) {
         chain: List<String>,
         tail: String?,
         overlays: List<OverlayInput>,
-        frameWidth: Int,
+        frame: Pair<Int, Int>,
         captions: List<Pair<Int, String>> = emptyList(),
         post: List<String> = emptyList(),
     ): List<String> {
         val lastLabel = if (tail == null) VIDEO_OUT else "vpre"
-        val segments = overlayGraph(input, chain, overlays, prefix = "w", output = lastLabel, frameWidth = frameWidth, captions = captions, post = post).toMutableList()
+        val segments = overlayGraph(input, chain, overlays, prefix = "w", output = lastLabel, frameWidth = frame.first, frameHeight = frame.second, captions = captions, post = post).toMutableList()
         if (tail != null) segments += "[$lastLabel]$tail[$VIDEO_OUT]"
         return segments
     }
@@ -952,6 +1128,8 @@ class CommandBuilder(fonts: FontProvider) {
         output: String,
         /** Width in pixels of the frame the pictures land on (see [wholeFrameWidth]). */
         frameWidth: Int,
+        /** Its height, 0 when not known (a cover fill is then as wide as the frame). */
+        frameHeight: Int = 0,
         /** The picture below has transparent parts to keep (a cut-out picture file). */
         keepAlpha: Boolean = false,
         captions: List<Pair<Int, String>> = emptyList(),
@@ -994,6 +1172,7 @@ class CommandBuilder(fonts: FontProvider) {
             if (placement.adjustsColor) {
                 prepared += fmt("eq=brightness=%.2f:contrast=%.2f:saturation=%.2f", placement.brightness, placement.contrast, placement.saturation)
             }
+            if (placement.turnsHue) prepared += fmt("hue=h=%.1f", placement.hueDegrees)
             if (placement.flipHorizontal) prepared += "hflip"
             if (placement.flipVertical) prepared += "vflip"
             // A colour cut out of it lets what it lies on show through; its own transparent
@@ -1005,10 +1184,10 @@ class CommandBuilder(fonts: FontProvider) {
             }
             // The part of it that shows, as it shows (mirrored, keyed): what is sized and placed.
             placement.look.crop?.takeIf { placement.look.crops }?.let { prepared += overlayCropFilter(it) }
-            var source = "${overlay.input}:v"
+            var source = overlay.source
             if (prepared.isNotEmpty()) {
                 source = "${prefix}ovp$index"
-                segments += "[${overlay.input}:v]${prepared.joinToString(",")}[$source]"
+                segments += "[${overlay.source}]${prepared.joinToString(",")}[$source]"
             }
 
             if (placement.animated) {
@@ -1027,7 +1206,8 @@ class CommandBuilder(fonts: FontProvider) {
             // Sized as a fraction of the frame it lands on, whose width is worked out here
             // (scale2ref, which would read it, never ends in the bundled FFmpeg 6.1.6 once
             // the picture's single frame is over: see overlayScale).
-            segments += "[$source]${overlayScale(frameWidth, fraction)}[$scaled]"
+            val cover = placement.cover && timed
+            segments += "[$source]" + (if (cover) coverScale(frameWidth, frameHeight) else overlayScale(frameWidth, fraction)) + "[$scaled]"
             // Its look, at the size it shows: blur, shape, outline and shadow.
             val looked = if (decorated) "${prefix}ovl$index" else scaled
             if (decorated) {
@@ -1040,9 +1220,11 @@ class CommandBuilder(fonts: FontProvider) {
             }
             var shown = picture
             if (placement.fades) {
-                // Made once, then repeated as a stream of frames whose opacity can change.
+                // A picture is made once, then repeated as a stream of frames whose opacity can
+                // change; a video is already one.
                 shown = "${prefix}ovf$index"
-                segments += "[$picture]${(listOf(STILL_LOOP) + overlayFades(placement)).joinToString(",")}[$shown]"
+                val repeat = if (video == null) listOf(STILL_LOOP) else emptyList()
+                segments += "[$picture]${(repeat + overlayFades(placement)).joinToString(",")}[$shown]"
             }
             // A turn, after sizing (the width fraction is that of the upright picture); the
             // frame grows to hold the turned picture and the corners stay transparent.
@@ -1053,16 +1235,22 @@ class CommandBuilder(fonts: FontProvider) {
                 segments += "[$shown]format=rgba,rotate=$radians:ow=rotw($radians):oh=roth($radians):c=none[$turned]"
                 shown = turned
             }
-            val x = keys.valueAt(KeyProperty.X, 0L, placement.x).coerceIn(ImagePlacement.POSITION_MIN, ImagePlacement.POSITION_MAX)
-            val y = keys.valueAt(KeyProperty.Y, 0L, placement.y).coerceIn(ImagePlacement.POSITION_MIN, ImagePlacement.POSITION_MAX)
+            // A cover fill lies in the middle (it is the frame's size, or overflows it evenly).
+            val x = if (cover) 0.5f else keys.valueAt(KeyProperty.X, 0L, placement.x).coerceIn(ImagePlacement.POSITION_MIN, ImagePlacement.POSITION_MAX)
+            val y = if (cover) 0.5f else keys.valueAt(KeyProperty.Y, 0L, placement.y).coerceIn(ImagePlacement.POSITION_MIN, ImagePlacement.POSITION_MAX)
             val window = if (placement.clipId == null) enableExpression(placement.startMs, placement.endMs) else null
-            segments += "[$previous][$shown]overlay=" +
-                fmt("x=(W-w)*%.4f:y=(H-h)*%.4f", x, y) +
-                (if (window != null) ":enable='$window'" else "") +
-                (if (placement.fades && video == null) ":shortest=1" else "") +
-                (if (keepAlpha) ":format=auto" else "") +
-                (if (video != null) ":eof_action=pass" else "") +
-                "[$next]"
+            segments += layOver(
+                main = previous,
+                top = shown,
+                place = fmt("x=(W-w)*%.4f:y=(H-h)*%.4f", x, y) +
+                    (if (window != null) ":enable='$window'" else "") +
+                    (if (placement.fades && video == null) ":shortest=1" else ""),
+                tail = if (video != null) ":eof_action=pass" else "",
+                output = next,
+                blend = placement.blend,
+                label = "${prefix}bd$index",
+                keepAlpha = keepAlpha,
+            )
             previous = next
         }
         if (post.isNotEmpty()) segments += "[$endLabel]${post.joinToString(",")}[$output]"
@@ -1231,12 +1419,53 @@ class CommandBuilder(fonts: FontProvider) {
         }
         val window = if (whole) enableExpression(placement.startMs, placement.endMs) else null
         // A looped picture ends with what it lies on; a video simply stops showing.
-        segments += "[$main][$ready]overlay=$place" +
-            (if (window != null) ":enable='$window'" else "") +
-            (if (placement.video != null && whole) ":eof_action=pass" else ":shortest=1") +
-            (if (keepAlpha) ":format=auto" else "") +
-            "[$output]"
+        segments += layOver(
+            main = main,
+            top = ready,
+            place = place +
+                (if (window != null) ":enable='$window'" else "") +
+                (if (placement.video != null && whole) ":eof_action=pass" else ":shortest=1"),
+            tail = "",
+            output = output,
+            blend = placement.blend,
+            label = "${label}bd",
+            keepAlpha = keepAlpha,
+        )
         return segments
+    }
+
+    /**
+     * [top] laid on [main] into [output]: `overlay` with [place] (where and
+     * when, then [tail]) for a NORMAL picture. Blended ([blend]), the picture is
+     * first laid on a see-through copy of [main] (so that it moves, turns and
+     * shows exactly as it would), the two are mixed by `blend` in planar RGB, the
+     * picture on top, and the mix is kept only where the picture is, as much as
+     * it is opaque: what lies under it times (1 - alpha) plus the mix times alpha,
+     * as Android composites a layer with a blend mode. [label] keeps the links
+     * unique.
+     */
+    private fun layOver(
+        main: String,
+        top: String,
+        place: String,
+        tail: String,
+        output: String,
+        blend: LayerBlend,
+        label: String,
+        keepAlpha: Boolean,
+    ): List<String> {
+        val mode = blend.ffmpegMode
+            ?: return listOf("[$main][$top]overlay=$place" + (if (keepAlpha) ":format=auto" else "") + "$tail[$output]")
+        return listOf(
+            "[$main]split=3[${label}b][${label}c][${label}k]",
+            "[${label}k]format=rgba,colorchannelmixer=aa=0[${label}z]",
+            "[${label}z][$top]overlay=$place:format=rgb$tail,format=gbrap,split[${label}t][${label}m]",
+            "[${label}b]format=gbrap[${label}g]",
+            "[${label}t][${label}g]blend=all_mode=$mode[${label}x]",
+            "[${label}m]alphaextract[${label}a]",
+            "[${label}x][${label}a]alphamerge[${label}y]",
+            "[${label}c][${label}y]overlay=x=0:y=0" + (if (keepAlpha) ":format=auto" else "") + "[$output]",
+        )
     }
 
     /** The input of the cover: its picture, or the tags file that holds it (see [CoverWriting]). */
@@ -1252,7 +1481,7 @@ class CommandBuilder(fonts: FontProvider) {
      * the front cover where the container keeps a picture type; or the tags of the
      * tags file added to those of the main file.
      */
-    private fun coverArguments(cover: CoverWriting?, coverInput: Int, format: OutputFormat, copyPicture: Boolean): List<String> =
+    private fun coverArguments(cover: CoverWriting?, coverInput: Int, format: OutputFormat, copyPicture: Boolean, stripAll: Boolean = false): List<String> =
         when (cover) {
             CoverWriting.ATTACHED_PICTURE -> {
                 val args = mutableListOf<String>()
@@ -1262,12 +1491,41 @@ class CommandBuilder(fonts: FontProvider) {
                 if (format == OutputFormat.MP3 || format == OutputFormat.FLAC) args += listOf("-metadata:s:v:0", "comment=Cover (front)")
                 args
             }
-            CoverWriting.PICTURE_TAG -> listOf("-map_metadata", "0", "-map_metadata", coverInput.toString())
+            // Without the source's tags, only the cover's (and those written here).
+            CoverWriting.PICTURE_TAG -> if (stripAll) {
+                listOf("-map_metadata", coverInput.toString())
+            } else {
+                listOf("-map_metadata", "0", "-map_metadata", coverInput.toString())
+            }
             null -> emptyList()
         }
 
-    private fun metadata(request: ConversionRequest): List<String> =
-        request.metadata.asMap().flatMap { (key, value) -> listOf("-metadata", "$key=$value") }
+    /**
+     * The tags: none of the source's when they are all taken away (the cover's
+     * tags file maps its own, see [coverArguments]); an MP4 or M4A told to keep
+     * tags of their own (it otherwise keeps only those every player knows);
+     * then each tag, an empty one removing it.
+     */
+    private fun metadata(request: ConversionRequest): List<String> {
+        val tags = request.metadata
+        val args = mutableListOf<String>()
+        if (tags.stripAll && request.coverWriting() != CoverWriting.PICTURE_TAG) args += listOf("-map_metadata", "-1")
+        val synthetic = syntheticSpeech(request)
+        if ((tags.hasOwnTags || synthetic.isNotEmpty()) && (request.format == OutputFormat.MP4 || request.format == OutputFormat.M4A)) {
+            args += listOf("-movflags", "+use_metadata_tags")
+        }
+        args += tags.asMap().flatMap { (key, value) -> listOf("-metadata", "$key=$value") }
+        // A voice made by a machine is said so, in tags a program can read (AI Act, Article 50(2)).
+        if (synthetic.isNotEmpty()) {
+            args += listOf("-metadata", "$AI_GENERATED_TAG=${AI_GENERATED_TEXT}${synthetic.joinToString(", ")}")
+            args += listOf("-metadata", "$DIGITAL_SOURCE_TAG=$DIGITAL_SOURCE_COMPOSITE")
+        }
+        return args
+    }
+
+    /** The machines that made a voice heard in [request]'s output (its dubs), each once. */
+    internal fun syntheticSpeech(request: ConversionRequest): List<String> =
+        if (!request.format.hasAudio) emptyList() else request.sounds.mapNotNull { it.aiVoice?.takeIf(String::isNotBlank) }.distinct()
 
     private fun segmenting(request: ConversionRequest, forceKeyFrames: Boolean): List<String> {
         val plan = request.segmenting() ?: return emptyList()
@@ -1295,8 +1553,28 @@ class CommandBuilder(fonts: FontProvider) {
     private fun List<String>.joinOrPassthrough(passthrough: String): String =
         if (isEmpty()) passthrough else joinToString(",")
 
-    private companion object {
+    internal companion object {
+        /** The tags that say a voice in the file was made by a machine. */
+        const val AI_GENERATED_TAG = "AI_GENERATED"
+        const val AI_GENERATED_TEXT = "Contains AI-generated speech: "
+        const val DIGITAL_SOURCE_TAG = "DIGITAL_SOURCE_TYPE"
+
+        /** IPTC's digital source type for media mixing what was recorded with what a trained model made. */
+        const val DIGITAL_SOURCE_COMPOSITE = "http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia"
+
         const val VIDEO_OUT = "vout"
+
+        /** The picture and its own alpha, split at the start of a picture that keeps its transparency. */
+        const val OWN_PICTURE = "opic"
+        const val OWN_ALPHA_IN = "oain"
+        const val OWN_ALPHA = "oalp"
+
+        /**
+         * The picture's own alpha ([OWN_ALPHA], shaped by the geometry) multiplied into the alpha the
+         * steps left (a key's, 255 without one), as one link of the picture's chain.
+         */
+        val OWN_ALPHA_MERGE = "format=rgba,split[om0][om1];[om1]alphaextract[oma];" +
+            "[oma][$OWN_ALPHA]blend=all_mode=multiply[omb];[om0][omb]alphamerge"
         const val AUDIO_OUT = "aout"
         const val VIDEO_JOINED = "vcat"
         const val AUDIO_JOINED = "acat"
@@ -1305,6 +1583,9 @@ class CommandBuilder(fonts: FontProvider) {
         const val VIDEO_SDR = "vsdr"
 
         /** Links of an Ultra HDR picture's graph (see HdrPictures). */
+        /** The canvas of a picture that has one, and the picture laid on it as a layer. */
+        const val CANVAS = "cnv"
+        const val PHOTO = "photo"
         const val HDR_ALL = "hdrall"
         const val HDR_PLAIN_IN = "hdrp"
         const val HDR_PLAIN = "hdrplain"

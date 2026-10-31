@@ -43,7 +43,8 @@ class SpeechModelStore(context: Context, val model: SpeechModel) {
 
     /** One file of the model and whether it matched. */
     data class FileCheck(val name: String, val expected: String, val actual: String?) {
-        val matches: Boolean get() = actual == expected
+        /** As pinned; a file published without a hash ([expected] empty) only has to be there. */
+        val matches: Boolean get() = if (expected.isEmpty()) actual != null else actual == expected
     }
 
     sealed interface State {

@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import android.os.SystemClock
 import android.util.Log
 import com.cuscus.ffmpeggui.core.cutout.PromptSegmentation
+import com.cuscus.ffmpeggui.speech.AiKernels
 import com.cuscus.ffmpeggui.speech.SpeechModel
 import com.cuscus.ffmpeggui.speech.SpeechModelStore
 import kotlinx.coroutines.CoroutineScope
@@ -189,10 +190,8 @@ class RefineEngine(context: Context, private val store: SpeechModelStore) {
         if (memory.availMem in 1 until MIN_FREE_BYTES) throw NotEnoughMemory()
         val started = SystemClock.elapsedRealtime()
         val environment = OrtEnvironment.getEnvironment()
-        val options = OrtSession.SessionOptions()
+        val options = AiKernels.options(threads)
         try {
-            options.setIntraOpNumThreads(threads)
-            options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
             val encoder = environment.createSession(encoderFile.absolutePath, options)
             val decoder = try {
                 environment.createSession(decoderFile.absolutePath, options)

@@ -27,6 +27,9 @@ import com.cuscus.ffmpeggui.core.model.Keyframes
 import com.cuscus.ffmpeggui.core.model.Limiter
 import com.cuscus.ffmpeggui.core.model.MediaInfo
 import com.cuscus.ffmpeggui.core.model.MetadataTags
+import com.cuscus.ffmpeggui.core.model.CustomTag
+import com.cuscus.ffmpeggui.core.model.PictureCanvas
+import com.cuscus.ffmpeggui.core.vector.TraceSettings
 import com.cuscus.ffmpeggui.core.model.Modulation
 import com.cuscus.ffmpeggui.core.model.ModulationKind
 import com.cuscus.ffmpeggui.core.model.MotionKind
@@ -72,6 +75,8 @@ object ModelJson {
         put("volume", e.volume)
         put("muted", e.muted)
         put("audioDenoise", e.audioDenoise)
+        put("voiceLevel", e.voiceLevel)
+        put("backgroundLevel", e.backgroundLevel)
         put("motion", e.motion, ::write)
         put("key", e.key, ::write)
         put("zoom", e.zoom)
@@ -80,7 +85,7 @@ object ModelJson {
         putKeyframes(e.keyframes)
         put("speedCurve", e.speedCurve, ::write)
         put("keepPitch", e.keepPitch)
-        put("transition", e.transition) { t -> jsonObject { put("kind", t.kind); put("durationMs", t.durationMs) } }
+        put("transition", e.transition) { t -> jsonObject { put("kind", t.kind); put("durationMs", t.durationMs); put("effect", t.effect) } }
         put("hdrLook", e.hdrLook)
         put("placement", e.placement) { p ->
             jsonObject {
@@ -163,6 +168,8 @@ object ModelJson {
             volume = o.float("volume", d.volume),
             muted = o.bool("muted", d.muted),
             audioDenoise = o.float("audioDenoise", d.audioDenoise),
+            voiceLevel = o.float("voiceLevel", d.voiceLevel),
+            backgroundLevel = o.float("backgroundLevel", d.backgroundLevel),
             motion = o.objOrNull("motion", d.motion, ::stillMotion),
             key = o.objOrNull("key", d.key, ::colorKey),
             zoom = o.float("zoom", d.zoom),
@@ -172,7 +179,7 @@ object ModelJson {
             speedCurve = o.obj("speedCurve")?.let(::speedCurve),
             keepPitch = o.bool("keepPitch", d.keepPitch),
             transition = o.objOrNull("transition", d.transition) { t ->
-                Transition(kind = t.enum("kind", TransitionKind.FADE), durationMs = t.long("durationMs", Transition.DEFAULT_MS))
+                Transition(kind = t.enum("kind", TransitionKind.FADE), durationMs = t.long("durationMs", Transition.DEFAULT_MS), effect = t.stringOrNull("effect"))
             },
             hdrLook = o.doubleOrNull("hdrLook", d.hdrLook?.toDouble())?.toFloat(),
             placement = o.objOrNull("placement", d.placement) { p ->
@@ -361,6 +368,7 @@ object ModelJson {
         put("isStill", m.isStill)
         put("hdr", m.hdr)
         put("frameRate", m.frameRate)
+        put("hasAlpha", m.hasAlpha)
     }
 
     /** The formatted fields are derived again, as the probe derives them. */
@@ -376,6 +384,7 @@ object ModelJson {
             isStill = o.bool("isStill", false),
             hdr = o.enum("hdr", VideoHdr.NONE),
             frameRate = o.float("frameRate", 0f),
+            hasAlpha = o.bool("hasAlpha", false),
         )
     }
 
@@ -429,7 +438,13 @@ object ModelJson {
         put("comment", t.comment)
         put("genre", t.genre)
         put("copyright", t.copyright)
+        put("albumArtist", t.albumArtist)
+        put("lyrics", t.lyrics)
         put("fromSource", t.fromSource)
+        putList("custom", t.custom) { tag -> jsonObject { put("key", tag.key); put("value", tag.value) } }
+        putList("sourceKeys", t.sourceKeys.toList()) { Json.Str(it) }
+        put("stripAll", t.stripAll)
+        put("stripSensitive", t.stripSensitive)
     }
 
     fun metadataTags(o: Json.Obj): MetadataTags {
@@ -442,7 +457,15 @@ object ModelJson {
             comment = o.string("comment", d.comment),
             genre = o.string("genre", d.genre),
             copyright = o.string("copyright", d.copyright),
+            albumArtist = o.string("albumArtist", d.albumArtist),
+            lyrics = o.string("lyrics", d.lyrics),
             fromSource = o.bool("fromSource", d.fromSource),
+            custom = o.list("custom", d.custom) { item ->
+                (item as? Json.Obj)?.let { CustomTag(it.string("key", ""), it.string("value", "")) }?.takeIf { it.key.isNotBlank() }
+            },
+            sourceKeys = o.list("sourceKeys", emptyList<String>()) { (it as? Json.Str)?.value }.toSet(),
+            stripAll = o.bool("stripAll", d.stripAll),
+            stripSensitive = o.bool("stripSensitive", d.stripSensitive),
         )
     }
 
@@ -583,9 +606,27 @@ object ModelJson {
         put("vignette", e.vignette)
         put("grain", e.grain)
         put("border", e.border) { b -> jsonObject { put("widthFraction", b.widthFraction); put("color", b.color) } }
+        put("corners", e.corners)
+        put("cornerColor", e.cornerColor ?: -1L)
         putList("strokes", e.strokes) { write(it) }
         put("output", jsonObject { put("maxSide", e.output.maxSide); put("quality", e.output.quality) })
         put("key", e.key, ::write)
+        put("trace", jsonObject {
+            put("colors", e.trace.colors)
+            put("detail", e.trace.detail)
+            put("smooth", e.trace.smooth)
+            put("speckle", e.trace.speckle)
+            put("mono", e.trace.mono)
+            put("maxSide", e.trace.maxSide)
+        })
+        put("canvas", e.canvas) { c ->
+            jsonObject {
+                put("width", c.width)
+                put("height", c.height)
+                put("transparent", c.background == null)
+                put("background", c.background ?: 0L)
+            }
+        }
         put("hdr", e.hdr) { h ->
             jsonObject {
                 put("mode", h.mode)
@@ -618,12 +659,33 @@ object ModelJson {
                 val n = ImageBorder()
                 ImageBorder(b.float("widthFraction", n.widthFraction), b.long("color", n.color))
             },
+            corners = o.float("corners", d.corners),
+            cornerColor = o.long("cornerColor", -1L).takeIf { it >= 0L },
             strokes = o.list("strokes", d.strokes) { (it as? Json.Obj)?.let(::stroke) },
             output = o.obj("output")?.let { out ->
                 val n = ImageOutput()
                 ImageOutput(out.int("maxSide", n.maxSide), out.float("quality", n.quality))
             } ?: d.output,
             key = o.objOrNull("key", d.key, ::colorKey),
+            trace = o.obj("trace")?.let { t ->
+                val n = TraceSettings()
+                TraceSettings(
+                    colors = t.int("colors", n.colors),
+                    detail = t.float("detail", n.detail),
+                    smooth = t.bool("smooth", n.smooth),
+                    speckle = t.int("speckle", n.speckle),
+                    mono = t.bool("mono", n.mono),
+                    maxSide = t.int("maxSide", n.maxSide),
+                )
+            } ?: d.trace,
+            canvas = o.objOrNull("canvas", d.canvas) { c ->
+                val n = PictureCanvas()
+                PictureCanvas(
+                    width = c.int("width", n.width),
+                    height = c.int("height", n.height),
+                    background = if (c.bool("transparent", false)) null else c.long("background", n.background ?: 0xFFFFFFFFL),
+                )
+            },
             hdr = o.objOrNull("hdr", d.hdr) { h ->
                 val n = ImageHdr()
                 ImageHdr(

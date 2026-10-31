@@ -204,6 +204,18 @@ class EditorPreviewPlayer(context: Context) {
     /** The master clock while playing: position in the output, in milliseconds. */
     private var outputClockMs = 0.0
     private var lastTickNanos = 0L
+
+    /**
+     * Scrubbing: the timeline is being dragged and asks for a frame many times a
+     * second. The main player is then in Media3's scrubbing mode, which shows
+     * each frame asked for as soon as it can instead of starting over at every
+     * new seek (with plain exact seeks a dragged timeline showed nothing until
+     * the finger stopped); once the asking rests the mode is left and the last
+     * frame shown exactly ([settleScrub]).
+     */
+    private var scrubbing = false
+    private var lastScrubNanos = 0L
+    private var scrubTargetMs = 0L
     private var lastStepNanos = 0L
     private var lastSeekNanos = 0L
     /** True while the clip on screen is being stepped frame by frame rather than played. */
@@ -349,6 +361,7 @@ class EditorPreviewPlayer(context: Context) {
     // ---------------------------------------------------------------------
 
     fun play() {
+        endScrub()
         outputClockMs = currentOutputMs().toDouble()
         playing = true
         lastTickNanos = 0L
@@ -371,9 +384,42 @@ class EditorPreviewPlayer(context: Context) {
 
     /** Pauses on the frame found at [mediaMs] of the footage (see [PreviewSnapshot.mediaMs]). */
     fun showMediaFrame(mediaMs: Long) {
+        endScrub()
         playing = false
         applyPlayState()
         seekToMedia(mediaMs)
+    }
+
+    /**
+     * Pauses on the frame at [mediaMs] while the timeline is dragged: one of many
+     * asked for in a row, shown as they come (see [scrubbing]); the last one is
+     * shown exactly once they stop.
+     */
+    fun scrubMediaFrame(mediaMs: Long) {
+        playing = false
+        applyPlayState()
+        if (!scrubbing) {
+            scrubbing = true
+            videoPlayer.setScrubbingModeEnabled(true)
+        }
+        lastScrubNanos = System.nanoTime()
+        scrubTargetMs = mediaMs
+        seekToMedia(mediaMs)
+    }
+
+    /** Leaves scrubbing once no frame has been asked for a moment: the last one exactly. */
+    private fun settleScrub(now: Long) {
+        if (scrubbing && now - lastScrubNanos >= SCRUB_SETTLE_NANOS) {
+            endScrub()
+            seekToMedia(scrubTargetMs)
+        }
+    }
+
+    /** Leaves scrubbing at once (play, an exact seek, release). */
+    private fun endScrub() {
+        if (!scrubbing) return
+        scrubbing = false
+        videoPlayer.setScrubbingModeEnabled(false)
     }
 
     /**
@@ -386,6 +432,7 @@ class EditorPreviewPlayer(context: Context) {
         // would lose a few percent of the time.
         val elapsedMs = if (lastTickNanos == 0L) 0.0 else ((now - lastTickNanos) / 1_000_000.0).coerceAtMost(MAX_TICK_MS.toDouble())
         lastTickNanos = now
+        settleScrub(now)
 
         adoptReportedLength()
 
@@ -444,6 +491,7 @@ class EditorPreviewPlayer(context: Context) {
     }
 
     fun release() {
+        endScrub()
         onVideoSize = null
         onInterrupted = null
         videoPlayer.removeListener(videoListener)
@@ -732,6 +780,9 @@ class EditorPreviewPlayer(context: Context) {
 
         /** A pause longer than this (app in background) is not played back as a jump. */
         const val MAX_TICK_MS = 250L
+
+        /** How long the timeline must rest before scrubbing ends and its frame is shown exactly. */
+        const val SCRUB_SETTLE_NANOS = 180_000_000L
 
         /** Minimum time between backward steps; each one is an exact seek. */
         const val REVERSE_STEP_NANOS = 80_000_000L
