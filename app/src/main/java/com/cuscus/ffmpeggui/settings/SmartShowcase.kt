@@ -54,6 +54,7 @@ import com.cuscus.ffmpeggui.onboarding.CutoutArt
 import com.cuscus.ffmpeggui.onboarding.ProjectsArt
 import com.cuscus.ffmpeggui.onboarding.SpokenWordsArt
 import com.cuscus.ffmpeggui.onboarding.rememberLoop
+import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
 import com.cuscus.ffmpeggui.ui.expressive.PolygonShape
 import kotlin.math.PI
 import kotlin.math.abs
@@ -381,23 +382,44 @@ private fun DubShowcase(modifier: Modifier) {
     }
 }
 
-/** A small gauge, its needle swinging: how fast the models run. */
+/**
+ * The kernels as a chip: nine cores in a badge. Off, a plain square, the cores
+ * quiet; on, the badge eases into a cookie (the theme's spatial spring) and the
+ * cores light up one after the other, corner to corner, as work runs through
+ * them. Still when the system's animations are off.
+ */
 @Composable
-internal fun SpeedGauge(fast: Boolean, modifier: Modifier = Modifier) {
+internal fun KernelChip(fast: Boolean, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
-    val swing by rememberLoop(if (fast) 1_400 else 3_200, "gauge", still = 0.5f)
-    val needle = if (fast) scheme.onPrimary else scheme.onSurfaceVariant
-    val track = if (fast) scheme.onPrimary.copy(alpha = 0.3f) else scheme.outlineVariant
-    Box(contentAlignment = Alignment.Center, modifier = modifier) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val stroke = 5.dp.toPx()
-            drawArc(track, 150f, 240f, false, style = Stroke(stroke, cap = StrokeCap.Round))
-            val reach = if (fast) 0.75f + 0.2f * sin(swing * 2 * PI).toFloat() else 0.35f + 0.1f * sin(swing * 2 * PI).toFloat()
-            rotate(150f + 240f * reach, pivot = center) {
-                drawLine(needle, center, Offset(center.x + size.minDimension * 0.36f, center.y), strokeWidth = stroke * 0.8f, cap = StrokeCap.Round)
+    val wave = rememberLoop(KERNEL_WAVE_MS, "kernels", still = 0.3f)
+    val core = if (fast) scheme.onPrimary else scheme.onSurfaceVariant
+    MorphingContainer(
+        from = MaterialShapes.Square,
+        to = MaterialShapes.Cookie9Sided,
+        morphed = fast,
+        color = if (fast) scheme.primary else scheme.surfaceContainerLowest,
+        modifier = modifier,
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize(0.5f)) {
+            val cell = size.minDimension / 3f
+            val r = cell * 0.3f
+            for (row in 0 until 3) for (column in 0 until 3) {
+                // Off: all at rest. On: a light passes along the diagonals.
+                val lit = if (fast) {
+                    val phase = (wave.value * 1.5f - (row + column) / 6f + 1f) % 1f
+                    (1f - phase * 3f).coerceIn(0f, 1f)
+                } else {
+                    0f
+                }
+                drawCircle(
+                    color = core.copy(alpha = 0.35f + 0.65f * lit),
+                    radius = r * (1f + 0.25f * lit),
+                    center = Offset(cell * (column + 0.5f), cell * (row + 0.5f)),
+                )
             }
-            drawCircle(needle, radius = stroke, center = center)
         }
-        if (fast) Icon(Icons.Rounded.Bolt, contentDescription = null, tint = needle, modifier = Modifier.size(14.dp).graphicsLayer { translationY = 14.dp.toPx() })
     }
 }
+
+/** How long a light takes across the cores. */
+private const val KERNEL_WAVE_MS = 1_600

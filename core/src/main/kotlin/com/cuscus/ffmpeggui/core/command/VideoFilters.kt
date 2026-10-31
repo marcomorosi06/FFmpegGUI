@@ -13,7 +13,10 @@ import com.cuscus.ffmpeggui.core.model.GifSettings
 import com.cuscus.ffmpeggui.core.model.OutputFormat
 import com.cuscus.ffmpeggui.core.model.Resolution
 import com.cuscus.ffmpeggui.core.model.Rotation
+import com.cuscus.ffmpeggui.core.model.TextLook
 import com.cuscus.ffmpeggui.core.model.TextOverlay
+import com.cuscus.ffmpeggui.core.preview.eqContrast
+import com.cuscus.ffmpeggui.core.preview.eqSaturation
 import java.util.Locale
 
 /**
@@ -86,8 +89,8 @@ internal class VideoFilters(private val fonts: FontProvider) {
      * A clip's captions (those with text), each with its layer: drawn after its
      * speed change, on the time it has played (what their keyframes follow).
      */
-    fun clipCaptions(texts: List<TextOverlay>): List<Pair<Int, String>> =
-        texts.filter { it.text.isNotBlank() }.map { it.layer to drawtext(it, timed = false, time = "t") }
+    fun clipCaptions(texts: List<TextOverlay>, frameHeight: Int = 0): List<Pair<Int, String>> =
+        texts.filter { it.text.isNotBlank() }.map { it.layer to drawtext(it, timed = false, time = "t", frameHeight = frameHeight) }
 
     /** The fades of a clip ([playedSeconds] long) or of the whole video, which cover what lies on it. */
     fun fadesOf(effects: Effects, playedSeconds: Double?): List<String> = fades(effects, playedSeconds)
@@ -120,13 +123,15 @@ internal class VideoFilters(private val fonts: FontProvider) {
         request: ConversionRequest,
         paths: MediaPaths,
         outputDurationSeconds: Double?,
+        /** The height of the frame the captions land on (0: not known), for their outline, shadow and box. */
+        frameHeight: Int = 0,
     ): List<String> =
-        wholeBefore(request, paths) + wholeCaptions(request).sortedBy { it.first }.map { it.second } + wholeAfter(request, outputDurationSeconds)
+        wholeBefore(request, paths) + wholeCaptions(request, frameHeight).sortedBy { it.first }.map { it.second } + wholeAfter(request, outputDurationSeconds)
 
     /** The captions of the whole video (with text), each with its layer, timed on the exported video. */
-    fun wholeCaptions(request: ConversionRequest): List<Pair<Int, String>> =
+    fun wholeCaptions(request: ConversionRequest, frameHeight: Int = 0): List<Pair<Int, String>> =
         request.wholeTextOverlays.filter { it.text.isNotBlank() }
-            .map { it.layer to drawtext(it, timed = true, time = fmt("(t-%.4f)", it.startMs.coerceAtLeast(0L) / 1000.0)) }
+            .map { it.layer to drawtext(it, timed = true, time = fmt("(t-%.4f)", it.startMs.coerceAtLeast(0L) / 1000.0), frameHeight = frameHeight) }
 
     /** What comes after the captions and pictures of the whole video: its frame rate and its fades, which cover them. */
     fun wholeAfter(request: ConversionRequest, outputDurationSeconds: Double?): List<String> {
@@ -220,12 +225,13 @@ internal class VideoFilters(private val fonts: FontProvider) {
             // Changing over time: eq works its values out again on every frame.
             filters += "eq=eval=frame" +
                 ":brightness='${keyframes.expression(KeyProperty.BRIGHTNESS, color.brightness, time)}'" +
-                ":contrast='${keyframes.expression(KeyProperty.CONTRAST, color.contrast, time)}'" +
-                ":saturation='${keyframes.expression(KeyProperty.SATURATION, color.saturation, time)}'"
+                // Below 0 eq turns the picture into its negative: an eased curve that dips there stops at grey.
+                ":contrast='max(0,${keyframes.expression(KeyProperty.CONTRAST, color.contrast, time)})'" +
+                ":saturation='max(0,${keyframes.expression(KeyProperty.SATURATION, color.saturation, time)})'"
         } else if (color.brightness != 0f || color.contrast != 1f || color.saturation != 1f) {
             filters += fmt(
                 "eq=brightness=%.2f:contrast=%.2f:saturation=%.2f",
-                color.brightness, color.contrast, color.saturation,
+                color.brightness, eqContrast(color.contrast), eqSaturation(color.saturation),
             )
         }
         if (color.sharpness != 0f) {
@@ -289,23 +295,59 @@ internal class VideoFilters(private val fonts: FontProvider) {
      * One caption. A [timed] one (of the whole video) shows only during its window
      * and fades in and out there; any caption can be translucent. With keyframes
      * its place, size and opacity are expressions of [time] (seconds on the
-     * keyframes' clock), worked out on every frame.
+     * keyframes' clock), worked out on every frame. Its outline, shadow and box
+     * (see [TextLook]) are in whole pixels of a frame [frameHeight] high
+     * ([REFERENCE_FRAME_HEIGHT] when not known), at its starting size.
      */
-    internal fun drawtext(overlay: TextOverlay, timed: Boolean, time: String = "t"): String {
-        val color = String.format(Locale.US, "%06X", overlay.color and 0xFFFFFF)
-        var filter = "drawtext=fontfile=${filterOptionValue(fonts.fontPath(overlay.font, overlay.isBold))}" +
+    internal fun drawtext(overlay: TextOverlay, timed: Boolean, time: String = "t", frameHeight: Int = 0): String {
+        val look = overlay.look.sane()
+        val height = if (frameHeight > 0) frameHeight else REFERENCE_FRAME_HEIGHT
+        val fontPixels = height * overlay.keyframes.valueAt(KeyProperty.SIZE, 0L, overlay.size).toDouble()
+        val blur = if (look.hasShadow) TextLook.pixels(look.shadowBlur, fontPixels) else 0
+        val letters = String.format(Locale.US, "0x%06X", overlay.color and 0xFFFFFF)
+        // A sharp shadow is drawtext's own; a soft one is drawn apart and blurred (below).
+        val main = drawtextOf(overlay, timed, time, letters, 0, lookOptions(look, fontPixels, sharpShadow = blur == 0))
+        if (blur == 0) return main
+        // The soft shadow: the letters in the shadow's colour on a see-through copy of the frame (its
+        // colour everywhere, so that the blur brings in no other), moved, blurred, laid under the text.
+        val shift = TextLook.pixels(look.shadow, fontPixels)
+        val shadow = drawtextOf(overlay, timed, time, drawtextColor(look.shadowColor), shift, "")
+        val label = "ts" + (labelCount++)
+        val r = (look.shadowColor shr 16) and 0xFF
+        val g = (look.shadowColor shr 8) and 0xFF
+        val b = look.shadowColor and 0xFF
+        return "split[${label}a][${label}b];" +
+            "[${label}b]format=rgba,lutrgb=r=$r:g=$g:b=$b:a=0,$shadow," +
+            fmt("gblur=sigma=%.2f", blur / 2.0) + "[${label}c];" +
+            "[${label}a][${label}c]overlay=format=auto,$main"
+    }
+
+    /** Makes the links of each soft shadow's little graph unique within a command. */
+    private var labelCount = 0
+
+    /**
+     * One drawtext of [overlay]: its letters in [color] (0xRRGGBB, @alpha allowed),
+     * moved right and down by [shift] pixels, with [extra] options; its place, size,
+     * opacity, fades and times as [drawtext] says.
+     */
+    private fun drawtextOf(overlay: TextOverlay, timed: Boolean, time: String, color: String, shift: Int, extra: String): String {
+        // A font the user added, while it can be read; else the family's file.
+        val font = overlay.fontFile?.let(fonts::customFontPath) ?: fonts.fontPath(overlay.font, overlay.isBold)
+        var filter = "drawtext=fontfile=${filterOptionValue(font)}" +
             ":text=${drawtextValue(overlay.text)}" +
-            ":fontcolor=0x$color"
+            ":fontcolor=$color" +
+            extra
+        val move = if (shift > 0) "+$shift" else ""
         val keys = overlay.keyframes
         filter += if (keys.animatesAny(Keyframes.TEXT)) {
             ":fontsize='h*${size(keys.expression(KeyProperty.SIZE, overlay.size, time), keys.animates(KeyProperty.SIZE))}'" +
-                ":x='(w-tw)*${keys.expression(KeyProperty.X, overlay.x, time)}'" +
-                ":y='(h-th)*${keys.expression(KeyProperty.Y, overlay.y, time)}'"
+                ":x='(w-tw)*${keys.expression(KeyProperty.X, overlay.x, time)}$move'" +
+                ":y='(h-th)*${keys.expression(KeyProperty.Y, overlay.y, time)}$move'"
         } else {
             val size = keys.valueAt(KeyProperty.SIZE, 0L, overlay.size)
             val x = keys.valueAt(KeyProperty.X, 0L, overlay.x)
             val y = keys.valueAt(KeyProperty.Y, 0L, overlay.y)
-            fmt(":fontsize=h*%.4f:x=(w-tw)*%.4f:y=(h-th)*%.4f", size, x, y)
+            fmt(":fontsize=h*%.4f:x=(w-tw)*%.4f$move:y=(h-th)*%.4f$move", size, x, y)
         }
         val opacity = if (keys.animates(KeyProperty.OPACITY)) {
             "clip(${keys.expression(KeyProperty.OPACITY, overlay.opacity, time)},0,1)"
@@ -318,6 +360,30 @@ internal class VideoFilters(private val fonts: FontProvider) {
             ?.let { filter += ":alpha='$it'" }
         if (timed) enableExpression(overlay.startMs, overlay.endMs)?.let { filter += ":enable='$it'" }
         return filter
+    }
+
+    /**
+     * The outline, box and (when [sharpShadow]) shadow of [look] as drawtext
+     * options, empty when it has none. drawtext takes them in whole pixels, not
+     * as expressions: they are worked out for a font [fontPixels] high (the
+     * caption's starting size on its frame), and the preview draws them at that
+     * size too. Its opacity and fades cover them.
+     */
+    private fun lookOptions(look: TextLook, fontPixels: Double, sharpShadow: Boolean): String {
+        if (look.isPlain) return ""
+        val out = StringBuilder()
+        TextLook.pixels(look.outline, fontPixels).takeIf { it > 0 }?.let {
+            out.append(":borderw=$it:bordercolor=${drawtextColor(look.outlineColor)}")
+        }
+        if (sharpShadow) {
+            TextLook.pixels(look.shadow, fontPixels).takeIf { it > 0 }?.let {
+                out.append(":shadowx=$it:shadowy=$it:shadowcolor=${drawtextColor(look.shadowColor)}")
+            }
+        }
+        if (look.box) {
+            out.append(":box=1:boxcolor=${drawtextColor(look.boxColor)}:boxborderw=${TextLook.pixels(look.boxPadding, fontPixels)}")
+        }
+        return out.toString()
     }
 
     /**
@@ -345,6 +411,13 @@ internal class VideoFilters(private val fonts: FontProvider) {
 
         /** unsharp accepts luma amounts in -1.5..1.5; the request uses -1..1. */
         const val UNSHARP_MAX_AMOUNT = 1.5f
+
+        /** The frame height a caption's outline, shadow and box are worked out for when the real one is not known. */
+        const val REFERENCE_FRAME_HEIGHT = 1080
+
+        /** An ARGB colour as drawtext reads it: 0xRRGGBB@alpha. */
+        fun drawtextColor(argb: Long): String =
+            String.format(Locale.US, "0x%06X@%.3f", argb and 0xFFFFFF, ((argb ushr 24) and 0xFF) / 255.0)
 
         /**
          * Tail that turns a picture stream into a GIF stream with its own palette of

@@ -25,6 +25,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,15 +53,18 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowRight
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
@@ -179,12 +186,14 @@ internal class StudioHistory {
  * keyboard and only a tap (or Tab on a keyboard) takes one; every change the
  * studio makes on request can be undone.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun CommandStudioDialog(
     initial: String,
     onTextChange: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** Runs the command written here; null hides the button (the studio opened from an editor). */
+    onRun: (() -> Unit)? = null,
 ) {
     val ui = LocalCommandStudio.current ?: return
     val scheme = MaterialTheme.colorScheme
@@ -265,11 +274,19 @@ fun CommandStudioDialog(
             snackbarHost = { SnackbarHost(snackbar) },
             modifier = Modifier.fillMaxSize(),
         ) { padding ->
+            // With the keyboard up the room is short: only the editor and its suggestions stay.
+            val imeOpen = WindowInsets.isImeVisible
+            // Typing again (a tap on the editor while a panel is open): the panel folds away, the editor needs the room.
+            LaunchedEffect(imeOpen) {
+                if (imeOpen) panel = null
+            }
             Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
+                    // The bars already paid for by the scaffold must not be counted again under the keyboard.
+                    .consumeWindowInsets(padding)
                     .imePadding()
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
@@ -286,7 +303,19 @@ fun CommandStudioDialog(
                     onUndo = ::undo,
                     onRedo = ::redo,
                     onStar = { ui.onFavourite(value.text, it) },
-                    onIssues = { panel = StudioPanel.TOOLS },
+                    onIssues = {
+                        panel = StudioPanel.TOOLS
+                        keyboard?.hide()
+                    },
+                    compact = imeOpen,
+                    onRun = onRun?.let { run ->
+                        {
+                            if (value.text != initial) ui.onRemember(value.text)
+                            keyboard?.hide()
+                            run()
+                        }
+                    },
+                    canRun = value.text.isNotBlank(),
                 )
                 StudioEditor(
                     value = value,
@@ -357,14 +386,20 @@ fun CommandStudioDialog(
                         }
                     }
                 }
-                StudioDock(
-                    panel = panel,
-                    onPanel = { chosen ->
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        panel = if (panel == chosen) null else chosen
-                        if (panel != null) keyboard?.hide()
-                    },
-                )
+                AnimatedVisibility(
+                    visible = !imeOpen || panel != null,
+                    enter = expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()),
+                    exit = shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()),
+                ) {
+                    StudioDock(
+                        panel = panel,
+                        onPanel = { chosen ->
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            panel = if (panel == chosen) null else chosen
+                            if (panel != null) keyboard?.hide()
+                        },
+                    )
+                }
             }
         }
     }
@@ -392,6 +427,11 @@ private fun StudioHeader(
     onRedo: () -> Unit,
     onStar: (Boolean) -> Unit,
     onIssues: () -> Unit,
+    /** The keyboard is up: the checker's badge folds away to leave the room to the editor. */
+    compact: Boolean = false,
+    /** Runs the command; null when the studio only edits it. */
+    onRun: (() -> Unit)? = null,
+    canRun: Boolean = true,
 ) {
     val scheme = MaterialTheme.colorScheme
     val errors = issues.count { it.severity == LintSeverity.ERROR }
@@ -450,6 +490,19 @@ private fun StudioHeader(
                 contentDescription = stringResource(R.string.studio_favourite),
             )
         }
+        if (onRun != null) {
+            // The key action: the widest, filled button, at the thumb's corner; its shape answers the press.
+            Spacer(Modifier.width(4.dp))
+            FilledIconButton(
+                onClick = onRun,
+                enabled = canRun,
+                shapes = IconButtonDefaults.shapes(),
+                modifier = Modifier
+                    .size(IconButtonDefaults.mediumContainerSize(IconButtonDefaults.IconButtonWidthOption.Wide)),
+            ) {
+                Icon(Icons.Rounded.PlayArrow, contentDescription = stringResource(R.string.action_convert))
+            }
+        }
     }
     // The checker's verdict: a calm round badge, or a spiky one that says how much is wrong.
     val interaction = remember { MutableInteractionSource() }
@@ -468,45 +521,51 @@ private fun StudioHeader(
         warnings > 0 -> scheme.onTertiaryContainer
         else -> scheme.onPrimaryContainer
     }
-    Surface(
-        onClick = onIssues,
-        color = container,
-        shape = RoundedCornerShape(50),
-        interactionSource = interaction,
-        modifier = Modifier.springPress(interaction),
+    AnimatedVisibility(
+        visible = !compact,
+        enter = expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()),
+        exit = shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
+        Surface(
+            onClick = onIssues,
+            color = container,
+            shape = RoundedCornerShape(50),
+            interactionSource = interaction,
+            modifier = Modifier.springPress(interaction),
         ) {
-            MorphingContainer(
-                from = MaterialShapes.Circle,
-                to = MaterialShapes.Cookie9Sided,
-                morphed = bad || warnings > 0,
-                color = content,
-                modifier = Modifier.size(28.dp),
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
             ) {
-                Icon(
-                    imageVector = when {
-                        bad -> Icons.Rounded.ErrorOutline
-                        warnings > 0 -> Icons.Rounded.WarningAmber
-                        else -> Icons.Rounded.Check
+                MorphingContainer(
+                    from = MaterialShapes.Circle,
+                    to = MaterialShapes.Cookie9Sided,
+                    morphed = bad || warnings > 0,
+                    color = content,
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        imageVector = when {
+                            bad -> Icons.Rounded.ErrorOutline
+                            warnings > 0 -> Icons.Rounded.WarningAmber
+                            else -> Icons.Rounded.Check
+                        },
+                        contentDescription = null,
+                        tint = container,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = when {
+                        bad -> pluralStringResource(R.plurals.studio_errors, errors, errors)
+                        warnings > 0 -> pluralStringResource(R.plurals.studio_warnings, warnings, warnings)
+                        else -> stringResource(R.string.studio_all_good)
                     },
-                    contentDescription = null,
-                    tint = container,
-                    modifier = Modifier.size(16.dp),
+                    style = MaterialTheme.typography.labelLargeEmphasized,
+                    color = content,
                 )
             }
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = when {
-                    bad -> pluralStringResource(R.plurals.studio_errors, errors, errors)
-                    warnings > 0 -> pluralStringResource(R.plurals.studio_warnings, warnings, warnings)
-                    else -> stringResource(R.string.studio_all_good)
-                },
-                style = MaterialTheme.typography.labelLargeEmphasized,
-                color = content,
-            )
         }
     }
 }

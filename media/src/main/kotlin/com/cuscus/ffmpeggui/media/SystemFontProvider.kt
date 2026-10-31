@@ -35,6 +35,10 @@ class SystemFontProvider(
         }
     }
 
+    /** A font the user added: its file while it is there and readable (a deleted one falls back to the family). */
+    override fun customFontPath(file: String): String? =
+        File(file).takeIf { it.isFile && it.canRead() }?.absolutePath
+
     private fun locate(bold: Boolean): String {
         val preferred = if (bold) BOLD_FONTS else REGULAR_FONTS
         val alternative = if (bold) REGULAR_FONTS else BOLD_FONTS

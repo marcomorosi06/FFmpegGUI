@@ -48,6 +48,9 @@ fun eqColorMatrix(
     highDefinition: Boolean = true,
 ): FloatArray {
     val (wr, wg, wb) = if (highDefinition) BT709_LUMA else BT601_LUMA
+    // The same limits the export keeps: no negative picture, no negative colour.
+    val contrast = eqContrast(contrast)
+    val saturation = eqSaturation(saturation)
     val lumaGain = contrast - saturation
     // Luma offset, converted from video range (16..235) to full range and to 0..255.
     val offset = ((1f - contrast) * (0.5f - 16f / 255f) + brightness) * (255f / 219f) * 255f
@@ -99,6 +102,21 @@ fun hueColorMatrix(degrees: Float): FloatArray? {
     result[18] = 1f
     return result
 }
+
+/**
+ * The contrast `eq` is given: at least 0. Below it `eq` turns the picture into
+ * its negative, which is not "less contrast"; 0 is a flat grey, as low as it goes.
+ * The preview and the export both use it, so they agree.
+ */
+fun eqContrast(contrast: Float): Float = contrast.coerceIn(EQ_CONTRAST_MIN, EQ_CONTRAST_MAX)
+
+/** The saturation `eq` is given: 0 (grey) to 3, its own range. */
+fun eqSaturation(saturation: Float): Float = saturation.coerceIn(0f, EQ_SATURATION_MAX)
+
+/** The lowest and highest contrast the editors offer and the export uses. */
+const val EQ_CONTRAST_MIN = 0f
+const val EQ_CONTRAST_MAX = 2f
+private const val EQ_SATURATION_MAX = 3f
 
 /** True when `eq` would be a no-op, so the preview can skip the colour filter. */
 fun isNeutralEq(brightness: Float, contrast: Float, saturation: Float): Boolean =

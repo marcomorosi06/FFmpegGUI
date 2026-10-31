@@ -384,7 +384,12 @@ than the picture it makes. It opens from home (an SVG picked, or an empty
 drawing) and when SVG is picked as the format of a picture: an SVG opens as
 it is, any other picture is traced into it (`SvgEditorViewModel.trace`, the
 same `VectorTracer`, one path per colour named after it) with a card to
-change how until its shapes are edited. A video's frame saved as an SVG
+change how until its shapes are edited. That card and the picture editor's
+shapes tool share `TraceControls` (`TraceStudio.kt`): the kind of picture
+first (logo, drawing, text, illustration, photo, pixel art, each a ready
+`TraceSettings`), then what the last trace made (its palette, its outlines
+and how heavy the file is), then its colours and its shapes, every slider
+naming what its two ends do. A video's frame saved as an SVG
 still goes through the picture editor. The toolbar adds shapes (a gallery
 of basic ones, lines and every Material shape as an exact path), texts, and
 curves drawn with the pen (`smoothStroke`: simplified, then Catmull-Rom
@@ -453,6 +458,15 @@ shapes").
 - *Grid.* A number of squares across the shorter side; drawn on the page
   (every fourth line stronger) and, when asked, its lines added to the snap
   targets of a move (`SnapTargets.withGrid`).
+- *Magnetic points* (`SvgPointSnap.kt`, tested). A point dragged in the
+  points mode, or placed with a tap while building a line, lands on what is
+  near it (`snapPoint`): another point of the drawing first (`pathPoints`,
+  and the symmetry's centre); else the page's edges and middle and, when
+  moves snap to the grid, its lines and the middles of its squares
+  (`gridSnapLines`), each way on its own; else the symmetry's axes and, for
+  a turn, the lines half way between them (`Symmetry.snapRays`), or where
+  one crosses a line the point already rests on. The stage draws the guides
+  and a ring that pops on the landing, with a haptic tick.
 - *Locking.* `data-ffg-locked="1"`: skipped by `hits` and by select all;
   unlocked from the layers' padlock.
 - *Repeat.* In a row (across or down, a gap between the boxes), in a grid,
@@ -592,10 +606,25 @@ internet permission?"); FFmpeg's version from FFmpegKit (`media/FfmpegInfo.kt`);
 the licences (the typeface's OFL text from the assets). Links open in the
 browser: the app itself never goes online.
 
+**Settings pictures** (`SettingsArt.kt`). Every other category, and the
+About page, opens on an `ExpressiveStage`: a very round card in a gradient of
+two containers with three big library shapes behind, turning each its own way
+and changing shape in turn. In front, what the category changes, made of
+shapes and moved by the theme's springs (overshoot and all), following its
+settings: the app in the current theme (the welcome's `PhonePreview`), clips
+as pills under a gem playhead that hops between them (their sound bars only
+when the waves are on), a phone in a blooming badge that kicks with each buzz
+while shapes fly out (asleep with the taps off), a file flying in an arc into
+one folder or two, the projects fanned or closed (`ProjectsArt`) and the
+export's notification (`NotificationArt`). Hidden from screen readers, still
+when the system's animations are off. The appearance and vibration pages use
+the welcome's own controls (`ThemeTile`, `HapticPad`); About groups its
+licences in two folding sections (in the app, models you download).
+
 **Smart features** (`SmartHub.kt`, `SmartShowcase.kt`, `SmartSettings.kt`).
 Not one long page but a hub and a page per feature. The hub: a hero (the
 features' badges going round a turning shape, a ring of how many are ready,
-the privacy promise, the speed switch for every model with a little gauge),
+the privacy promise, the speed switch for every model with a chip of nine cores lit in turn while it is on),
 then a tile per feature (speech, translation, cut-out, eraser, voice apart,
 dubbing), two by two, each playing its own small film drawn by the app in
 the theme's colours (the welcome's art where there is one: the spoken words,
@@ -1542,6 +1571,20 @@ mono, typewriter, handwriting, casual, small caps), each one of the fonts AOSP
 ships in `/system/fonts` (`SystemFontProvider`; a phone without one falls back
 to the default font). drawtext, libass and the preview all draw from the same
 file (`LocalExportFonts`).
+
+**A caption's look and own font.** A caption can have an outline, a shadow
+and a box behind it (`TextLook`, sizes as fractions of the font size, colours
+ARGB). drawtext takes them in whole pixels (`borderw`, `shadowx`/`shadowy`,
+`box`/`boxborderw`, colours as `0xRRGGBB@alpha`), so `VideoFilters.lookOptions`
+works them out for the caption's starting size on the frame it lands on (the
+clip's frame, the whole video's at the output height, the picture or its
+canvas; 1080 when not known); the preview (`TextOverlaysLayer`) draws the box,
+then the shadow, the outline (a stroke twice as wide) and the letters at that
+same size. A font the user added (.ttf, .otf) is copied into the app
+(`CaptionFonts`, checked with `Typeface.Builder`) and kept as the caption's
+`fontFile`; `FontProvider.customFontPath` gives it to drawtext while it can be
+read, else the caption's family is used, and the preview does the same. Such a
+font is drawn as it is, without a made-up bold, in both.
 
 **As texts.** "Make them texts" turns every line of every block into an
 ordinary caption (`TextOverlay`), timed on the output clock, in the

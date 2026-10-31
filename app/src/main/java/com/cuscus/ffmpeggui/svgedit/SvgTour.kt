@@ -53,6 +53,7 @@ import androidx.compose.material.icons.rounded.Flare
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.TouchApp
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -111,6 +112,8 @@ private val PAGES = listOf(
     TourPage(R.string.svg_tour_4_title, R.string.svg_tour_4_body, Icons.Rounded.Layers, MaterialShapes.Flower),
     TourPage(R.string.svg_tour_5_title, R.string.svg_tour_5_body, Icons.Rounded.AutoFixHigh, MaterialShapes.Sunny),
     TourPage(R.string.svg_tour_6_title, R.string.svg_tour_6_body, Icons.Rounded.Flare, MaterialShapes.Clover8Leaf),
+    // The sheets fade while a finger rests on an option (PeekThroughSheet): a see-through shape for it.
+    TourPage(R.string.svg_tour_7_title, R.string.svg_tour_7_body, Icons.Rounded.Visibility, MaterialShapes.Ghostish),
 )
 
 /** The stage's colours of page [page]: the three accent families, in turn, whatever the number of pages. */

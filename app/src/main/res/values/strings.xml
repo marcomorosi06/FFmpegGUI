@@ -48,6 +48,10 @@
     <string name="format_category_audio_hint">Sound only</string>
     <string name="format_category_image_hint">One frame or picture</string>
     <string name="format_category_custom_hint">Any FFmpeg command</string>
+    <plurals name="format_category_count">
+        <item quantity="one">%d format</item>
+        <item quantity="other">%d formats</item>
+    </plurals>
     <string name="format_desc_mp4">Plays everywhere</string>
     <string name="format_desc_mkv">Keeps every track</string>
     <string name="format_desc_avi">For older players</string>
@@ -221,6 +225,20 @@
     <string name="color_hex_use">Use</string>
     <string name="text_color_prefix" translatable="false">#</string>
     <string name="text_bold_short">B</string>
+    <string name="tool_text_box">Background</string>
+    <string name="text_outline_width">Thickness</string>
+    <string name="text_outline_hint">A line round the letters keeps them readable on any picture. Pick a colour to turn it on.</string>
+    <string name="text_shadow_distance">Distance</string>
+    <string name="text_shadow_blur">Softness</string>
+    <string name="text_shadow_sharp">Sharp</string>
+    <string name="text_shadow_soft">Soft</string>
+    <string name="text_shadow_glow">Glow</string>
+    <string name="text_shadow_hint">The letters again, moved down and to the right under them, sharp or soft. Soft and not moved, it is a glow. Pick a colour to turn it on.</string>
+    <string name="text_box_padding">Padding</string>
+    <string name="text_box_hint">A rectangle behind the text. Raise its opacity or pick a colour to turn it on.</string>
+    <string name="text_font_add">Add a font</string>
+    <string name="text_font_add_failed">That file is not a .ttf or .otf font this phone can read.</string>
+    <string name="text_font_own_bold">A font you added is drawn as it is: for bold letters, add its bold file too.</string>
 
     <!-- Editor: audio -->
     <string name="audio_original_track">Original track</string>
@@ -1034,12 +1052,46 @@
     <string name="image_tool_trace">Shapes</string>
     <string name="trace_colours">Colours</string>
     <string name="trace_mono">Black and white</string>
-    <string name="trace_colour_count">Colours</string>
-    <string name="trace_detail">Detail</string>
-    <string name="trace_speckle">Smallest speck kept</string>
-    <string name="trace_speckle_value">%1$d px</string>
-    <string name="trace_smooth">Smooth curves</string>
-    <string name="trace_smooth_hint">Gentle bends become curves, sharp corners stay sharp; off, every outline is straight lines</string>
+    <string name="trace_colour_count">How many colours</string>
+    <string name="trace_smooth">Curved edges</string>
+    <string name="trace_smooth_hint">On: gentle bends become curves, sharp corners stay sharp. Off: straight lines only, as pixel art wants.</string>
+    <string name="trace_kind_title">What is your picture?</string>
+    <string name="trace_kind_logo">Logo or icon</string>
+    <string name="trace_kind_logo_hint">A few flat colours and crisp edges: light, sharp at any size.</string>
+    <string name="trace_kind_drawing">Drawing</string>
+    <string name="trace_kind_drawing_hint">Dark lines on a light page, made into black shapes.</string>
+    <string name="trace_kind_text">Text or scan</string>
+    <string name="trace_kind_text_hint">Letters follow the pixels closely; the tiniest dust is left out.</string>
+    <string name="trace_kind_illustration">Illustration</string>
+    <string name="trace_kind_illustration_hint">Many flat colours with smooth outlines.</string>
+    <string name="trace_kind_photo">Photo</string>
+    <string name="trace_kind_photo_hint">A poster of many colours: small spots are left out so that the file stays light.</string>
+    <string name="trace_kind_pixel">Pixel art</string>
+    <string name="trace_kind_pixel_hint">Every square kept as it is, with straight edges.</string>
+    <string name="trace_kind_custom_hint">Your own settings. Pick a kind above to start again from a ready one.</string>
+    <string name="trace_section_colours">Colours</string>
+    <string name="trace_section_shapes">Shapes</string>
+    <string name="trace_colours_few">Few: flat, light file</string>
+    <string name="trace_colours_many">Many: closer to the picture</string>
+    <string name="trace_accuracy">Follow the outlines</string>
+    <string name="trace_accuracy_loose">Loosely</string>
+    <string name="trace_accuracy_balanced">Balanced</string>
+    <string name="trace_accuracy_exact">Exactly</string>
+    <string name="trace_accuracy_start">Smoother, lighter</string>
+    <string name="trace_accuracy_end">Every pixel step</string>
+    <string name="trace_spots">Leave out small spots</string>
+    <string name="trace_spots_none">Keep every spot</string>
+    <string name="trace_spots_value">Under %1$d px</string>
+    <string name="trace_spots_start">Keep all</string>
+    <string name="trace_spots_end">Only big shapes</string>
+    <string name="trace_palette_description">%1$d colours made</string>
+    <string name="trace_weight_light">Light file</string>
+    <string name="trace_weight_medium">Medium file</string>
+    <string name="trace_weight_heavy">Heavy file: try fewer colours or leave out more spots</string>
+    <plurals name="trace_shapes_mono">
+        <item quantity="one">%1$d black shape</item>
+        <item quantity="other">%1$d black shapes</item>
+    </plurals>
     <string name="trace_working">Tracing\u2026</string>
     <plurals name="trace_shapes">
         <item quantity="one">%1$d shape, %2$d colours</item>
@@ -1145,6 +1197,13 @@
     <string name="about_compose">Jetpack Compose</string>
     <string name="about_compose_summary">With Material 3 Expressive</string>
     <string name="about_licences">Licences</string>
+    <string name="about_licences_in_app">In the app</string>
+    <string name="about_licences_models">Models you download</string>
+    <string name="about_fact_person">Made by one person</string>
+    <string name="about_fact_open">Open source</string>
+    <string name="about_fact_free">Free, no ads</string>
+    <string name="about_button_source">Source</string>
+    <string name="about_button_coffee">Buy a coffee</string>
     <string name="about_licence_app">FFmpeg GUI</string>
     <string name="about_licence_eupl">European Union Public Licence 1.2</string>
     <string name="about_licence_ffmpeg">FFmpeg and FFmpegKitNext</string>
@@ -1880,6 +1939,8 @@
     <string name="svg_tour_5_body">Turn on Pick several and tap shapes, then open More tools: join them, cut one out of another, keep where they meet, line them up, group them, make a text into shapes.</string>
     <string name="svg_tour_6_title">Symmetry, repeats, paths</string>
     <string name="svg_tour_6_body">Symmetry draws on two, four or up to 24 sides at once, as a mirror or a kaleidoscope, with a grid to snap to. More tools also repeat the selection in a row, a grid or round the centre, mirror a copy beside it, simplify, smooth, reverse, break apart or join paths, and lock what should stay put.</string>
+    <string name="svg_tour_7_title">Hold to see through</string>
+    <string name="svg_tour_7_body">In a panel, keep your finger on an option or drag a slider: the panel fades away and the drawing under it shows the change live. Lift your finger and the panel comes back.</string>
     <string name="svg_add_rectangle">Add a rectangle</string>
     <string name="svg_add_ellipse">Add a circle</string>
     <string name="svg_add_star">Add a star</string>

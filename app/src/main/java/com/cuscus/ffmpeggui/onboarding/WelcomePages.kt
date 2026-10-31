@@ -761,7 +761,7 @@ internal fun LookPage(motion: PageMotion, settings: AppSettings, onChange: ((App
  * pops onto the screen.
  */
 @Composable
-private fun ThemeTile(
+internal fun ThemeTile(
     label: String,
     icon: ImageVector,
     light: Boolean?,
@@ -846,58 +846,69 @@ internal fun FeelPage(motion: PageMotion, settings: AppSettings, onChange: ((App
             )
         }
         // The pad: three taps to feel, each a shape that rings out when touched.
-        val alpha by animateFloatAsState(if (settings.haptics) 1f else 0.4f, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "padAlpha")
-        Column(
-            modifier = Modifier
-                .enter(motion, 4)
-                .graphicsLayer { this.alpha = alpha }
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(32.dp))
-                .background(scheme.surfaceContainerHigh)
-                .padding(16.dp),
-        ) {
-            Text(stringResource(R.string.welcome_feel_pad), style = SettingsRowTitle, color = scheme.onSurface, modifier = Modifier.padding(start = 4.dp, bottom = 12.dp))
-            Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
-                PadButton(
-                    label = stringResource(R.string.settings_haptics_tick),
-                    icon = Icons.Rounded.LinearScale,
-                    shape = MaterialShapes.Cookie9Sided,
-                    tone = ToneColors(scheme.secondaryContainer, scheme.onSecondaryContainer),
-                    sample = HapticSample.TICK,
-                    enabled = settings.haptics,
-                )
-                PadButton(
-                    label = stringResource(R.string.settings_haptics_tap),
-                    icon = Icons.Rounded.TouchApp,
-                    shape = MaterialShapes.SoftBurst,
-                    tone = ToneColors(scheme.tertiaryContainer, scheme.onTertiaryContainer),
-                    sample = HapticSample.TAP,
-                    enabled = settings.haptics,
-                )
-                PadButton(
-                    label = stringResource(R.string.settings_haptics_confirm),
-                    icon = Icons.Rounded.Done,
-                    shape = MaterialShapes.Clover4Leaf,
-                    tone = ToneColors(scheme.primary, scheme.onPrimary),
-                    sample = HapticSample.CONFIRM,
-                    enabled = settings.haptics,
-                )
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(stringResource(R.string.welcome_feel_slide), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp))
-            var steps by remember { mutableFloatStateOf(4f) }
-            Slider(
-                value = steps,
-                onValueChange = { value ->
-                    if (value.roundToInt() != steps.roundToInt()) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    steps = value
-                },
-                valueRange = 0f..10f,
-                steps = 9,
-                enabled = settings.haptics,
-                modifier = Modifier.fillMaxWidth(),
+        HapticPad(enabled = settings.haptics, modifier = Modifier.enter(motion, 4))
+    }
+}
+
+/**
+ * Three taps to feel, each a shape that rings out when touched, and a slider
+ * that ticks at every step: the welcome's and the vibration settings' pad.
+ * Faded and still while the taps are off.
+ */
+@Composable
+internal fun HapticPad(enabled: Boolean, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val haptics = LocalHapticFeedback.current
+    val alpha by animateFloatAsState(if (enabled) 1f else 0.4f, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "padAlpha")
+    Column(
+        modifier = modifier
+            .graphicsLayer { this.alpha = alpha }
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(32.dp))
+            .background(scheme.surfaceContainerHigh)
+            .padding(16.dp),
+    ) {
+        Text(stringResource(R.string.welcome_feel_pad), style = SettingsRowTitle, color = scheme.onSurface, modifier = Modifier.padding(start = 4.dp, bottom = 12.dp))
+        Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
+            PadButton(
+                label = stringResource(R.string.settings_haptics_tick),
+                icon = Icons.Rounded.LinearScale,
+                shape = MaterialShapes.Cookie9Sided,
+                tone = ToneColors(scheme.secondaryContainer, scheme.onSecondaryContainer),
+                sample = HapticSample.TICK,
+                enabled = enabled,
+            )
+            PadButton(
+                label = stringResource(R.string.settings_haptics_tap),
+                icon = Icons.Rounded.TouchApp,
+                shape = MaterialShapes.SoftBurst,
+                tone = ToneColors(scheme.tertiaryContainer, scheme.onTertiaryContainer),
+                sample = HapticSample.TAP,
+                enabled = enabled,
+            )
+            PadButton(
+                label = stringResource(R.string.settings_haptics_confirm),
+                icon = Icons.Rounded.Done,
+                shape = MaterialShapes.Clover4Leaf,
+                tone = ToneColors(scheme.primary, scheme.onPrimary),
+                sample = HapticSample.CONFIRM,
+                enabled = enabled,
             )
         }
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(stringResource(R.string.welcome_feel_slide), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp))
+        var steps by remember { mutableFloatStateOf(4f) }
+        Slider(
+            value = steps,
+            onValueChange = { value ->
+                if (value.roundToInt() != steps.roundToInt()) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                steps = value
+            },
+            valueRange = 0f..10f,
+            steps = 9,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

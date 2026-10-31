@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BorderOuter
+import androidx.compose.material.icons.rounded.FormatColorFill
 import androidx.compose.material.icons.rounded.Brush
 import androidx.compose.material.icons.rounded.Compare
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -221,6 +222,9 @@ internal enum class ImageTool(@StringRes val labelRes: Int, val icon: ImageVecto
     // Tools of a selected text.
     TEXT_EDIT(R.string.tool_text_edit, Icons.Rounded.Keyboard, ToolFamily.OVERLAY),
     TEXT_STYLE(R.string.tool_style, Icons.Rounded.FormatColorText, ToolFamily.OVERLAY),
+    TEXT_OUTLINE(R.string.tool_border, Icons.Rounded.BorderOuter, ToolFamily.OVERLAY),
+    TEXT_SHADOW(R.string.tool_shadow, Icons.Rounded.WbShade, ToolFamily.OVERLAY),
+    TEXT_BOX(R.string.tool_text_box, Icons.Rounded.FormatColorFill, ToolFamily.OVERLAY),
 
     // Tools of a selected text or sticker.
     LAYOUT(R.string.tool_position, Icons.Rounded.OpenWith, ToolFamily.OVERLAY),
@@ -241,7 +245,10 @@ internal enum class ImageTool(@StringRes val labelRes: Int, val icon: ImageVecto
     SHAPE(R.string.tool_shape, Icons.Rounded.Category, ToolFamily.OVERLAY),
 }
 
-private val TEXT_TOOLS = listOf(ImageTool.TEXT_EDIT, ImageTool.TEXT_STYLE, ImageTool.LAYOUT, ImageTool.LAYERS)
+private val TEXT_TOOLS = listOf(
+    ImageTool.TEXT_EDIT, ImageTool.TEXT_STYLE, ImageTool.TEXT_OUTLINE, ImageTool.TEXT_SHADOW, ImageTool.TEXT_BOX,
+    ImageTool.LAYOUT, ImageTool.LAYERS,
+)
 private val STICKER_TOOLS = listOf(
     ImageTool.LAYOUT, ImageTool.STICKER_CROP, ImageTool.ROTATE, ImageTool.STICKER_BORDER, ImageTool.STICKER_SHADOW,
     ImageTool.OPACITY, ImageTool.BLEND, ImageTool.STICKER_ADJUST, ImageTool.STICKER_KEY, ImageTool.STICKER_ERASE, ImageTool.LAYERS,
@@ -339,6 +346,7 @@ fun ImageEditorScreen(
     val selectedSticker = stickers.firstOrNull { it.id == selectedOverlayId }
     /** Changes to sticker [id]'s look, one undo step per key. */
     fun stickerLook(id: String): LookChange = { step, change -> onUpdateImage(id, step?.let { "look:$it" }) { it.copy(look = change(it.look)) } }
+    fun textLookChange(id: String): TextLookChange = { step, change -> onUpdateText(id, step?.let { "look:$it" }) { it.copy(look = change(it.look)) } }
 
     // -- The picture: the first clip's file, a still or a frame of a video ----------------
     val clip = playingClips.firstOrNull()
@@ -779,6 +787,7 @@ fun ImageEditorScreen(
                 cornerFill = imageEdit.cornerFillFor(format)?.let { Color(0xFF000000L or it.toLong()) },
                 canvas = shownCanvas,
                 vector = traced.first.takeIf { tracing && shownCanvas == null },
+                vectorWorking = tracing && shownCanvas == null && traced.second,
                 canvasFill = shownCanvas?.let { c ->
                     val fill = c.background
                     when {
@@ -997,8 +1006,12 @@ fun ImageEditorScreen(
                         onBold = { bold -> onUpdateText(text.id, null) { it.copy(isBold = bold) } },
                         onOpacity = { opacity -> onUpdateText(text.id, "opacity") { it.copy(opacity = opacity) } },
                         onFont = { font -> onUpdateText(text.id, null) { it.copy(font = font) } },
+                        onFontFile = { file -> onUpdateText(text.id, null) { it.copy(fontFile = file) } },
                     )
                 }
+                ImageTool.TEXT_OUTLINE -> selectedText?.let { text -> TextOutlineContent(text.look, textLookChange(text.id)) }
+                ImageTool.TEXT_SHADOW -> selectedText?.let { text -> TextShadowContent(text.look, textLookChange(text.id)) }
+                ImageTool.TEXT_BOX -> selectedText?.let { text -> TextBoxContent(text.look, textLookChange(text.id)) }
                 ImageTool.LAYOUT -> when {
                     selectedText != null -> Column {
                         // Its place among the captions and stickers.
@@ -1278,6 +1291,8 @@ private fun PictureStage(
     canvasFill: Color?,
     /** The picture traced into shapes (an SVG being made), shown in its place; null: the picture. */
     vector: VectorImage?,
+    /** A newer trace is being made: the preview says so over itself. */
+    vectorWorking: Boolean = false,
     showOverlays: Boolean,
     /** The picture has transparent parts (a cut-out): a checkerboard shows through them. */
     transparent: Boolean,
@@ -1367,6 +1382,8 @@ private fun PictureStage(
                         Checkerboard(modifier = Modifier.fillMaxSize())
                         VectorPreview(vector, modifier = Modifier.fillMaxSize())
                     }
+                    // While a newer trace is made: the shapes dim and a loading badge says so.
+                    TracingOverlay(visible = vectorWorking, modifier = Modifier.fillMaxSize())
                     if (zones != null && canvas == null) {
                         val tint = remember(zones) { zones.asImageBitmap() }
                         Image(bitmap = tint, contentDescription = null, contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())

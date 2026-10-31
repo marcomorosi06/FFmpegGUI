@@ -315,7 +315,7 @@ private fun Hub(smart: SmartFeaturesUi, onBack: () -> Unit, onOpen: (SmartPage) 
                 }
                 .padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
         ) {
-            SpeedGauge(fast, modifier = Modifier.size(40.dp))
+            KernelChip(fast, modifier = Modifier.size(40.dp))
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(

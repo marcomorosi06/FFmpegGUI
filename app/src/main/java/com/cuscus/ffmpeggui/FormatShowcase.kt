@@ -1,0 +1,378 @@
+package com.cuscus.ffmpeggui
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.sp
+import com.cuscus.ffmpeggui.core.model.FormatCategory
+import com.cuscus.ffmpeggui.onboarding.rememberLoop
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.sin
+
+/*
+ * The format picker's showcases: one small film per category, drawn by the
+ * app in the theme's colours and always moving (still when the system's
+ * animations are off), as the smart features' are. Each says at a glance what
+ * its formats make: a film strip rolling by, a ball bouncing
+ * in onion-skin frames, sound bars with notes rising, a landscape focused and
+ * shot with a flash, words typed out of a voice, a command typed and run.
+ *
+ * Every loop is read only while drawing: the films move without recomposing.
+ */
+
+/** The film of [category], filling what it is given. */
+@Composable
+internal fun CategoryShowcase(category: FormatCategory, modifier: Modifier = Modifier) {
+    when (category) {
+        FormatCategory.VIDEO -> VideoShowcase(modifier)
+        FormatCategory.ANIMATION -> AnimationShowcase(modifier)
+        FormatCategory.AUDIO -> AudioShowcase(modifier)
+        FormatCategory.IMAGE -> ImageShowcase(modifier)
+        FormatCategory.TEXT -> TextShowcase(modifier)
+        FormatCategory.CUSTOM -> CommandShowcase(modifier)
+    }
+}
+
+/** A smooth 0..1 step between [from] and [to] of [t]. */
+private fun ease(t: Float, from: Float, to: Float): Float {
+    val x = ((t - from) / (to - from)).coerceIn(0f, 1f)
+    return x * x * (3 - 2 * x)
+}
+
+// -- Video ---------------------------------------------------------------------------------------
+
+/** A film strip rolling by, its frames in the theme's colours, a little sun moving from frame to frame. */
+@Composable
+private fun VideoShowcase(modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val loop = rememberLoop(3_600, "formatVideo", still = 0.25f)
+    val top = scheme.primaryContainer
+    val bottom = scheme.surfaceContainerHigh
+    val strip = scheme.onPrimaryContainer
+    val frames = listOf(scheme.primary, scheme.tertiary, scheme.secondary)
+    val hole = scheme.primaryContainer
+    val sunColor = scheme.onPrimary
+    Canvas(modifier = modifier) {
+        val t = loop.value
+        drawRect(Brush.verticalGradient(listOf(top, bottom)))
+        val stripTop = size.height * 0.2f
+        val stripHeight = size.height * 0.6f
+        drawRect(strip, topLeft = Offset(0f, stripTop), size = Size(size.width, stripHeight))
+        // Three frames make a whole loop: the strip moves three frames and starts over unseen.
+        val pitch = stripHeight * 1.25f
+        val shift = t * pitch * frames.size
+        val count = ceil(size.width / pitch).toInt() + frames.size + 1
+        val frameHeight = stripHeight * 0.62f
+        val frameTop = stripTop + (stripHeight - frameHeight) / 2f
+        val holeSize = stripHeight * 0.09f
+        for (i in 0 until count) {
+            val x = i * pitch - shift
+            if (x > size.width || x + pitch < 0f) continue
+            drawRoundRect(
+                color = frames[i % frames.size],
+                topLeft = Offset(x + pitch * 0.08f, frameTop),
+                size = Size(pitch * 0.84f, frameHeight),
+                cornerRadius = CornerRadius(frameHeight * 0.18f),
+            )
+            // Each frame shows a little sun over a hill, a step further along than the last.
+            val sunX = x + pitch * (0.3f + 0.1f * (i % frames.size))
+            drawCircle(sunColor.copy(alpha = 0.55f), radius = frameHeight * 0.13f, center = Offset(sunX, frameTop + frameHeight * 0.34f))
+            for (k in 0 until 4) {
+                val hx = x + pitch * (0.12f + 0.22f * k)
+                drawRoundRect(hole, Offset(hx, stripTop + stripHeight * 0.04f), Size(holeSize * 1.4f, holeSize), CornerRadius(holeSize * 0.3f))
+                drawRoundRect(hole, Offset(hx, stripTop + stripHeight - stripHeight * 0.04f - holeSize), Size(holeSize * 1.4f, holeSize), CornerRadius(holeSize * 0.3f))
+            }
+        }
+    }
+}
+
+// -- Animation (GIF) -----------------------------------------------------------------------------
+
+/** A ball bouncing across, its last positions left behind as onion-skin frames, and the frame count ticking. */
+@Composable
+private fun AnimationShowcase(modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val loop = rememberLoop(2_800, "formatAnimation", still = 0.12f)
+    val top = scheme.tertiaryContainer
+    val bottom = scheme.surfaceContainerHigh
+    val ball = scheme.tertiary
+    val ground = scheme.onTertiaryContainer.copy(alpha = 0.35f)
+    val dotOn = scheme.tertiary
+    val dotOff = scheme.onTertiaryContainer.copy(alpha = 0.2f)
+    Canvas(modifier = modifier) {
+        val t = loop.value
+        drawRect(Brush.verticalGradient(listOf(top, bottom)))
+        val groundY = size.height * 0.72f
+        drawLine(ground, Offset(size.width * 0.08f, groundY), Offset(size.width * 0.92f, groundY), strokeWidth = size.height * 0.02f, cap = StrokeCap.Round)
+        val r = size.height * 0.1f
+        fun ballAt(p: Float): Triple<Float, Float, Float> {
+            val q = ((p % 1f) + 1f) % 1f
+            // There and back, four bounces each way.
+            val along = 1f - abs(2f * q - 1f)
+            val x = size.width * (0.16f + 0.68f * along)
+            val lift = abs(sin(q * PI * 8)).toFloat()
+            val y = groundY - r - lift * size.height * 0.42f
+            return Triple(x, y, lift)
+        }
+        // The onion skins: where the ball was a few frames ago, fainter and fainter.
+        for (k in 3 downTo 1) {
+            val (x, y, _) = ballAt(t - k * 0.018f)
+            drawCircle(ball.copy(alpha = 0.32f - k * 0.08f), radius = r, center = Offset(x, y))
+        }
+        val (x, y, lift) = ballAt(t)
+        // Squashed against the ground, stretched in the air: the oldest trick of animation.
+        val squash = if (lift < 0.12f) 1f - lift / 0.12f else 0f
+        val stretch = if (lift > 0.12f) 0.12f * (1f - lift) else 0f
+        scale(scaleX = 1f + 0.28f * squash - stretch, scaleY = 1f - 0.24f * squash + stretch, pivot = Offset(x, y + r)) {
+            drawCircle(ball, radius = r, center = Offset(x, y))
+        }
+        val dots = 8
+        val lit = (t * dots).toInt().coerceIn(0, dots - 1)
+        val dotR = size.height * 0.03f
+        val gap = dotR * 3.2f
+        val start = size.width / 2f - gap * (dots - 1) / 2f
+        for (i in 0 until dots) {
+            drawCircle(if (i == lit) dotOn else dotOff, radius = if (i == lit) dotR * 1.35f else dotR, center = Offset(start + i * gap, size.height * 0.87f))
+        }
+    }
+}
+
+// -- Audio ---------------------------------------------------------------------------------------
+
+/** Sound bars dancing along the bottom, and notes rising out of them and fading. */
+@Composable
+private fun AudioShowcase(modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val loop = rememberLoop(3_000, "formatAudio", still = 0.35f)
+    val top = scheme.secondaryContainer
+    val bottom = scheme.surfaceContainerHigh
+    val bar = scheme.secondary
+    val note = scheme.onSecondaryContainer
+    Canvas(modifier = modifier) {
+        val t = loop.value
+        drawRect(Brush.verticalGradient(listOf(top, bottom)))
+        val bars = (size.width / (size.height * 0.11f)).toInt().coerceIn(12, 64)
+        val w = size.width / bars
+        val base = size.height * 0.88f
+        for (i in 0 until bars) {
+            val p = i.toFloat() / bars
+            val a = abs(sin((p * 3f + t) * 2 * PI)).toFloat()
+            val b = abs(sin((p * 7f - t * 2f) * 2 * PI)).toFloat()
+            val h = size.height * (0.08f + 0.42f * (0.6f * a + 0.4f * b))
+            drawLine(bar, Offset(i * w + w / 2f, base), Offset(i * w + w / 2f, base - h), strokeWidth = w * 0.55f, cap = StrokeCap.Round)
+        }
+        for (n in 0 until 3) {
+            val q = (t + n / 3f) % 1f
+            val alpha = (if (q < 0.15f) q / 0.15f else 1f - (q - 0.15f) / 0.85f).coerceIn(0f, 1f)
+            val x = size.width * (0.25f + 0.25f * n) + sin((q * 2f + n) * PI).toFloat() * size.height * 0.08f
+            val y = size.height * (0.7f - 0.55f * q)
+            drawNote(note.copy(alpha = alpha), Offset(x, y), size.height * 0.07f)
+        }
+    }
+}
+
+/** A quaver: its head at [head], its stem and its flag. */
+private fun DrawScope.drawNote(color: Color, head: Offset, r: Float) {
+    drawOval(color, topLeft = Offset(head.x - r * 1.2f, head.y - r * 0.85f), size = Size(r * 2.4f, r * 1.7f))
+    val stemX = head.x + r * 1.05f
+    drawLine(color, Offset(stemX, head.y), Offset(stemX, head.y - r * 4.2f), strokeWidth = r * 0.42f, cap = StrokeCap.Round)
+    drawLine(color, Offset(stemX, head.y - r * 4.2f), Offset(stemX + r * 1.6f, head.y - r * 3f), strokeWidth = r * 0.42f, cap = StrokeCap.Round)
+}
+
+// -- Image ---------------------------------------------------------------------------------------
+
+/** A landscape: the viewfinder's corners close in to focus, a flash, and the picture is taken. */
+@Composable
+private fun ImageShowcase(modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val loop = rememberLoop(3_400, "formatImage", still = 0.4f)
+    val sky = scheme.tertiaryContainer
+    val haze = scheme.primaryContainer
+    val sun = scheme.tertiary
+    val far = scheme.secondary
+    val near = scheme.primary
+    val corners = scheme.onTertiaryContainer
+    val flash = scheme.surfaceBright
+    Canvas(modifier = modifier) {
+        val t = loop.value
+        drawRect(Brush.verticalGradient(listOf(sky, haze)))
+        drawCircle(sun, radius = size.height * 0.14f, center = Offset(size.width * 0.72f, size.height * 0.34f))
+        drawHill(far, size.height * 0.62f, size.height * 0.16f, 1.3f, 0.2f)
+        drawHill(near, size.height * 0.76f, size.height * 0.14f, 2.1f, 0.65f)
+        // 0..0.4 the corners close in, 0.45..0.6 the flash, then the picture rests and the corners open.
+        val focus = ease(t, 0.05f, 0.4f) * (1f - ease(t, 0.85f, 1f))
+        val inset = size.height * (0.06f + 0.16f * focus)
+        val arm = size.height * 0.16f
+        val stroke = Stroke(width = size.height * 0.035f, cap = StrokeCap.Round)
+        val left = size.width * 0.5f - size.height * 0.95f + inset
+        val right = size.width * 0.5f + size.height * 0.95f - inset
+        val topY = inset
+        val bottomY = size.height - inset
+        listOf(
+            Triple(Offset(left, topY), 1f, 1f),
+            Triple(Offset(right, topY), -1f, 1f),
+            Triple(Offset(left, bottomY), 1f, -1f),
+            Triple(Offset(right, bottomY), -1f, -1f),
+        ).forEach { (corner, dx, dy) ->
+            val path = Path().apply {
+                moveTo(corner.x + arm * dx, corner.y)
+                lineTo(corner.x, corner.y)
+                lineTo(corner.x, corner.y + arm * dy)
+            }
+            drawPath(path, corners.copy(alpha = 0.6f + 0.4f * focus), style = stroke)
+        }
+        val flashAlpha = ease(t, 0.42f, 0.46f) * (1f - ease(t, 0.46f, 0.62f))
+        if (flashAlpha > 0f) drawRect(flash.copy(alpha = flashAlpha * 0.9f))
+    }
+}
+
+/** A soft hill across the picture: its top at [crest], rising and falling [waves] times. */
+private fun DrawScope.drawHill(color: Color, crest: Float, height: Float, waves: Float, phase: Float) {
+    val path = Path().apply {
+        moveTo(0f, size.height)
+        val steps = 24
+        for (i in 0..steps) {
+            val x = size.width * i / steps
+            val y = crest - height * sin((i.toFloat() / steps * waves + phase) * PI).toFloat()
+            lineTo(x, y)
+        }
+        lineTo(size.width, size.height)
+        close()
+    }
+    drawPath(path, color)
+}
+
+// -- Text (transcripts, subtitles) ---------------------------------------------------------------
+
+/** A voice on the left, and its words typed out line by line on the right, a caret at their end. */
+@Composable
+private fun TextShowcase(modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val loop = rememberLoop(3_800, "formatText", still = 0.7f)
+    val top = scheme.surfaceContainerHighest
+    val bottom = scheme.secondaryContainer
+    val wave = scheme.secondary
+    val page = scheme.surfaceContainerLowest
+    val ink = scheme.onSurfaceVariant.copy(alpha = 0.55f)
+    val typing = scheme.secondary
+    Canvas(modifier = modifier) {
+        val t = loop.value
+        drawRect(Brush.verticalGradient(listOf(top, bottom)))
+        // The voice: a few bars that speak while the words are typed and rest after.
+        val talking = 1f - ease(t, 0.75f, 0.85f)
+        val waveLeft = size.width * 0.06f
+        val waveWidth = size.width * 0.22f
+        val bars = 7
+        for (i in 0 until bars) {
+            val h = size.height * (0.08f + 0.3f * talking * abs(sin((i * 0.7f + t * 9f) * PI)).toFloat())
+            val x = waveLeft + waveWidth * (i + 0.5f) / bars
+            drawLine(wave, Offset(x, size.height / 2f - h), Offset(x, size.height / 2f + h), strokeWidth = waveWidth / bars * 0.55f, cap = StrokeCap.Round)
+        }
+        val pageLeft = size.width * 0.34f
+        val pageTop = size.height * 0.14f
+        val pageWidth = size.width * 0.6f
+        val pageHeight = size.height * 0.72f
+        drawRoundRect(page, Offset(pageLeft, pageTop), Size(pageWidth, pageHeight), CornerRadius(size.height * 0.1f))
+        val lines = listOf(0.85f, 0.7f, 0.5f)
+        val lineHeight = pageHeight * 0.12f
+        val fade = 1f - ease(t, 0.9f, 1f)
+        lines.forEachIndexed { i, length ->
+            // Each line is typed in its own third of the first three quarters of the loop.
+            val typed = ease(t, i * 0.25f, (i + 1) * 0.25f)
+            if (typed <= 0f) return@forEachIndexed
+            val y = pageTop + pageHeight * (0.22f + 0.26f * i)
+            val full = pageWidth * 0.8f * length
+            val x = pageLeft + pageWidth * 0.1f
+            val writing = typed < 1f
+            drawRoundRect(
+                color = (if (writing) typing else ink).copy(alpha = fade),
+                topLeft = Offset(x, y),
+                size = Size(full * typed, lineHeight),
+                cornerRadius = CornerRadius(lineHeight / 2f),
+            )
+            if (writing) {
+                drawRect(typing.copy(alpha = fade), Offset(x + full * typed + lineHeight * 0.4f, y - lineHeight * 0.3f), Size(lineHeight * 0.3f, lineHeight * 1.6f))
+            }
+        }
+    }
+}
+
+// -- Custom (a command) --------------------------------------------------------------------------
+
+/** The command a terminal types, letter by letter; then it runs, a bar fills and a tick says it is done. */
+@Composable
+private fun CommandShowcase(modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val loop = rememberLoop(4_200, "formatCommand", still = 0.62f)
+    val measurer = rememberTextMeasurer()
+    val back = scheme.inverseSurface
+    val text = scheme.inverseOnSurface
+    val accent = scheme.inversePrimary
+    val style = remember(text) { TextStyle(color = text, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+    val command = "ffmpeg -i in.mp4 out.webm"
+    val layout = remember(style) { measurer.measure("\$ $command", style) }
+    val prompt = remember(style, accent) { measurer.measure("\$", style.copy(color = accent)) }
+    Canvas(modifier = modifier) {
+        val t = loop.value
+        drawRect(back)
+        val dot = size.height * 0.045f
+        listOf(0.35f, 0.6f, 0.85f).forEachIndexed { i, alpha ->
+            drawCircle(text.copy(alpha = alpha * 0.5f), radius = dot, center = Offset(size.height * 0.14f + i * dot * 3f, size.height * 0.14f))
+        }
+        val origin = Offset(size.height * 0.14f, size.height * 0.36f - layout.size.height / 2f)
+        // 0..0.5 typed, 0.55..0.85 run, then the tick, and over again.
+        val typed = ease(t, 0.04f, 0.5f)
+        val shown = 2 + (command.length * typed).toInt()
+        val end = layout.getHorizontalPosition(shown.coerceAtMost(layout.layoutInput.text.length), true)
+        clipRect(right = origin.x + end) {
+            drawText(layout, topLeft = origin)
+        }
+        drawText(prompt, topLeft = origin)
+        val blink = typed < 1f || (t * 10f).toInt() % 2 == 0
+        if (blink && t < 0.55f) {
+            drawRect(accent, Offset(origin.x + end + 2f, origin.y), Size(size.height * 0.05f, layout.size.height.toFloat()))
+        }
+        val run = ease(t, 0.55f, 0.85f)
+        if (run > 0f) {
+            val barTop = size.height * 0.62f
+            val barLeft = origin.x
+            val barWidth = size.width - barLeft * 2f - size.height * 0.2f
+            val barHeight = size.height * 0.08f
+            drawRoundRect(text.copy(alpha = 0.18f), Offset(barLeft, barTop), Size(barWidth, barHeight), CornerRadius(barHeight / 2f))
+            drawRoundRect(accent, Offset(barLeft, barTop), Size(barWidth * run, barHeight), CornerRadius(barHeight / 2f))
+            val done = ease(t, 0.85f, 0.92f)
+            if (done > 0f) {
+                val c = Offset(barLeft + barWidth + size.height * 0.12f, barTop + barHeight / 2f)
+                val r = size.height * 0.08f * done
+                drawCircle(accent, radius = r, center = c)
+                val tick = Path().apply {
+                    moveTo(c.x - r * 0.45f, c.y)
+                    lineTo(c.x - r * 0.1f, c.y + r * 0.35f)
+                    lineTo(c.x + r * 0.45f, c.y - r * 0.35f)
+                }
+                drawPath(tick, back, style = Stroke(width = r * 0.22f, cap = StrokeCap.Round))
+            }
+        }
+    }
+}
+

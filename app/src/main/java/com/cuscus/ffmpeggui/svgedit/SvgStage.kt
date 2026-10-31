@@ -88,6 +88,13 @@ import com.cuscus.ffmpeggui.core.vector.svg.moveLineEnd
 import com.cuscus.ffmpeggui.core.vector.svg.withEditPath
 import com.cuscus.ffmpeggui.core.vector.svg.Box as SvgBox
 import com.cuscus.ffmpeggui.core.vector.svg.Snap
+import com.cuscus.ffmpeggui.core.vector.svg.PointSnap
+import com.cuscus.ffmpeggui.core.vector.svg.PointTargets
+import com.cuscus.ffmpeggui.core.vector.svg.gridSnapLines
+import com.cuscus.ffmpeggui.core.vector.svg.pathPoints
+import com.cuscus.ffmpeggui.core.vector.svg.snapCentre
+import com.cuscus.ffmpeggui.core.vector.svg.snapPoint
+import com.cuscus.ffmpeggui.core.vector.svg.snapRays
 import com.cuscus.ffmpeggui.core.vector.svg.SnapTargets
 import com.cuscus.ffmpeggui.core.vector.svg.SvgDocument
 import com.cuscus.ffmpeggui.core.vector.svg.SvgShape
@@ -250,6 +257,42 @@ internal fun SvgStage(
     var magnetAt by remember { mutableStateOf<Pair<Double, Double>?>(null) }
     // The stroke being drawn with the pen (pixels of the drawing).
     val stroke = remember { mutableStateListOf<Offset>() }
+    // Where a point being moved or placed has landed, and the guides that hold it; its ring pops in on each new landing.
+    var pointGuide by remember { mutableStateOf<PointSnap?>(null) }
+    val pointPop = remember { Animatable(1f) }
+    val popSpec = motion.fastSpatialSpec<Float>()
+
+    // What a point can land on: the drawing's other points (and the symmetry's centre), the page's
+    // edges and middle, the grid's lines and the middles of its squares (when moves snap to it),
+    // the symmetry's axes and the lines half way between them.
+    fun pointTargets(d: SvgDocument, exceptKey: Int?, exceptSub: Int, exceptPoint: Int): PointTargets {
+        val sym = symmetry.value
+        val view = d.viewTransform
+        val own = d.pathPoints(exceptKey, exceptSub, exceptPoint)
+        val points = if (sym != null) own + sym.snapCentre(view) else own
+        val xs = arrayListOf(0.0, d.width / 2, d.width)
+        val ys = arrayListOf(0.0, d.height / 2, d.height)
+        if (snapToGrid.value && gridStep.value > 0.0) {
+            val (gx, gy) = gridSnapLines(gridStep.value, d.width, d.height)
+            gx.forEach { xs += it }
+            gy.forEach { ys += it }
+        }
+        return PointTargets(points, xs.toDoubleArray(), ys.toDoubleArray(), sym?.snapRays(view).orEmpty())
+    }
+
+    // Shows where a point landed; a tick and a pop when it lands somewhere new.
+    fun showLanding(snap: PointSnap) {
+        val before = pointGuide
+        val landed = snap.takeIf { it.snapped }
+        if (landed != null && (before == null || before.x != landed.x || before.y != landed.y)) {
+            haptic.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
+            scope.launch {
+                pointPop.snapTo(0f)
+                pointPop.animateTo(1f, popSpec)
+            }
+        }
+        pointGuide = landed
+    }
 
     Box(modifier = modifier.fillMaxSize().clipToBounds()) {
     BoxWithConstraints(
@@ -334,8 +377,29 @@ internal fun SvgStage(
                                 travel += event.changes.first().positionChange().getDistance()
                             }
                             if (!several && travel < slop) {
-                                haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                                currentTap(p0, touch)
+                                var at = p0
+                                if (mode.value == StageMode.BUILD) {
+                                    // A new point lands magnetically too; its guides show for a moment.
+                                    val snap = snapPoint(
+                                        p0.x.toDouble(),
+                                        p0.y.toDouble(),
+                                        pointTargets(start, null, -1, -1),
+                                        POINT_SNAP.toPx() / (s * z).toDouble(),
+                                    )
+                                    if (snap.snapped) {
+                                        showLanding(snap)
+                                        at = Offset(snap.x.toFloat(), snap.y.toFloat())
+                                        scope.launch {
+                                            kotlinx.coroutines.delay(TAP_GUIDE_MS)
+                                            if (pointGuide === snap) pointGuide = null
+                                        }
+                                    } else {
+                                        haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                    }
+                                } else {
+                                    haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                }
+                                currentTap(at, touch)
                             }
                             return@awaitEachGesture
                         }
@@ -361,6 +425,8 @@ internal fun SvgStage(
                                 if (control != null) break
                             }
                             val hit = if (control == null) path.hit(lx0, ly0, reach) else null
+                            // Worked out once, when the point first moves: what it may land on.
+                            var landings: PointTargets? = null
                             var moved = false
                             var several = false
                             var travel = 0f
@@ -385,8 +451,18 @@ internal fun SvgStage(
                                     haptic.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
                                 }
                                 val cur = toDoc(change.position)
-                                val lx = inv.mapX(cur.x.toDouble(), cur.y.toDouble())
-                                val ly = inv.mapY(cur.x.toDouble(), cur.y.toDouble())
+                                var wx = cur.x.toDouble()
+                                var wy = cur.y.toDouble()
+                                // A point (not a curve's control) lands magnetically on what is near it.
+                                if (control == null && hit is PathHit.OnPoint) {
+                                    val t = landings ?: pointTargets(start, key, hit.sub, hit.point).also { landings = it }
+                                    val snap = snapPoint(wx, wy, t, POINT_SNAP.toPx() / (s * z).toDouble())
+                                    showLanding(snap)
+                                    wx = snap.x
+                                    wy = snap.y
+                                }
+                                val lx = inv.mapX(wx, wy)
+                                val ly = inv.mapY(wx, wy)
                                 val next = control?.let { (sub, piece, first) ->
                                     val c = path.subs[sub].bends[piece] as Bend.Curve
                                     path.setBend(sub, piece, if (first) c.copy(c1x = lx, c1y = ly) else c.copy(c2x = lx, c2y = ly))
@@ -394,6 +470,7 @@ internal fun SvgStage(
                                 currentChange { start.update(key) { n -> (n as? SvgShape)?.withEditPath(next) ?: n } }
                                 change.consume()
                             }
+                            pointGuide = null
                             if (moved) {
                                 currentEnd()
                                 when {
@@ -722,6 +799,26 @@ internal fun SvgStage(
                             val dash = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx() / z, 4.dp.toPx() / z))
                             g.xs.forEach { x -> drawLine(guide, Offset(x.toFloat() * s, -size.height), Offset(x.toFloat() * s, size.height * 2), strokeWidth = w, pathEffect = dash) }
                             g.ys.forEach { y -> drawLine(guide, Offset(-size.width, y.toFloat() * s), Offset(size.width * 2, y.toFloat() * s), strokeWidth = w, pathEffect = dash) }
+                        }
+                        // Where a point landed: the lines and axes that hold it, and a ring that pops on it.
+                        pointGuide?.let { g ->
+                            val guide = scheme.tertiary
+                            val w = 1.5.dp.toPx() / z
+                            val dash = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx() / z, 4.dp.toPx() / z))
+                            g.xs.forEach { x -> drawLine(guide, Offset(x.toFloat() * s, -size.height), Offset(x.toFloat() * s, size.height * 2), strokeWidth = w, pathEffect = dash) }
+                            g.ys.forEach { y -> drawLine(guide, Offset(-size.width, y.toFloat() * s), Offset(size.width * 2, y.toFloat() * s), strokeWidth = w, pathEffect = dash) }
+                            val far = (size.width + size.height) * 2f / s
+                            g.rays.forEach { r ->
+                                val from = if (r.whole) Offset((r.ox - r.dx * far).toFloat() * s, (r.oy - r.dy * far).toFloat() * s) else Offset(r.ox.toFloat() * s, r.oy.toFloat() * s)
+                                val to = Offset((r.ox + r.dx * far).toFloat() * s, (r.oy + r.dy * far).toFloat() * s)
+                                drawLine(guide, from, to, strokeWidth = w * 1.4f, pathEffect = dash, cap = StrokeCap.Round)
+                            }
+                            val at = Offset(g.x.toFloat() * s, g.y.toFloat() * s)
+                            val pop = pointPop.value
+                            val ring = (if (g.onPoint) 11.dp else 8.dp).toPx() / z * (0.4f + 0.6f * pop)
+                            drawCircle(scheme.surface, radius = ring + 2.dp.toPx() / z, center = at)
+                            drawCircle(guide, radius = ring, center = at, style = Stroke(width = 2.5.dp.toPx() / z))
+                            if (g.onPoint) drawCircle(guide, radius = ring * 0.45f, center = at)
                         }
                         // The shape a line's end is about to hold.
                         magnet?.let { key ->
@@ -1062,3 +1159,9 @@ private val TURN_REACH = 34.dp
 private val TURN_SIZE = 26.dp
 /** How near a guide a moved box lands on it. */
 private val SNAP = 8.dp
+
+/** How near a point must come to what it lands on (a little more than a box: a fingertip is less exact on a point). */
+private val POINT_SNAP = 10.dp
+
+/** How long the guides of a point placed with a tap stay. */
+private const val TAP_GUIDE_MS = 700L

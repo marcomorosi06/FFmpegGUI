@@ -358,10 +358,12 @@ class CommandBuilder(fonts: FontProvider) {
         }
 
         val hdrLook = if (format.hasVideo) hdrLookFilters(request, paths) else emptyList()
-        val videoChain = if (format.hasVideo) videoFilters.wholeChain(request, paths, outputSeconds) + hdrLook else emptyList()
+        // The height the captions are drawn at, for their outline, shadow and box in pixels.
+        val captionHeight = if (format.hasVideo) wholeFrameSize(request).second else 0
+        val videoChain = if (format.hasVideo) videoFilters.wholeChain(request, paths, outputSeconds, captionHeight) + hdrLook else emptyList()
         // With pictures the captions are stacked among them, between these two parts.
         val videoBefore = if (format.hasVideo) videoFilters.wholeBefore(request, paths) else emptyList()
-        val videoCaptions = if (format.hasVideo) videoFilters.wholeCaptions(request) else emptyList()
+        val videoCaptions = if (format.hasVideo) videoFilters.wholeCaptions(request, captionHeight) else emptyList()
         val videoAfter = if (format.hasVideo) videoFilters.wholeAfter(request, outputSeconds) + hdrLook else emptyList()
         val videoTail = when {
             format == OutputFormat.GIF -> VideoFilters.gifPaletteTail(request.encoding.gif)
@@ -540,8 +542,6 @@ class CommandBuilder(fonts: FontProvider) {
         val picture = toneMapFilters(source.hdr, "gbrp") + "format=rgb24" + stages.map { it.filter } +
             (if (ownAlpha) listOf(OWN_ALPHA_MERGE) else emptyList())
         val transparent = edit.isTransparent || ownAlpha
-        // Captions and pictures stacked in their order, as in a video.
-        val captions = request.wholeTextOverlays.filter { it.text.isNotBlank() }.map { it.layer to videoFilters.drawtext(it, timed = false) }
         // An Ultra HDR picture is also written losslessly as it comes out, and without what
         // lies on it (see HdrPictures): the picture is split before the captions.
         val hdr = paths.hdrPictures?.takeIf { request.format == OutputFormat.JPG && edit.canvas == null }
@@ -549,6 +549,10 @@ class CommandBuilder(fonts: FontProvider) {
         val canvas = edit.canvas?.sane()
 
         val (editedW, editedH) = editedSize(edit, request.effects, width, height)
+        // Captions and pictures stacked in their order, as in a video; on the canvas when there is one.
+        val captionHeight = canvas?.height ?: editedH
+        val captions = request.wholeTextOverlays.filter { it.text.isNotBlank() }
+            .map { it.layer to videoFilters.drawtext(it, timed = false, frameHeight = captionHeight) }
         val tail = mutableListOf<String>()
         // The picture without what lies on it: the border black, the same size.
         val plainTail = mutableListOf<String>()
@@ -772,7 +776,7 @@ class CommandBuilder(fonts: FontProvider) {
                     emptyList()
                 }
                 // Its captions and pictures, stacked in their order, then its fades over them.
-                val captions = if (clipEffects) videoFilters.clipCaptions(request.textOverlaysOf(segment)) else emptyList()
+                val captions = if (clipEffects) videoFilters.clipCaptions(request.textOverlaysOf(segment), clipFrame(request, segment)?.second ?: 0) else emptyList()
                 val fades = if (clipEffects) videoFilters.fadesOf(segment.effects, playedSeconds) else emptyList()
                 val pictures = if (clipEffects && withOverlays && segment.clipId != null) {
                     overlayInputs(request, paths, firstOverlayInput).filter { it.placement.clipId == segment.clipId }
@@ -1170,7 +1174,12 @@ class CommandBuilder(fonts: FontProvider) {
             val prepared = mutableListOf<String>()
             if (video != null) prepared += fmt("setpts=PTS-STARTPTS+%.3f/TB", placement.startMs.coerceAtLeast(0L) / 1000.0)
             if (placement.adjustsColor) {
-                prepared += fmt("eq=brightness=%.2f:contrast=%.2f:saturation=%.2f", placement.brightness, placement.contrast, placement.saturation)
+                prepared += fmt(
+                    "eq=brightness=%.2f:contrast=%.2f:saturation=%.2f",
+                    placement.brightness,
+                    com.cuscus.ffmpeggui.core.preview.eqContrast(placement.contrast),
+                    com.cuscus.ffmpeggui.core.preview.eqSaturation(placement.saturation),
+                )
             }
             if (placement.turnsHue) prepared += fmt("hue=h=%.1f", placement.hueDegrees)
             if (placement.flipHorizontal) prepared += "hflip"

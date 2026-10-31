@@ -2,6 +2,10 @@
 
 package com.cuscus.ffmpeggui
 
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import com.cuscus.ffmpeggui.core.preview.EQ_CONTRAST_MAX
+import com.cuscus.ffmpeggui.core.preview.EQ_CONTRAST_MIN
 import com.cuscus.ffmpeggui.core.model.VideoPlacement
 import android.net.Uri
 import androidx.annotation.StringRes
@@ -879,10 +883,11 @@ internal fun ColorSectionContent(
                     )
                     ColorSetting.CONTRAST -> ValueSlider(
                         label = stringResource(R.string.color_contrast),
-                        valueText = decimal(contrast, 2),
-                        value = contrast,
+                        valueText = decimal(contrast.coerceIn(EQ_CONTRAST_MIN, EQ_CONTRAST_MAX), 2),
+                        value = contrast.coerceIn(EQ_CONTRAST_MIN, EQ_CONTRAST_MAX),
                         onValueChange = onContrast,
-                        valueRange = -2f..2f,
+                        // 0 is a flat grey: below it FFmpeg's eq would make a negative, not less contrast.
+                        valueRange = EQ_CONTRAST_MIN..EQ_CONTRAST_MAX,
                         icon = shown.icon,
                         defaultValue = 1f,
                     )
@@ -908,10 +913,19 @@ internal fun ColorSectionContent(
 @Composable
 internal fun TextEditContent(text: TextOverlay, onText: (String) -> Unit) {
     val focus = remember { FocusRequester() }
+    // The cursor starts at the end of the words, ready to go on typing.
+    var field by remember(text.id) { mutableStateOf(TextFieldValue(text.text, TextRange(text.text.length))) }
+    // Changed from elsewhere (undo, redo): the new words, the cursor again at their end.
+    LaunchedEffect(text.text) {
+        if (field.text != text.text) field = TextFieldValue(text.text, TextRange(text.text.length))
+    }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         OutlinedTextField(
-            value = text.text,
-            onValueChange = onText,
+            value = field,
+            onValueChange = { next ->
+                field = next
+                if (next.text != text.text) onText(next.text)
+            },
             label = { Text(stringResource(R.string.text_content)) },
             singleLine = true,
             shape = RoundedCornerShape(16.dp),
@@ -931,11 +945,13 @@ internal fun TextStyleContent(
     onBold: (Boolean) -> Unit,
     onOpacity: (Float) -> Unit,
     onFont: (com.cuscus.ffmpeggui.core.model.TextFont) -> Unit = {},
+    /** A font file the user added (its path in the app), or null for the family again. */
+    onFontFile: (String?) -> Unit = {},
 ) {
     val haptic = LocalHapticFeedback.current
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-        // The typeface, each shown in itself.
-        FontPicker(selected = text.font, bold = text.isBold, onSelect = onFont)
+        // The typeface, each shown in itself; the user's own fonts after the phone's.
+        CaptionFontPicker(text = text, onFont = onFont, onFontFile = onFontFile)
         PanelCard {
             ColorSwatchRow(colors = CAPTION_COLORS, selected = text.color, onSelect = onColor)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -960,11 +976,13 @@ internal fun TextStyleContent(
                     modifier = Modifier.weight(1f),
                 )
                 ToggleButton(
-                    checked = text.isBold,
+                    checked = text.isBold && text.fontFile == null,
                     onCheckedChange = { bold ->
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onBold(bold)
                     },
+                    // A font the user added is drawn as it is: its bold is a file of its own.
+                    enabled = text.fontFile == null,
                 ) {
                     Icon(Icons.Rounded.FormatBold, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
@@ -983,6 +1001,7 @@ internal fun TextStyleContent(
                 defaultValue = 1f,
             )
         }
+        if (text.fontFile != null) PanelHint(stringResource(R.string.text_font_own_bold))
     }
 }
 

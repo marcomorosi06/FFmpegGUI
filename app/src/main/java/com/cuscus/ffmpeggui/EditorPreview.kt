@@ -2,6 +2,15 @@
 
 package com.cuscus.ffmpeggui
 
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.text.font.FontSynthesis
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.unit.IntOffset
+import com.cuscus.ffmpeggui.core.model.KeyProperty
 import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -1445,6 +1454,9 @@ internal fun BoxScope.TextOverlaysLayer(
                         .placedWithin({ current.x }, { current.y })
                         // Its opacity and fades, read while drawing so that the clock does not recompose.
                         .graphicsLayer {
+                            // Each part drawn with the opacity, as drawtext blends them, and nothing cut
+                            // at the text's bounds (a box, a shadow reach past them).
+                            compositingStrategy = CompositingStrategy.ModulateAlpha
                             alpha = current.opacity.coerceIn(0f, 1f) *
                                 (if (outputMs != null) overlayFade(current.startMs, current.endMs, current.fadeInSeconds, current.fadeOutSeconds, outputMs()) else 1f)
                         }
@@ -1493,21 +1505,99 @@ internal fun BoxScope.TextOverlaysLayer(
                             )
                         },
                 ) {
-                    Text(
-                        text = overlay.text,
-                        color = Color(applyColorMatrix(overlay.color, colorMatrix)),
+                    // The very file drawtext draws with; a font the user added has no bold of its own,
+                    // and drawtext makes none up: neither does the preview.
+                    val custom = overlay.fontFile != null
+                    val textStyle = MaterialTheme.typography.bodyMedium.copy(
                         // drawtext sizes the font as a fraction of the frame height.
                         fontSize = with(density) { (canvasHeight * liveSize).toSp() },
-                        fontWeight = if (overlay.isBold) FontWeight.Bold else FontWeight.Normal,
-                        // The very file drawtext draws with.
-                        fontFamily = rememberExportFont(overlay.font, overlay.isBold),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.border(
-                            width = if (editable) 1.dp else 0.dp,
-                            color = if (editable) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f) else Color.Transparent,
-                            shape = RoundedCornerShape(4.dp),
-                        ),
+                        fontWeight = if (overlay.isBold && !custom) FontWeight.Bold else FontWeight.Normal,
+                        fontFamily = rememberCaptionFont(overlay.font, overlay.isBold, overlay.fontFile),
+                        fontSynthesis = if (custom) FontSynthesis.None else FontSynthesis.All,
                     )
+                    // Outline, shadow and box as drawtext draws them: in pixels of the starting size
+                    // (see VideoFilters.lookOptions), the box around the text, then the shadow, the
+                    // outline and the letters. None of them changes the text's own size, so it is
+                    // placed as before.
+                    val look = overlay.look.sane()
+                    val lookPixels = canvasHeight * overlay.keyframes.valueAt(KeyProperty.SIZE, 0L, overlay.size)
+                    Box(
+                        modifier = if (look.box && look.shadowBlur <= 0f) {
+                            Modifier.drawBehind {
+                                val pad = look.boxPadding * lookPixels
+                                drawRect(
+                                    color = Color(applyColorMatrix(look.boxColor, colorMatrix)),
+                                    topLeft = Offset(-pad, -pad),
+                                    size = Size(size.width + 2 * pad, size.height + 2 * pad),
+                                )
+                            }
+                        } else {
+                            Modifier
+                        },
+                    ) {
+                        if (look.hasShadow) {
+                            val shift = (look.shadow * lookPixels).roundToInt()
+                            val shadowColor = Color(applyColorMatrix(look.shadowColor, colorMatrix))
+                            if (look.shadowBlur > 0f) {
+                                // Soft: the shadow of letters drawn far away, cast back to where the
+                                // shadow falls, so that only the blur shows. The export's gblur has a
+                                // sigma of half the softness; a canvas blur radius of r has one of
+                                // about 0.577 r + 0.5.
+                                val sigma = look.shadowBlur * lookPixels / 2f
+                                val radius = ((sigma - 0.5f) / 0.57735f).coerceAtLeast(0.01f)
+                                Text(
+                                    text = overlay.text,
+                                    style = textStyle.copy(
+                                        color = Color.Black,
+                                        shadow = Shadow(
+                                            color = shadowColor,
+                                            offset = Offset(SHADOW_CAST + shift, SHADOW_CAST + shift),
+                                            blurRadius = radius,
+                                        ),
+                                    ),
+                                    modifier = Modifier.offset { IntOffset(-SHADOW_CAST.toInt(), -SHADOW_CAST.toInt()) },
+                                )
+                            } else {
+                                Text(
+                                    text = overlay.text,
+                                    style = textStyle.copy(color = shadowColor),
+                                    modifier = Modifier.offset { IntOffset(shift, shift) },
+                                )
+                            }
+                        }
+                        if (look.box && look.shadowBlur > 0f) {
+                            // A soft shadow lies under the text's whole drawtext, box and all: the box goes over it.
+                            Box(
+                                modifier = Modifier.matchParentSize().drawBehind {
+                                    val pad = look.boxPadding * lookPixels
+                                    drawRect(
+                                        color = Color(applyColorMatrix(look.boxColor, colorMatrix)),
+                                        topLeft = Offset(-pad, -pad),
+                                        size = Size(size.width + 2 * pad, size.height + 2 * pad),
+                                    )
+                                },
+                            )
+                        }
+                        if (look.outline > 0f) {
+                            // A stroke is half outside the letters: twice the width drawtext gives.
+                            Text(
+                                text = overlay.text,
+                                style = textStyle.copy(
+                                    color = Color(applyColorMatrix(look.outlineColor, colorMatrix)),
+                                    drawStyle = Stroke(width = 2f * look.outline * lookPixels, join = StrokeJoin.Round),
+                                ),
+                            )
+                        }
+                        Text(
+                            text = overlay.text,
+                            style = textStyle.copy(color = Color(applyColorMatrix(overlay.color, colorMatrix))),
+                            modifier = Modifier.border(
+                                width = if (editable) 1.dp else 0.dp,
+                                color = if (editable) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f) else Color.Transparent,
+                                shape = RoundedCornerShape(4.dp),
+                            ),
+                        )
+                    }
 
                     if (editable) {
                         ResizeHandle(
@@ -2181,3 +2271,5 @@ private fun StatusBadges(
     }
 }
 
+/** How far away a soft shadow's letters are drawn, so that only their cast shadow shows (pixels). */
+private const val SHADOW_CAST = 20_000f

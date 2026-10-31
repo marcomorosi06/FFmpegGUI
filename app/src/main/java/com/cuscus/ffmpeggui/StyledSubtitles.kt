@@ -83,6 +83,21 @@ internal fun rememberExportFont(font: TextFont, bold: Boolean): FontFamily {
     }
 }
 
+/**
+ * The family a caption is drawn with: the font file the user added while it can
+ * be read (as the export does, see FontProvider.customFontPath), else the file
+ * of its family (see [rememberExportFont]).
+ */
+@Composable
+internal fun rememberCaptionFont(font: TextFont, bold: Boolean, fontFile: String?): FontFamily {
+    val family = rememberExportFont(font, bold)
+    if (fontFile == null) return family
+    val own = remember(fontFile) {
+        java.io.File(fontFile).takeIf { it.isFile && it.canRead() }?.let { runCatching { FontFamily(Font(it)) }.getOrNull() }
+    }
+    return own ?: family
+}
+
 /*
  * Styled subtitles on the preview, drawn as libass will burn them (see
  * AssSubtitles in :core): the same blocks and lines, a line as high as the font

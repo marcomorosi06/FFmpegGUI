@@ -71,6 +71,9 @@ class VectorImage(val width: Int, val height: Int, val layers: List<VectorLayer>
     /** The number of outlines (a measure of how heavy the SVG is). */
     val outlines: Int get() = layers.sumOf { layer -> layer.ops.count { it is PathOp.MoveTo } }
 
+    /** Its colours (ARGB), the one covering most of the picture first. */
+    val palette: List<Int> get() = layers.sortedByDescending { it.pixels }.map { it.argb }
+
     /** The SVG, shown [outWidth] x [outHeight] by default (it scales to anything). */
     fun toSvg(outWidth: Int = width, outHeight: Int = height): String {
         val out = StringBuilder()

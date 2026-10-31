@@ -2,6 +2,9 @@
 
 package com.cuscus.ffmpeggui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.foundation.layout.widthIn
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.animateFloatAsState
@@ -55,6 +58,7 @@ import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Gesture
 import androidx.compose.material.icons.rounded.WbShade
 import androidx.compose.material.icons.rounded.BorderOuter
+import androidx.compose.material.icons.rounded.FormatColorFill
 import androidx.compose.material.icons.rounded.Crop
 import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material.icons.rounded.Album
@@ -147,6 +151,10 @@ enum class EditorTool(@StringRes val labelRes: Int, val icon: ImageVector, val f
     // Tools of a selected text or picture.
     TEXT_EDIT(R.string.tool_text_edit, Icons.Rounded.Keyboard, ToolFamily.OVERLAY),
     TEXT_STYLE(R.string.tool_style, Icons.Rounded.FormatColorText, ToolFamily.OVERLAY),
+    // A text's outline, shadow and box behind it.
+    TEXT_OUTLINE(R.string.tool_border, Icons.Rounded.BorderOuter, ToolFamily.OVERLAY),
+    TEXT_SHADOW(R.string.tool_shadow, Icons.Rounded.WbShade, ToolFamily.OVERLAY),
+    TEXT_BOX(R.string.tool_text_box, Icons.Rounded.FormatColorFill, ToolFamily.OVERLAY),
     OVERLAY_LAYOUT(R.string.tool_position, Icons.Rounded.OpenWith, ToolFamily.OVERLAY),
     IMAGE_OPACITY(R.string.tool_opacity, Icons.Rounded.Opacity, ToolFamily.OVERLAY),
     OVERLAY_FADE(R.string.tool_fade, Icons.Rounded.Gradient, ToolFamily.OVERLAY),
@@ -513,11 +521,13 @@ fun ClipActionsToolbar(
     modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
+    // The clip's own actions: the picture family's vibrant tone.
+    val colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors()
     HorizontalFloatingToolbar(
         expanded = true,
-        // The clip's own actions: the picture family's vibrant tone.
-        colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
-        modifier = modifier,
+        colors = colors,
+        // A thin line in the colour of its icons, so that the pill keeps its edge over a picture of its own colour.
+        modifier = modifier.mediaOutline(colors.toolbarContentColor),
     ) {
         actions.forEach { action ->
             IconButton(
@@ -532,3 +542,16 @@ fun ClipActionsToolbar(
         }
     }
 }
+
+/**
+ * A thin outline for a control that floats over the picture (issue #20): in a
+ * tone of the control's own content colour, so it contrasts with the control's
+ * container. Where the picture behind has the container's colour, the line
+ * still draws the control's edge.
+ */
+internal fun Modifier.mediaOutline(content: Color, shape: Shape = CircleShape): Modifier =
+    border(BorderStroke(MEDIA_OUTLINE_WIDTH, content.copy(alpha = MEDIA_OUTLINE_ALPHA)), shape)
+
+/** How thick the outline of a control over the picture is, and how strong. */
+private val MEDIA_OUTLINE_WIDTH = 1.dp
+private const val MEDIA_OUTLINE_ALPHA = 0.38f

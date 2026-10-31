@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.cuscus.ffmpeggui.core.image.Raster
 import com.cuscus.ffmpeggui.core.vector.TraceSettings
+import com.cuscus.ffmpeggui.core.vector.VectorImage
 import com.cuscus.ffmpeggui.core.vector.VectorTracer
 import com.cuscus.ffmpeggui.core.vector.svg.Affine
 import com.cuscus.ffmpeggui.core.vector.svg.Symmetry
@@ -112,7 +113,15 @@ class SvgEditorViewModel(application: Application) : AndroidViewModel(applicatio
     val dirty: StateFlow<Boolean> = _dirty.asStateFlow()
 
     /** A picture being traced into the drawing: how, and whether a newer trace is being made. */
-    data class Tracing(val settings: TraceSettings, val working: Boolean, val colours: Int)
+    /** A trace being set: its settings, whether a newer one is being made, and what the last one made. */
+    data class Tracing(
+        val settings: TraceSettings,
+        val working: Boolean,
+        val colours: Int,
+        /** The last trace's colours (ARGB, the largest first) and outlines. */
+        val palette: List<Int> = emptyList(),
+        val outlines: Int = 0,
+    )
 
     private val _tracing = MutableStateFlow<Tracing?>(null)
     /** While a picture is traced (before its shapes are edited); null otherwise. */
@@ -230,7 +239,7 @@ class SvgEditorViewModel(application: Application) : AndroidViewModel(applicatio
             val made = source.mapCatching { src -> src to withContext(Dispatchers.Default) { traced(src, settings) } }
             made.onSuccess { (src, doc) ->
                 traceSource = src
-                _tracing.value = Tracing(settings, working = false, colours = doc.second)
+                _tracing.value = Tracing(settings, working = false, colours = doc.second.layers.size, palette = doc.second.palette, outlines = doc.second.outlines)
                 start(doc.first, name.substringBeforeLast('.'))
             }.onFailure { e ->
                 Log.w(TAG, "Cannot trace $uri", e)
@@ -249,7 +258,7 @@ class SvgEditorViewModel(application: Application) : AndroidViewModel(applicatio
             delay(TRACE_SETTLE_MS)
             val made = withContext(Dispatchers.Default) { runCatching { traced(src, settings) } }
             if (_tracing.value == null) return@launch
-            val (doc, colours) = made.getOrElse {
+            val (doc, image) = made.getOrElse {
                 Log.w(TAG, "Cannot trace again", it)
                 _tracing.value = current.copy(working = false)
                 return@launch
@@ -257,7 +266,7 @@ class SvgEditorViewModel(application: Application) : AndroidViewModel(applicatio
             _doc.value = doc
             _selected.value = null
             _also.value = emptySet()
-            _tracing.value = Tracing(settings, working = false, colours = colours)
+            _tracing.value = Tracing(settings, working = false, colours = image.layers.size, palette = image.palette, outlines = image.outlines)
         }
     }
 
@@ -275,7 +284,7 @@ class SvgEditorViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /** [src] traced as [settings] say, as a drawing whose colours are named; and how many colours it has. */
-    private fun traced(src: TraceSource, settings: TraceSettings): Pair<SvgDocument, Int> {
+    private fun traced(src: TraceSource, settings: TraceSettings): Pair<SvgDocument, VectorImage> {
         val image = VectorTracer.trace(src.raster, settings.sane())
         val doc = SvgDocument.parse(image.toSvg(src.width, src.height))
         // Each colour a layer of its own, named after it.
@@ -295,7 +304,7 @@ class SvgEditorViewModel(application: Application) : AndroidViewModel(applicatio
             seen[id] = count
             if (count == 1 || n !is SvgShape) n else n.copy(id = "$id-$count")
         })
-        return unique to image.layers.size
+        return unique to image
     }
 
     /** Starts from an empty drawing [width] x [height] (pixels), with a [background] when given (ARGB). */

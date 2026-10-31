@@ -2,6 +2,10 @@
 
 package com.cuscus.ffmpeggui.settings
 
+import androidx.compose.foundation.selection.selectableGroup
+import com.cuscus.ffmpeggui.onboarding.HapticPad
+import com.cuscus.ffmpeggui.onboarding.ThemeTile
+import com.cuscus.ffmpeggui.onboarding.popIn
 import com.cuscus.ffmpeggui.ui.adaptive.LocalWindowLayout
 import com.cuscus.ffmpeggui.ui.adaptive.WindowLayout
 import android.content.Intent
@@ -423,6 +427,8 @@ fun SettingsCategoryScreen(
             shape = categoryLook.shape,
             colors = tone(category),
         )
+        // What the category changes, as a small film that follows its settings.
+        CategoryArt(category, settings, modifier = Modifier.popIn(true, 0))
         when (category) {
             SettingsCategory.APPEARANCE -> AppearanceSettings(settings, onChange)
             SettingsCategory.EDITOR -> EditorSettings(settings, onChange)
@@ -443,7 +449,8 @@ fun SettingsCategoryScreen(
 @Composable
 private fun AppearanceSettings(settings: AppSettings, onChange: ((AppSettings) -> AppSettings) -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    // The theme: three tiles that morph when chosen.
+    val haptics = LocalHapticFeedback.current
+    // The theme, as on the welcome: three tiles, each a tiny screen of it, that round off when chosen.
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -455,17 +462,36 @@ private fun AppearanceSettings(settings: AppSettings, onChange: ((AppSettings) -
             text = stringResource(R.string.settings_theme),
             style = SettingsRowTitle,
             color = scheme.onSurface,
-            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+            modifier = Modifier.padding(start = 4.dp, bottom = 10.dp),
         )
-        OptionTileRow(
-            options = listOf(
-                TileOption(ThemeMode.SYSTEM, stringResource(R.string.settings_theme_system), Icons.Rounded.BrightnessAuto),
-                TileOption(ThemeMode.LIGHT, stringResource(R.string.settings_theme_light), Icons.Rounded.LightMode),
-                TileOption(ThemeMode.DARK, stringResource(R.string.settings_theme_dark), Icons.Rounded.DarkMode),
-            ),
-            selected = settings.themeMode,
-            onSelect = { mode -> onChange { it.copy(themeMode = mode) } },
-        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().selectableGroup(),
+        ) {
+            listOf(
+                Triple(ThemeMode.SYSTEM, Icons.Rounded.BrightnessAuto, null),
+                Triple(ThemeMode.LIGHT, Icons.Rounded.LightMode, true),
+                Triple(ThemeMode.DARK, Icons.Rounded.DarkMode, false),
+            ).forEach { (mode, icon, light) ->
+                ThemeTile(
+                    label = stringResource(
+                        when (mode) {
+                            ThemeMode.SYSTEM -> R.string.settings_theme_system
+                            ThemeMode.LIGHT -> R.string.settings_theme_light
+                            ThemeMode.DARK -> R.string.settings_theme_dark
+                        },
+                    ),
+                    icon = icon,
+                    light = light,
+                    selected = settings.themeMode == mode,
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        onChange { it.copy(themeMode = mode) }
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
     }
     // Where the colours come from: three palettes, each shown by its own colours.
     val context = LocalContext.current
@@ -696,42 +722,8 @@ private fun VibrationSettings(settings: AppSettings, onChange: ((AppSettings) ->
             },
         ),
     )
-    // Try them: each button gives one of the taps the app uses.
-    AnimatedVisibility(
-        visible = settings.haptics,
-        enter = expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(),
-        exit = shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeOut(),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(28.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .padding(16.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, bottom = 12.dp)) {
-                Icon(Icons.Rounded.TouchApp, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.settings_haptics_try), style = SettingsRowTitle)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                listOf(
-                    R.string.settings_haptics_tick to HapticSample.TICK,
-                    R.string.settings_haptics_tap to HapticSample.TAP,
-                    R.string.settings_haptics_confirm to HapticSample.CONFIRM,
-                ).forEach { (label, sample) ->
-                    Button(
-                        onClick = { view.playHapticSample(sample) },
-                        shapes = ButtonDefaults.shapes(),
-                        colors = ButtonDefaults.filledTonalButtonColors(),
-                        modifier = Modifier.weight(1f).height(52.dp),
-                    ) {
-                        Text(stringResource(label), style = MaterialTheme.typography.labelLargeEmphasized, maxLines = 1)
-                    }
-                }
-            }
-        }
-    }
+    // Try them, as on the welcome: three shapes that ring out with the taps the app uses, and a slider that ticks.
+    HapticPad(enabled = settings.haptics)
 }
 
 // -- Exports and storage ------------------------------------------------------------------

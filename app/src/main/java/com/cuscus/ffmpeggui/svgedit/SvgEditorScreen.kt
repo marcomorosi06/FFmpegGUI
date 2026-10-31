@@ -2,6 +2,8 @@
 
 package com.cuscus.ffmpeggui.svgedit
 
+import com.cuscus.ffmpeggui.TracingOverlay
+import androidx.compose.ui.zIndex
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -23,8 +25,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -635,6 +635,8 @@ internal fun SvgEditorScreen(
                         SvgEditorViewModel.Load.Loading -> Loading()
                         is SvgEditorViewModel.Load.Failed -> Failed(state.reason, onPickAnother)
                         else -> Box(modifier = Modifier.fillMaxSize()) {
+                            // While a newer trace is made: the drawing dims and a loading badge says so.
+                            TracingOverlay(visible = tracing?.working == true, modifier = Modifier.matchParentSize().zIndex(1f))
                             SvgStage(
                                 doc = docState,
                                 selected = selectedState,
@@ -1104,6 +1106,8 @@ private fun Toolbar(
     modifier: Modifier = Modifier,
 ) {
     val motion = MaterialTheme.motionScheme
+    // The toolbar slides once to show it scrolls; after that it stays still.
+    var nudged by rememberSaveable { mutableStateOf(false) }
     val adding = listOf(
         ToolbarItem(Action.ADD_SHAPE, Icons.Rounded.Category, R.string.svg_add_shape),
         ToolbarItem(Action.ADD_TEXT, Icons.Rounded.TextFields, R.string.svg_add_text),
@@ -1161,8 +1165,12 @@ private fun Toolbar(
                     ToolbarItem(Action.DELETE, Icons.Rounded.DeleteOutline, R.string.svg_delete),
                 )
             }
-            // Scrolls sideways where the phone is too narrow for them all.
-            Row(modifier = Modifier.widthIn(max = 300.dp).horizontalScroll(rememberScrollState())) {
+            // Scrolls sideways where the phone is too narrow for them all, and shows that it does.
+            HintedScrollRow(
+                nudge = !nudged,
+                onNudged = { nudged = true },
+                modifier = Modifier.widthIn(max = 300.dp),
+            ) {
                 items.forEach { item ->
                     // The pen and picking several, while on, are filled: what a finger does on the stage has changed.
                     val on = (item.action == Action.PEN && pen) || (item.action == Action.MULTI && multi)

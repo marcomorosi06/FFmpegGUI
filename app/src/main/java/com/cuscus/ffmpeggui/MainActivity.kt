@@ -35,6 +35,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -87,6 +88,9 @@ import kotlinx.coroutines.withContext
 
 private const val SPLASH_CHOREOGRAPHY_MS = 900L
 private const val SPLASH_HANDOFF_MS = 160L
+
+/** Wait before the custom format's studio opens: longer than the command preview's own delay. */
+private const val CUSTOM_STUDIO_DELAY_MS = 300L
 
 class MainActivity : ComponentActivity() {
     override fun onStop() {
@@ -396,7 +400,12 @@ class MainActivity : ComponentActivity() {
                                         onOpened = {
                                             // As if the format had just been picked: back goes to the formats.
                                             navController.navigate(Screen.FormatPicker.route)
-                                            navController.navigate(Screen.Config.route)
+                                            // A custom project is a command: it opens in the studio, not in the editor.
+                                            if (vm.selectedFormat.value == com.cuscus.ffmpeggui.core.model.OutputFormat.CUSTOM) {
+                                                navController.navigate(Screen.CustomCommand.route)
+                                            } else {
+                                                navController.navigate(Screen.Config.route)
+                                            }
                                         },
                                         onFailed = {
                                             android.widget.Toast.makeText(this@MainActivity, openFailed, android.widget.Toast.LENGTH_SHORT).show()
@@ -481,6 +490,8 @@ class MainActivity : ComponentActivity() {
                                             svgEditor.trace(picture?.uri ?: inputUri!!, inputFileName)
                                             navController.navigate(Screen.SvgEditor.route)
                                         }
+                                        // A command written by hand: the studio alone, the video editor never shows.
+                                        format == com.cuscus.ffmpeggui.core.model.OutputFormat.CUSTOM -> navController.navigate(Screen.CustomCommand.route)
                                         // Listened to and shown beside the player, to be read through and corrected.
                                         format.isTranscript -> navController.navigate(Screen.Transcript.route)
                                         // A picture of a video: its exact frame is chosen first.
@@ -581,6 +592,28 @@ class MainActivity : ComponentActivity() {
                                     navController.popBackStack()
                                 },
                             )
+                        }
+
+                        composable(Screen.CustomCommand.route) {
+                            // Under the studio's own window: a plain surface, no editor behind it.
+                            androidx.compose.material3.Surface(
+                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                modifier = Modifier.fillMaxSize(),
+                            ) {}
+                            // The command of the custom format is rebuilt after a short rest: the studio waits for it.
+                            var ready by remember { mutableStateOf(false) }
+                            LaunchedEffect(Unit) {
+                                kotlinx.coroutines.delay(CUSTOM_STUDIO_DELAY_MS)
+                                ready = true
+                            }
+                            if (ready) {
+                                com.cuscus.ffmpeggui.command.CommandStudioDialog(
+                                    initial = s.customCommand.ifBlank { commandPreview },
+                                    onTextChange = vm::setCustomCommand,
+                                    onDismiss = { navController.popBackStack() },
+                                    onRun = startExport,
+                                )
+                            }
                         }
 
                         composable(Screen.Config.route) {

@@ -1,12 +1,12 @@
-* Command studio: suggestions, docs, recipes
-* One-tap dub, magic eraser
-* Voice and music apart: karaoke, voice level
-* Video effects: sparks, flames, snow, hearts and more
-* Magic transitions: wand, explosion
+* Command studio, custom commands
+* One-tap dub, magic eraser, voice and music apart
+* Video effects, magic transitions
 * Subtitles translated on the phone
-* SVG editor: live symmetry, repeats, booleans, layers
-* Photos traced into SVG
-* Start from a blank page, with presets
-* Compressor: a file made smaller in one go
+* Texts: outline, soft shadow, box, your own fonts
+* SVG editor: symmetry, booleans, layers, magnetic points
+* Pictures traced into SVG, by kind
+* Blank pages, compressor
 * Picture editor: canvas, corners, layers
 * Live scrubbing, frame steps, mono theme
+* New format picker, settings and About
+* Fixes: low contrast, toolbar outline

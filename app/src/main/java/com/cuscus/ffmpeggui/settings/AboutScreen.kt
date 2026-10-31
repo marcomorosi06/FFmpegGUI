@@ -1,7 +1,13 @@
-@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package com.cuscus.ffmpeggui.settings
 
+import com.cuscus.ffmpeggui.ui.expressive.springPress
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.FlowRow
 import com.cuscus.ffmpeggui.ui.adaptive.LocalWindowLayout
 import com.cuscus.ffmpeggui.ui.adaptive.WindowLayout
 import androidx.compose.animation.core.LinearEasing
@@ -147,37 +153,52 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
         // No title: the logo and the name below say where this is.
         SettingsHeader(title = null, onBack = onBack)
 
-        // The logo and the name.
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-            ShapeShiftingLogo(size = 168.dp)
-            Spacer(modifier = Modifier.height(20.dp))
-            val density = LocalDensity.current
-            Row(verticalAlignment = Alignment.Bottom) {
+        // The logo and the name, on a stage of big shapes turning behind them.
+        val scheme = MaterialTheme.colorScheme
+        ExpressiveStage(
+            stage = Stage(scheme.primaryContainer, scheme.tertiaryContainer, listOf(scheme.primary, scheme.tertiary, scheme.secondary)),
+            minHeight = 0.dp,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp)) {
+                ShapeShiftingLogo(size = 168.dp)
+                Spacer(modifier = Modifier.height(20.dp))
+                val density = LocalDensity.current
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        text = stringResource(R.string.home_title_ffmpeg),
+                        style = TextStyle(fontFamily = DisplayFamily, fontWeight = FontWeight(760), fontSize = with(density) { 36.dp.toSp() }),
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = stringResource(R.string.home_title_gui),
+                        style = TextStyle(fontFamily = DisplayFamily, fontWeight = FontWeight(1000), fontSize = with(density) { 36.dp.toSp() }),
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = stringResource(R.string.home_title_ffmpeg),
-                    style = TextStyle(fontFamily = DisplayFamily, fontWeight = FontWeight(760), fontSize = with(density) { 36.dp.toSp() }),
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = stringResource(R.string.home_title_gui),
-                    style = TextStyle(fontFamily = DisplayFamily, fontWeight = FontWeight(1000), fontSize = with(density) { 36.dp.toSp() }),
-                    color = MaterialTheme.colorScheme.onBackground,
+                    text = stringResource(R.string.about_version, versionName),
+                    style = MaterialTheme.typography.labelLargeEmphasized,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = stringResource(R.string.about_version, versionName),
-                style = MaterialTheme.typography.labelLargeEmphasized,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.secondaryContainer)
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            )
         }
 
+        // What the app is, at a glance.
+        FactPills()
+
         MottoCard()
+
+        // The project's two doors, large.
+        ProjectButtons(
+            onGithub = { openLink(context, ProjectLinks.GITHUB) },
+            onKofi = { openLink(context, ProjectLinks.KOFI) },
+        )
 
         SettingsGroup(
             title = stringResource(R.string.about_project),
@@ -190,29 +211,6 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
                         summary = stringResource(R.string.about_author_summary),
                         badge = MaterialShapes.Cookie12Sided,
                         colors = ToneColors(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer),
-                    )
-                },
-                { shape ->
-                    SettingsRow(
-                        shape = shape,
-                        icon = Icons.Rounded.Code,
-                        title = stringResource(R.string.settings_github),
-                        summary = stringResource(R.string.settings_github_summary),
-                        badge = MaterialShapes.Gem,
-                        onClick = { openLink(context, ProjectLinks.GITHUB) },
-                        trailing = { OutLinkIcon() },
-                    )
-                },
-                { shape ->
-                    SettingsRow(
-                        shape = shape,
-                        icon = Icons.Rounded.LocalCafe,
-                        title = stringResource(R.string.settings_kofi),
-                        summary = stringResource(R.string.settings_kofi_summary),
-                        badge = MaterialShapes.Cookie6Sided,
-                        colors = ToneColors(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer),
-                        onClick = { openLink(context, ProjectLinks.KOFI) },
-                        trailing = { OutLinkIcon() },
                     )
                 },
             ),
@@ -255,8 +253,12 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
             ),
         )
 
-        SettingsGroup(
-            title = stringResource(R.string.about_licences),
+        SectionTitle(stringResource(R.string.about_licences))
+        LicenceSection(
+            title = stringResource(R.string.about_licences_in_app),
+            count = 9,
+            icon = Icons.Rounded.Gavel,
+            shape = MaterialShapes.Cookie9Sided,
             rows = listOf<@Composable (Shape) -> Unit>(
                 { shape ->
                     LicenceRow(shape, stringResource(R.string.about_licence_app), stringResource(R.string.about_licence_eupl)) {
@@ -293,6 +295,30 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
                         openLink(context, ProjectLinks.MIT)
                     }
                 },
+                { shape ->
+                    // The effects in the app are the project's own, drawn by its script.
+                    LicenceRow(shape, stringResource(R.string.about_licence_effects), stringResource(R.string.about_licence_effects_summary), icon = Icons.Rounded.AutoAwesome) {
+                        openLink(context, ProjectLinks.EFFECTS_SCRIPT)
+                    }
+                },
+                { shape ->
+                    LicenceRow(
+                        shape,
+                        stringResource(R.string.about_licence_anti_vocale),
+                        stringResource(R.string.about_licence_anti_vocale_summary),
+                        icon = Icons.Rounded.AutoAwesome,
+                    ) {
+                        openLink(context, ProjectLinks.ANTI_VOCALE)
+                    }
+                },
+            ),
+        )
+        LicenceSection(
+            title = stringResource(R.string.about_licences_models),
+            count = 8,
+            icon = Icons.Rounded.CloudDownload,
+            shape = MaterialShapes.Flower,
+            rows = listOf<@Composable (Shape) -> Unit>(
                 { shape ->
                     // The model is not in the app: the user downloads it; its licence asks for the credit.
                     LicenceRow(shape, stringResource(R.string.about_licence_parakeet), stringResource(R.string.about_licence_cc_by)) {
@@ -336,22 +362,6 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
                     // The voice model: downloaded by the user, credited as its licence asks.
                     LicenceRow(shape, stringResource(R.string.about_licence_spleeter), stringResource(R.string.about_licence_mit)) {
                         openLink(context, com.cuscus.ffmpeggui.voice.VoiceModel.MODEL_PAGE_URL)
-                    }
-                },
-                { shape ->
-                    // The effects in the app are the project's own, drawn by its script.
-                    LicenceRow(shape, stringResource(R.string.about_licence_effects), stringResource(R.string.about_licence_effects_summary), icon = Icons.Rounded.AutoAwesome) {
-                        openLink(context, ProjectLinks.EFFECTS_SCRIPT)
-                    }
-                },
-                { shape ->
-                    LicenceRow(
-                        shape,
-                        stringResource(R.string.about_licence_anti_vocale),
-                        stringResource(R.string.about_licence_anti_vocale_summary),
-                        icon = Icons.Rounded.AutoAwesome,
-                    ) {
-                        openLink(context, ProjectLinks.ANTI_VOCALE)
                     }
                 },
             ),
@@ -537,5 +547,154 @@ private fun ShapeShiftingLogo(size: Dp) {
                 .graphicsLayer { rotationZ = -turnOf() }
                 .requiredSize(size * LOGO_GLYPH_SCALE),
         )
+    }
+}
+
+/** A section's title, as the settings' groups have it. */
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text = text,
+        style = SettingsGroupTitle,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 20.dp, top = 8.dp),
+    )
+}
+
+/** Three facts about the app, as pills in the theme's containers, each with its shape. */
+@Composable
+private fun FactPills() {
+    val scheme = MaterialTheme.colorScheme
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        listOf(
+            Triple(Icons.Rounded.Person, R.string.about_fact_person, ToneColors(scheme.primaryContainer, scheme.onPrimaryContainer)),
+            Triple(Icons.Rounded.Code, R.string.about_fact_open, ToneColors(scheme.secondaryContainer, scheme.onSecondaryContainer)),
+            Triple(Icons.Rounded.Favorite, R.string.about_fact_free, ToneColors(scheme.tertiaryContainer, scheme.onTertiaryContainer)),
+        ).forEachIndexed { i, (icon, label, tone) ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(tone.container)
+                    .padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
+            ) {
+                com.cuscus.ffmpeggui.ui.expressive.MorphingContainer(
+                    from = listOf(MaterialShapes.Cookie9Sided, MaterialShapes.Gem, MaterialShapes.Heart)[i],
+                    to = listOf(MaterialShapes.Cookie9Sided, MaterialShapes.Gem, MaterialShapes.Heart)[i],
+                    morphed = false,
+                    color = tone.content,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(icon, contentDescription = null, tint = tone.container, modifier = Modifier.size(16.dp))
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(label), style = MaterialTheme.typography.labelLargeEmphasized, color = tone.content)
+            }
+        }
+    }
+}
+
+/** The source and the coffee: two big buttons side by side, their corners squishing on press. */
+@Composable
+private fun ProjectButtons(onGithub: () -> Unit, onKofi: () -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        Button(
+            onClick = onGithub,
+            shapes = ButtonDefaults.shapes(),
+            contentPadding = ButtonDefaults.contentPaddingFor(ButtonDefaults.MediumContainerHeight),
+            modifier = Modifier.weight(1f).heightIn(min = ButtonDefaults.MediumContainerHeight),
+        ) {
+            Icon(Icons.Rounded.Code, contentDescription = null, modifier = Modifier.size(ButtonDefaults.iconSizeFor(ButtonDefaults.MediumContainerHeight)))
+            Spacer(modifier = Modifier.width(ButtonDefaults.iconSpacingFor(ButtonDefaults.MediumContainerHeight)))
+            Text(stringResource(R.string.about_button_source), style = ButtonDefaults.textStyleFor(ButtonDefaults.MediumContainerHeight))
+        }
+        androidx.compose.material3.FilledTonalButton(
+            onClick = onKofi,
+            shapes = ButtonDefaults.shapes(),
+            contentPadding = ButtonDefaults.contentPaddingFor(ButtonDefaults.MediumContainerHeight),
+            modifier = Modifier.weight(1f).heightIn(min = ButtonDefaults.MediumContainerHeight),
+        ) {
+            Icon(Icons.Rounded.LocalCafe, contentDescription = null, modifier = Modifier.size(ButtonDefaults.iconSizeFor(ButtonDefaults.MediumContainerHeight)))
+            Spacer(modifier = Modifier.width(ButtonDefaults.iconSpacingFor(ButtonDefaults.MediumContainerHeight)))
+            Text(stringResource(R.string.about_button_coffee), style = ButtonDefaults.textStyleFor(ButtonDefaults.MediumContainerHeight))
+        }
+    }
+}
+
+/**
+ * A group of licences folded behind its title: its badge, how many it holds and
+ * a chevron; a tap unfolds it on the spatial spring, the badge blooming and the
+ * chevron turning.
+ */
+@Composable
+private fun LicenceSection(
+    title: String,
+    count: Int,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    shape: androidx.graphics.shapes.RoundedPolygon,
+    rows: List<@Composable (Shape) -> Unit>,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    val haptics = LocalHapticFeedback.current
+    var open by remember { mutableStateOf(false) }
+    val chevron by animateFloatAsState(if (open) 180f else 0f, motion.defaultSpatialSpec(), label = "licenceChevron")
+    val corner by androidx.compose.animation.core.animateDpAsState(if (open) 20.dp else 32.dp, motion.defaultSpatialSpec(), label = "licenceCorner")
+    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .springPress(interaction, pressedScale = 0.97f)
+                .clip(RoundedCornerShape(corner))
+                .background(scheme.surfaceContainerHigh)
+                .clickable(
+                    interactionSource = interaction,
+                    indication = androidx.compose.foundation.LocalIndication.current,
+                    role = androidx.compose.ui.semantics.Role.Button,
+                    onClickLabel = title,
+                ) {
+                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    open = !open
+                }
+                .padding(16.dp),
+        ) {
+            com.cuscus.ffmpeggui.ui.expressive.MorphingContainer(
+                from = shape,
+                to = MaterialShapes.Circle,
+                morphed = open,
+                color = scheme.secondaryContainer,
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(icon, contentDescription = null, tint = scheme.onSecondaryContainer, modifier = Modifier.size(22.dp))
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Text(title, style = SettingsRowTitle, color = scheme.onSurface, modifier = Modifier.weight(1f))
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelLargeEmphasized,
+                color = scheme.onSecondaryContainer,
+                modifier = Modifier.clip(CircleShape).background(scheme.secondaryContainer).padding(horizontal = 12.dp, vertical = 4.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                Icons.Rounded.ExpandMore,
+                contentDescription = null,
+                tint = scheme.onSurfaceVariant,
+                modifier = Modifier.graphicsLayer { rotationZ = chevron },
+            )
+        }
+        androidx.compose.animation.AnimatedVisibility(
+            visible = open,
+            enter = androidx.compose.animation.expandVertically(motion.defaultSpatialSpec()) + androidx.compose.animation.fadeIn(motion.defaultEffectsSpec()),
+            exit = androidx.compose.animation.shrinkVertically(motion.fastSpatialSpec()) + androidx.compose.animation.fadeOut(motion.fastEffectsSpec()),
+        ) {
+            SettingsGroup(title = null, rows = rows)
+        }
     }
 }

@@ -18,6 +18,8 @@ sealed class Screen(val route: String) {
     /** The voice of a file set apart from the rest of its sound, and the two mixed, in one go. */
     /** The SVG editor: a drawing's shapes moved, sized, turned and arranged. */
     data object SvgEditor : Screen("svg_editor")
+    /** The custom format: only the command studio, never the video editor. */
+    data object CustomCommand : Screen("custom_command")
 
     companion object {
         /** The page of one settings category. */

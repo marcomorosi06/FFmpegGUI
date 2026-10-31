@@ -1,6 +1,8 @@
 package com.cuscus.ffmpeggui.core.model
 
 import java.util.UUID
+import kotlin.math.max
+import kotlin.math.roundToInt
 
 /**
  * A caption drawn on top of the picture.
@@ -19,6 +21,9 @@ import java.util.UUID
  * [clipId] binds the caption to one clip instead (it is then drawn on that
  * clip only, sized against its frame, for the whole clip; its times and fades
  * are not used); null puts it on the whole video.
+ *
+ * [look] gives it an outline, a shadow and a box behind it; [fontFile] draws
+ * it with a font the user added instead of [font].
  */
 data class TextOverlay(
     val id: String = UUID.randomUUID().toString(),
@@ -46,4 +51,72 @@ data class TextOverlay(
      * whole video): higher is on top (see [stackOrder]).
      */
     val layer: Int = 0,
+    /** Its outline, shadow and box (none by default). */
+    val look: TextLook = TextLook.NONE,
+    /**
+     * A font file the user added (.ttf or .otf), its path in the app's own
+     * storage; it takes the place of [font] while it can be read (else [font]).
+     * Such a font has no bold of its own: [isBold] does not change it.
+     */
+    val fontFile: String? = null,
 )
+
+/**
+ * A caption's outline, shadow and background box, as FFmpeg's drawtext draws
+ * them (issue #22): sizes are fractions of the font size, colours ARGB with
+ * their alpha used. The shadow is the letters again in [shadowColor], moved
+ * right and down by [shadow], under the outline (sharp, drawtext's own; soft
+ * with [shadowBlur], drawn apart and blurred, then under the box too); the box
+ * is a rectangle around the text, [boxPadding] wider on every side.
+ */
+data class TextLook(
+    /** How thick the outline is, around the letters; 0 = none. */
+    val outline: Float = 0f,
+    val outlineColor: Long = BLACK,
+    /** How far the shadow is moved right and down; 0 = under the letters (a glow, when soft). */
+    val shadow: Float = 0f,
+    val shadowColor: Long = SHADOW_COLOR,
+    /** How soft the shadow is (the blur's reach); 0 = sharp. A soft shadow shows even unmoved. */
+    val shadowBlur: Float = 0f,
+    /** A box behind the text. */
+    val box: Boolean = false,
+    val boxColor: Long = BOX_COLOR,
+    /** How much the box goes past the text on every side. */
+    val boxPadding: Float = DEFAULT_BOX_PADDING,
+) {
+    /** Whether there is a shadow: moved, or soft (a glow round the letters). */
+    val hasShadow: Boolean get() = shadow > 0f || shadowBlur > 0f
+
+    /** Nothing drawn besides the letters. */
+    val isPlain: Boolean get() = outline <= 0f && !hasShadow && !box
+
+    /** Every value inside the range it can take. */
+    fun sane(): TextLook = copy(
+        outline = outline.coerceIn(0f, MAX_OUTLINE),
+        shadow = shadow.coerceIn(0f, MAX_SHADOW),
+        shadowBlur = shadowBlur.coerceIn(0f, MAX_SHADOW_BLUR),
+        boxPadding = boxPadding.coerceIn(0f, MAX_BOX_PADDING),
+    )
+
+    companion object {
+        val NONE = TextLook()
+
+        const val BLACK = 0xFF000000L
+        const val SHADOW_COLOR = 0xB3000000L
+        const val BOX_COLOR = 0x99000000L
+
+        /** What an outline, a shadow and a box start with when turned on. */
+        const val DEFAULT_OUTLINE = 0.08f
+        const val DEFAULT_SHADOW = 0.08f
+        const val DEFAULT_BOX_PADDING = 0.3f
+
+        const val MAX_OUTLINE = 0.3f
+        const val MAX_SHADOW = 0.4f
+        const val MAX_SHADOW_BLUR = 0.4f
+        const val MAX_BOX_PADDING = 1f
+
+        /** [fraction] of a font [fontPixels] high, in whole pixels: at least 1 when it is not 0. */
+        fun pixels(fraction: Float, fontPixels: Double): Int =
+            if (fraction <= 0f || fontPixels <= 0.0) 0 else max(1, (fraction * fontPixels).roundToInt())
+    }
+}

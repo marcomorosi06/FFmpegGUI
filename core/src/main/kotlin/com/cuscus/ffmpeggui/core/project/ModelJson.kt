@@ -41,6 +41,7 @@ import com.cuscus.ffmpeggui.core.model.StereoImage
 import com.cuscus.ffmpeggui.core.model.StillMotion
 import com.cuscus.ffmpeggui.core.model.Stroke
 import com.cuscus.ffmpeggui.core.model.TextOverlay
+import com.cuscus.ffmpeggui.core.model.TextLook
 import com.cuscus.ffmpeggui.core.model.Transition
 import com.cuscus.ffmpeggui.core.model.TransitionKind
 import com.cuscus.ffmpeggui.core.model.VideoPlacement
@@ -404,7 +405,34 @@ object ModelJson {
         put("fadeOutSeconds", t.fadeOutSeconds)
         put("font", t.font)
         put("layer", t.layer)
+        if (!t.look.isPlain) put("look", write(t.look))
+        put("fontFile", t.fontFile)
         putKeyframes(t.keyframes)
+    }
+
+    fun write(l: TextLook): Json.Obj = jsonObject {
+        put("outline", l.outline)
+        put("outlineColor", l.outlineColor)
+        put("shadow", l.shadow)
+        put("shadowColor", l.shadowColor)
+        put("shadowBlur", l.shadowBlur)
+        put("box", l.box)
+        put("boxColor", l.boxColor)
+        put("boxPadding", l.boxPadding)
+    }
+
+    fun textLook(o: Json.Obj): TextLook {
+        val d = TextLook.NONE
+        return TextLook(
+            outline = o.float("outline", d.outline),
+            outlineColor = o.long("outlineColor", d.outlineColor),
+            shadow = o.float("shadow", d.shadow),
+            shadowColor = o.long("shadowColor", d.shadowColor),
+            shadowBlur = o.float("shadowBlur", d.shadowBlur),
+            box = o.bool("box", d.box),
+            boxColor = o.long("boxColor", d.boxColor),
+            boxPadding = o.float("boxPadding", d.boxPadding),
+        ).sane()
     }
 
     fun textOverlay(o: Json.Obj): TextOverlay? {
@@ -427,6 +455,8 @@ object ModelJson {
             font = o.enum("font", d.font),
             keyframes = keyframes(o),
             layer = o.int("layer", d.layer),
+            look = o.objOrNull("look", d.look, ::textLook) ?: d.look,
+            fontFile = o.stringOrNull("fontFile", d.fontFile),
         )
     }
 

@@ -23,6 +23,15 @@
   <a href="https://github.com/marcomorosi06/FFmpegGUI/releases"><img src="https://raw.githubusercontent.com/Kunzisoft/Github-badge/main/get-it-on-github.png" alt="Get it on GitHub" height="80"></a>
 </p>
 
+<p align="center">
+  <a href="http://apps.obtainium.imranr.dev/redirect.html?r=obtainium://app/%7B%22id%22%3A%22com.cuscus.ffmpeggui%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fmarcomorosi06%2FFFmpegGUI%22%2C%22author%22%3A%22marcomorosi06%22%2C%22name%22%3A%22FFmpeg%20GUI%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%7D%22%7D"><img src="docs/badges/obtainium-stable.svg" alt="Get it on Obtainium: stable releases" height="80"></a>
+  <a href="http://apps.obtainium.imranr.dev/redirect.html?r=obtainium://app/%7B%22id%22%3A%22com.cuscus.ffmpeggui%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fmarcomorosi06%2FFFmpegGUI%22%2C%22author%22%3A%22marcomorosi06%22%2C%22name%22%3A%22FFmpeg%20GUI%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%7D%22%7D"><img src="docs/badges/obtainium-prerelease.svg" alt="Get it on Obtainium: also pre-releases" height="80"></a>
+</p>
+
+<p align="center">
+  <sub>With <a href="https://github.com/ImranR98/Obtainium">Obtainium</a> installed, a tap adds the app and keeps it updated from the releases here: the green button follows only stable releases, the orange one also takes the pre-releases.</sub>
+</p>
+
 ---
 
 <table>
@@ -52,7 +61,7 @@
 - Speed (with automatic `atempo` chaining) or a **speed curve** drawn along a clip, with ready-made ramps (montage, hero, bullet, flash in / out...), the pitch kept or following the speed like a tape; reverse, crop and aspect ratio, rotation, mirror, resolution and frame rate
 - **Transitions** between clips, as in CapCut: 25 of them (dissolves, dips to black or white, slides, covers, reveals, wipes, soft wipes, circles, iris, box, doors, shutter, clock, zoom), each with its own length; every choice plays in a loop on its tile, the joins between clips are buttons on the timeline, and the preview draws them live with the same math as the export (`xfade` and `acrossfade`)
 - Colour, fades and **keyframes**: clips zoom, pan and change colour and volume; texts and pictures move, grow, turn and fade; each keyframe moves on to the next with an easing (linear, smooth, ease in / out, overshoot, bounce, elastic, hold) or a curve drawn by hand
-- **Texts** and **pictures or videos laid over the video**, each on its own row of the timeline: crop, rounded or round shape, outline, shadow or glow, blur, layers and ready-made animations in and out
+- **Texts** and **pictures or videos laid over the video**, each on its own row of the timeline: crop, rounded or round shape, outline, shadow or glow, blur, layers and ready-made animations in and out; texts with an outline, a shadow or a box behind them, in the phone's fonts or a .ttf / .otf of your own
 - **Shapes** laid over the video, **blend modes** for pictures, videos and shapes, and a **layers** list to reorder them by dragging
 - **Effects** on their own lane, as in CapCut: sparks, fireworks, flames, smoke, snow, rain, confetti, dust in the light, bokeh and hearts, looping for as long as they last, with their strength and colour; and **magic transitions**: a fairy's wand, an explosion, a flash, the cut hidden under them. All drawn by the project's own script, light on black, screened over the video
 - **Chroma key and colour key** on clips, the whole video and overlays, with spill removal and transparency
@@ -313,6 +322,7 @@ FFmpeg GUI is made by one person, in spare time, and will stay free and open sou
 - [SlimSAM](https://github.com/czg1225/SlimSAM) by Zigeng Chen et al. (Apache 2.0), a pruned [Segment Anything](https://github.com/facebookresearch/segment-anything), as converted to ONNX by [Xenova](https://huggingface.co/Xenova/slimsam-77-uniform)
 - [anti-vocale](https://github.com/RisorseArtificiali/anti-vocale) (Apache 2.0), where the idea of on-device transcription and the way to run the model come from
 - [Google Sans Flex](https://fonts.google.com/specimen/Google+Sans+Flex) (SIL Open Font License)
+- The [Obtainium](https://github.com/ImranR98/Obtainium) logo by ImranR98 (GPL 3.0), in this page's Obtainium buttons only ([its licence](docs/badges/LICENSE-obtainium-logo.txt))
 
 The video effects are made by the project's own `scripts/generate-effects.py` and are part of FFmpeg GUI, under its licence.
 

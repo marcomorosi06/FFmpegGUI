@@ -414,6 +414,7 @@ fun ConfigScreen(
     }
     /** Changes to picture [id]'s look (one undo step per key, as its other settings). */
     fun lookChange(id: String): LookChange = { step, change -> updateImage(id, step?.let { "look:$it" }) { it.copy(look = change(it.look)) } }
+    fun textLookChange(id: String): TextLookChange = { step, change -> updateText(id, step?.let { "look:$it" }) { it.copy(look = change(it.look)) } }
     val updateSound: (String, String?, (AudioClip) -> AudioClip) -> Unit = { id, step, change ->
         onUpdateAudioClip(id, step) { it.keyedEdit(keyMsOf(it, playback.snapshot.value), change) }
     }
@@ -1787,8 +1788,12 @@ fun ConfigScreen(
                         onBold = { bold -> updateText(text.id, null) { it.copy(isBold = bold) } },
                         onOpacity = { opacity -> updateText(text.id, "opacity") { it.copy(opacity = opacity) } },
                         onFont = { font -> updateText(text.id, null) { it.copy(font = font) } },
+                        onFontFile = { file -> updateText(text.id, null) { it.copy(fontFile = file) } },
                     )
                 }
+                EditorTool.TEXT_OUTLINE -> selectedText?.let { text -> TextOutlineContent(text.look, textLookChange(text.id)) }
+                EditorTool.TEXT_SHADOW -> selectedText?.let { text -> TextShadowContent(text.look, textLookChange(text.id)) }
+                EditorTool.TEXT_BOX -> selectedText?.let { text -> TextBoxContent(text.look, textLookChange(text.id)) }
                 EditorTool.OVERLAY_LAYOUT -> when {
                     selectedText != null -> Column {
                         // Its place among the captions and pictures laid with it.
@@ -2087,14 +2092,15 @@ private const val TRANSITION_LEAD_MS = 700L
 /** Time for the preview to land on that frame before it plays. */
 private const val TRANSITION_PLAY_DELAY_MS = 200L
 
+
 /** How far before a join tapped on the timeline the preview stops. */
 private const val JOIN_LEAD_MS = 300L
 
 /** The tools of a selected text or picture. */
 /** The tools of a selected text, in toolbar order. */
 private val TEXT_TOOLS = listOf(
-    EditorTool.TEXT_EDIT, EditorTool.TEXT_STYLE, EditorTool.OVERLAY_LAYOUT, EditorTool.OVERLAY_ANIMATE, EditorTool.OVERLAY_FADE,
-    EditorTool.OVERLAY_TIMING,
+    EditorTool.TEXT_EDIT, EditorTool.TEXT_STYLE, EditorTool.TEXT_OUTLINE, EditorTool.TEXT_SHADOW, EditorTool.TEXT_BOX,
+    EditorTool.OVERLAY_LAYOUT, EditorTool.OVERLAY_ANIMATE, EditorTool.OVERLAY_FADE, EditorTool.OVERLAY_TIMING,
 )
 
 /**
@@ -2141,7 +2147,8 @@ private fun imageToolsFor(image: ImageOverlay, withSound: Boolean): List<EditorT
 private val OVERLAY_TYPES = arrayOf("image/*", "video/*")
 
 private val OVERLAY_TOOLS = setOf(
-    EditorTool.TEXT_EDIT, EditorTool.TEXT_STYLE, EditorTool.OVERLAY_LAYOUT, EditorTool.IMAGE_OPACITY,
+    EditorTool.TEXT_EDIT, EditorTool.TEXT_STYLE, EditorTool.TEXT_OUTLINE, EditorTool.TEXT_SHADOW, EditorTool.TEXT_BOX,
+    EditorTool.OVERLAY_LAYOUT, EditorTool.IMAGE_OPACITY,
     EditorTool.OVERLAY_FADE, EditorTool.OVERLAY_TIMING, EditorTool.OVERLAY_ROTATE, EditorTool.OVERLAY_ADJUST,
     EditorTool.OVERLAY_VOLUME, EditorTool.OVERLAY_KEY, EditorTool.OVERLAY_ERASE, EditorTool.OVERLAY_CROP, EditorTool.OVERLAY_BORDER,
     EditorTool.OVERLAY_SHADOW, EditorTool.OVERLAY_ANIMATE, EditorTool.OVERLAY_BLEND, EditorTool.OVERLAY_SHAPE,
@@ -2539,6 +2546,8 @@ private fun BoxScope.FullscreenControls(
             color = scheme.surfaceContainerHigh.copy(alpha = 0.92f),
             tonalElevation = 6.dp,
             shadowElevation = 6.dp,
+            // Over the playing picture: its edge kept by a thin outline.
+            modifier = Modifier.mediaOutline(scheme.onSurface, RoundedCornerShape(32.dp)),
         ) {
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
                 // Where the video is, read here only: the bar follows the clock without the rest.
