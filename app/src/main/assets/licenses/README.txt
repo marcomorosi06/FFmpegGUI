@@ -30,7 +30,8 @@ FFmpegKitNext 6.1.1 ............ LGPL-3.0, GPL-3.0 with GPL libraries
                                  ffmpeg-libraries/ffmpeg-kit-next-GPL-3.0.txt
 FFmpeg n6.1.6 .................. LGPL-2.1-or-later, GPL-2.0-or-later as built
                                  ffmpeg/LICENSE.md, ffmpeg/COPYING.*
-smart-exception-java 0.2.1 ..... BSD-3-Clause
+smart-exception-java 0.2.1 and smart-exception-common, the same project
+                                 BSD-3-Clause
                                  smart-exception/LICENSE.txt
 
 Libraries built into FFmpeg (versions as pinned in
@@ -95,29 +96,49 @@ Libraries built into ONNX Runtime ...............  onnxruntime/ThirdPartyNotices
 
 4. Android, Kotlin and Jetpack libraries
 -------------------------------------------------------------------------
-Kotlin standard library 2.3.21 . Apache-2.0        kotlin/LICENSE.txt, kotlin/NOTICE.txt
+Kotlin standard library 2.3.21, with the kotlin-parcelize and
+  kotlin-android-extensions runtimes, parts of Kotlin
+                                 Apache-2.0        kotlin/LICENSE.txt, kotlin/NOTICE.txt
   with code derived from GWT (Apache-2.0), ThreeTen backport (BSD-3-Clause),
   Guava (Apache-2.0) and Boost (BSL-1.0): kotlin/third_party/*
 kotlinx.coroutines 1.10.2 ...... Apache-2.0        kotlinx-coroutines/LICENSE.txt,
                                                    kotlinx-coroutines/NOTICE.txt
+kotlinx.serialization (core) 1.7.3, Copyright 2017-2024 JetBrains s.r.o.
+  and contributors (used by AndroidX savedstate and lifecycle)
+                                 Apache-2.0        kotlinx-serialization/LICENSE.txt
+Okio 3.4.0, Copyright 2013 Square, Inc. (used by AndroidX DataStore)
+                                 Apache-2.0        okio/LICENSE.txt
+JetBrains annotations 23.0.0 ... Apache-2.0        androidx/LICENSE.txt (the same
+                                                   Apache-2.0 text)
+JSpecify annotations 1.0.0 ..... Apache-2.0        androidx/LICENSE.txt (the same
+                                                   Apache-2.0 text)
+Error Prone annotations 2.15.0 (used by Guava)
+                                 Apache-2.0        guava/LICENSE.txt (the same
+                                                   Apache-2.0 text)
+  The three annotation libraries hold no code the app runs; R8 may leave
+  them out of the APK. They are listed all the same.
 AndroidX and Jetpack Compose ... Apache-2.0        androidx/LICENSE.txt
   activity 1.13.0, annotation, appcompat 1.7.0, arch core, autofill,
-  cardview, compose (animation, foundation, runtime, ui) 1.12.1,
-  compose material3 1.5.0-beta01, compose material icons 1.7.8,
-  coordinatorlayout, core 1.18.0, core-splashscreen 1.2.0, cursoradapter,
-  customview, datastore 1.1.7, documentfile, drawerlayout,
+  cardview, collection, compose (animation, foundation, runtime, ui)
+  1.12.1, compose material3 1.5.0-beta01, compose material icons 1.7.8,
+  concurrent-futures, constraintlayout 2.0.1 (with constraintlayout-solver),
+  coordinatorlayout, core 1.18.0, core-splashscreen 1.2.0, core-viewtree,
+  cursoradapter, customview, datastore 1.1.7, documentfile, drawerlayout,
   dynamicanimation, emoji2, exifinterface, fragment, graphics-path,
   graphics-shapes 1.0.1, interpolator, legacy-support-core-utils,
   lifecycle 2.10.0, loader, localbroadcastmanager, media, navigation
   2.9.8, navigationevent, print, profileinstaller, recyclerview,
-  savedstate, startup, tracing, transition, vectordrawable,
-  versionedparcelable, viewpager, viewpager2, window 1.5.0
+  resourceinspection-annotation, savedstate, startup, tracing,
+  transition, vectordrawable, versionedparcelable, viewpager, viewpager2,
+  window 1.5.0
   (with libandroidx.graphics.path.so and libdatastore_shared_counter.so)
 Protocol Buffers (Java lite, inside AndroidX DataStore)
                                  BSD-3-Clause      protobuf/LICENSE.txt
 Media3 1.10.1 (ExoPlayer, Session)
                                  Apache-2.0        media3/LICENSE.txt
-Guava (used by Media3) ......... Apache-2.0        guava/LICENSE.txt
+Guava 33.3.1-android (used by Media3), with failureaccess and
+  listenablefuture, parts of Guava
+                                 Apache-2.0        guava/LICENSE.txt
 Material Components for Android 1.12.0
                                  Apache-2.0        material-components/LICENSE.txt
 AndroidSVG 1.4 (com.caverock:androidsvg-aar), Copyright 2013-2018 Cave Rock

@@ -314,6 +314,7 @@ FFmpeg GUI is made by one person, in spare time, and will stay free and open sou
 - [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache 2.0, with [eSpeak NG](https://github.com/espeak-ng/espeak-ng), GPL 3.0 or later, inside it; repacked as described in `app/src/main/assets/licenses/ffmpeg-gui/NOTICE.txt`) and [ONNX Runtime](https://onnxruntime.ai) (MIT)
 - [Jetpack Compose](https://developer.android.com/compose), [AndroidX](https://developer.android.com/jetpack/androidx) and [Media3](https://developer.android.com/media/media3) (Apache 2.0)
 - [AndroidSVG](https://github.com/BigBadaboom/androidsvg) by Cave Rock Software (Apache 2.0)
+- [Okio](https://github.com/square/okio) by Square and [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization) by JetBrains (Apache 2.0), used by AndroidX
 - [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) by NVIDIA (CC BY 4.0), downloaded by the user; its token list ships with the app
 - [IS-Net](https://github.com/xuebinqin/DIS) and [U2-Net](https://github.com/xuebinqin/U-2-Net) by Xuebin Qin et al. (Apache 2.0), as converted by [rembg](https://github.com/danielgatis/rembg) (MIT)
 - [Opus-MT](https://github.com/Helsinki-NLP/Opus-MT) by the University of Helsinki (CC BY 4.0), as converted to ONNX by [Xenova](https://huggingface.co/Xenova), downloaded by the user
