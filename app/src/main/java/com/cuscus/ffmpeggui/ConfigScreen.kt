@@ -1629,15 +1629,19 @@ fun ConfigScreen(
                 EditorTool.TRANSITION -> selectedClip?.let { clip ->
                     val index = playingClips.indexOfFirst { it.id == clip.id }
                     val hasNext = index >= 0 && index < playingClips.lastIndex
+                    val played = playingClips.map { it.effects.playedMs(it.lengthMs) }
                     val effective = if (hasNext) {
-                        transitionLengths(playingClips.map { it.effects.transition }, playingClips.map { it.effects.playedMs(it.lengthMs) })[index]
+                        transitionLengths(playingClips.map { it.effects.transition }, played)[index]
                     } else {
                         0L
                     }
+                    // As long as these two clips allow: half of the shorter one.
+                    val limit = if (hasNext) minOf(played[index], played[index + 1]) / 2 else 0L
                     TransitionContent(
                         transition = clip.effects.transition,
                         hasNext = hasNext,
                         effectiveMs = effective,
+                        limitMs = limit,
                         onTransition = { transition ->
                             val before = clip.effects.transition
                             val another = transition?.kind != before?.kind || transition?.effect != before?.effect
@@ -1645,6 +1649,7 @@ fun ConfigScreen(
                             if (another && transition != null) playTransition(clip.id)
                         },
                         onApplyToAll = { onTransitionForAll(clip.effects.transition) },
+                        onPlay = { playTransition(clip.id) },
                     )
                 }
                 EditorTool.FADE -> FadeSectionContent(

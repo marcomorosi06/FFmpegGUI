@@ -12,7 +12,7 @@ Every change shows in the editor before anything is rendered, and the export mak
 * Colour, fades and keyframes: clips zoom and pan, texts and pictures move, grow, turn and fade, with easings or curves drawn by hand
 * Texts, subtitles, and pictures or videos laid over the video, with crop, shapes, outline, shadow, blur and ready-made animations
 * Green screen and colour key
-* Looping effects (sparks, flames, snow, hearts...) and magic transitions (a fairy's wand, an explosion)
+* 100 transitions (3D punch, cube, glitch, bounce...), effects (flames, math...), magic transitions
 * HDR videos converted to SDR with the right colours
 * Music and sounds on their own rows, each with its volume, speed, fades and equaliser
 

@@ -7,6 +7,16 @@ the editor lays it over the video with the "screen" blend, so black disappears
 and the light adds up. No transparency is needed, so every effect is a plain
 H.264 MP4 that every phone decodes and FFmpeg reads.
 
+The formulas and diagrams of "math" are drawn by math_effect.py next to this
+script, with its own stroke font (no typeface is used).
+
+Two effects are drawn the other way: the 3D fists of the punch transitions
+(punch3d.py next to this script). A fist hides what is behind it, so these are
+colour with opacity, packed into a plain H.264 MP4 twice as tall: the picture
+on top, its opacity as grey below it. The app lays them over the cut of
+TransitionKind.PUNCH and PUNCH_BACK ("companion" in index.json), its preview
+from a sheet of frames with transparency (a WebP).
+
 Looping effects loop seamlessly: each particle has a phase within the loop
 and its age is taken modulo the loop's length, so the last frame leads into
 the first. Transitions (the fairy, an explosion, a flash) play once over the
@@ -18,7 +28,7 @@ frames. The encoder's output is committed with the app, so the build does not
 depend on this script; it is here so that anyone can see and remake them.
 
 Usage: python3 scripts/generate-effects.py [--only name,name] [--out DIR] [--crf N] [--index-only]
-Needs: Python 3, numpy, scipy, and ffmpeg with libx264 on the PATH.
+Needs: Python 3, numpy, scipy, and ffmpeg with libx264 and libwebp on the PATH.
 """
 
 import argparse
@@ -30,6 +40,9 @@ import sys
 
 import numpy as np
 from scipy.ndimage import gaussian_filter
+
+import math_effect
+import punch3d
 
 W, H = 1280, 720
 FPS = 30
@@ -792,6 +805,21 @@ def flash(seed=13):
     return frame, int(duration * FPS), False
 
 
+def maths():
+    """Formulas, symbols and little diagrams of a head full of maths, written on in light (see math_effect.py)."""
+    return math_effect.make(Canvas, W, H, FPS, loop=6.0, seed=14)
+
+
+def punch():
+    """The 3D fist flying at the viewer: it fills the frame where the clips cut (see punch3d.py)."""
+    return (lambda i: punch3d.frame(W, H, i, "punch")), punch3d.frame_count(), False
+
+
+def punch_back():
+    """The 3D fist thrown into the picture from behind: a flash hides the cut (see punch3d.py)."""
+    return (lambda i: punch3d.frame(W, H, i, "punch_back")), punch3d.frame_count(), False
+
+
 EFFECTS = {
     "sparks": sparks,
     "fireworks": fireworks,
@@ -803,10 +831,16 @@ EFFECTS = {
     "dust": dust,
     "bokeh": bokeh,
     "hearts": hearts,
+    "math": maths,
     "fairy": fairy,
     "explosion": explosion,
     "flash": flash,
+    "punch": punch,
+    "punch_back": punch_back,
 }
+
+# Drawn with their opacity (see encode_alpha), not as light on black.
+ALPHA = {"punch", "punch_back"}
 
 # What each is: a looping effect, or a transition (and the second at which it cuts).
 # The cut falls just inside the first frame of the flash (the fairy's wand lands
@@ -816,6 +850,10 @@ KINDS = {
     "fairy": ("transition", 1.18),
     "explosion": ("transition", 0.3),
     "flash": ("transition", 0.3),
+    # Laid over the cut of a transition of their own (TransitionKind.PUNCH, PUNCH_BACK),
+    # not offered among the effects: the cut is where the recipe switches clips (punch3d.CUTS).
+    "punch": ("companion", punch3d.CUTS["punch"]),
+    "punch_back": ("companion", punch3d.CUTS["punch_back"]),
 }
 
 
@@ -841,6 +879,65 @@ def encode(name, frame_fn, frames, out_dir, crf):
     if proc.wait() != 0:
         sys.exit(f"ffmpeg failed on {name}")
     return path
+
+
+def encode_alpha(name, frame_fn, frames, out_dir, crf):
+    """An effect with opacity: each RGBA frame packed as its colour over its opacity (grey), one frame twice as tall."""
+    path = os.path.join(out_dir, name + ".mp4")
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{2 * H}", "-r", str(FPS), "-i", "-",
+        "-c:v", "libx264", "-preset", "veryslow", "-crf", str(crf), "-pix_fmt", "yuv420p",
+        "-g", str(FPS), "-threads", "1", "-movflags", "+faststart", "-an",
+        path,
+    ]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    for i in range(frames):
+        rgba = frame_fn(i)
+        colour = to8(rgba[..., :3] * (rgba[..., 3:4] > 0.002))
+        alpha = to8(np.repeat(rgba[..., 3:4], 3, -1))
+        proc.stdin.write(np.concatenate([colour, alpha], 0).tobytes())
+        print(f"  {name}: frame {i + 1}/{frames}", file=sys.stderr)
+    proc.stdin.close()
+    if proc.wait() != 0:
+        sys.exit(f"ffmpeg failed on {name}")
+    return path
+
+
+# The preview of an effect with opacity: every frame, larger, with its
+# transparency (a WebP), drawn over the clips as the export lays the video.
+ALPHA_SHEET_W, ALPHA_SHEET_H = 512, 288
+ALPHA_SHEET_COLUMNS = 6
+# The opacity from the lower half's luma as stored (16..235), as the app's
+# export reads it (CommandBuilder.STACKED_ALPHA_LUT). No conversion to grey:
+# on one branch of a split it would turn the colours grey too.
+ALPHA_LUT = "if(lt(val,19),0,if(gt(val,232),255,(val-16)*255/219))"
+
+
+def make_alpha_sheet(name, out_dir):
+    """The sheet of an effect with opacity, from its packed video; returns what the index says of it."""
+    video = os.path.join(out_dir, name + ".mp4")
+    raw = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", video, "-filter_complex",
+         f"[0:v]split[c][a];[c]crop=iw:ih/2:0:0[cc];[a]crop=iw:ih/2:0:ih/2,format=yuv420p,extractplanes=y,"
+         f"lut=c0='{ALPHA_LUT}'[aa];[cc][aa]alphamerge,"
+         f"scale={ALPHA_SHEET_W}:{ALPHA_SHEET_H}:flags=area,format=rgba",
+         "-f", "rawvideo", "-pix_fmt", "rgba", "-"],
+        capture_output=True, check=True).stdout
+    frames = np.frombuffer(raw, np.uint8).reshape(-1, ALPHA_SHEET_H, ALPHA_SHEET_W, 4)
+    count = len(frames)
+    rows = (count + ALPHA_SHEET_COLUMNS - 1) // ALPHA_SHEET_COLUMNS
+    sheet = np.zeros((rows * ALPHA_SHEET_H, ALPHA_SHEET_COLUMNS * ALPHA_SHEET_W, 4), np.uint8)
+    for i, f in enumerate(frames):
+        r, c = divmod(i, ALPHA_SHEET_COLUMNS)
+        sheet[r * ALPHA_SHEET_H:(r + 1) * ALPHA_SHEET_H, c * ALPHA_SHEET_W:(c + 1) * ALPHA_SHEET_W] = f
+    path = os.path.join(out_dir, name + ".webp")
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgba",
+         "-s", f"{sheet.shape[1]}x{sheet.shape[0]}", "-i", "-", "-c:v", "libwebp", "-quality", "82", path],
+        input=sheet.tobytes(), check=True)
+    return {"file": name + ".webp", "frames": count, "columns": ALPHA_SHEET_COLUMNS,
+            "fps": FPS, "width": ALPHA_SHEET_W, "height": ALPHA_SHEET_H}
 
 
 # The picker's tiles: each effect as a sheet of small frames (a JPEG of
@@ -895,7 +992,10 @@ def main():
     for name in names:
         frame_fn, frames, loops = EFFECTS[name]()
         print(f"{name}: {frames} frames", file=sys.stderr)
-        path = encode(name, frame_fn, frames, args.out, args.crf)
+        if name in ALPHA:
+            path = encode_alpha(name, frame_fn, frames, args.out, args.crf)
+        else:
+            path = encode(name, frame_fn, frames, args.out, args.crf)
         print(f"  {path}: {os.path.getsize(path) // 1024} KB", file=sys.stderr)
     # The index lists every effect whose file is there, in the order above.
     index = []
@@ -907,7 +1007,11 @@ def main():
         entry = {"name": name, "file": name + ".mp4", "kind": kind, "frames": frames, "fps": FPS}
         if cut is not None:
             entry["cut"] = cut
-        entry["sheet"] = make_sheet(name, args.out)
+        if name in ALPHA:
+            entry["alpha"] = True
+            entry["sheet"] = make_alpha_sheet(name, args.out)
+        else:
+            entry["sheet"] = make_sheet(name, args.out)
         index.append(entry)
     with open(os.path.join(args.out, "index.json"), "w") as f:
         json.dump(index, f, indent=1)

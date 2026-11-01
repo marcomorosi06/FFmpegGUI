@@ -979,16 +979,25 @@ shape laid over it.
 ## Video effects
 
 Sparks, fireworks, flames, smoke, snow, rain, confetti, dust in the light,
-bokeh and hearts loop over the video for as long as they are laid; the fairy's
+bokeh, hearts and math loop over the video for as long as they are laid; the fairy's
 wand, an explosion and a flash are transitions laid over the cut between two
 clips. None comes from elsewhere: `scripts/generate-effects.py` draws every
 frame (numpy, scipy, fixed seeds) and encodes them with FFmpeg into
-`app/src/main/assets/effects/` (H.264, 1280x720, 30 fps, about 8 MB in all),
+`app/src/main/assets/effects/` (H.264, 1280x720, 30 fps),
 with `index.json` saying what each is (`kind` loop or transition, `frames`,
 `fps`, for a transition the second of the `cut`, under its brightest frame,
 and its `sheet`: a JPEG of small frames, 160x90 at 15 fps, eight a row). The
 script is only run to make them again (`--index-only` makes the sheets and the
 index from the videos there); the build uses the files.
+
+**Math.** `scripts/math_effect.py` draws the formulas, question marks and
+little diagrams (a right triangle, a sine wave, a circle and its radius, a
+parabola, a turning wire cube) of the confused-maths meme with its own stroke
+font (each glyph a few lines and arcs, no typeface): each item is written on
+stroke by stroke with a bright chalk tip, drifts, turns and comes closer, and
+fades; two share each cell of a 6x4 grid, one showing while the other is away,
+so the frame never clumps. Points along the strokes are splatted into
+`Canvas` (sharp near, softer far, with a glow), as the other effects.
 
 **Light on black.** Each effect is drawn as light on black and laid with the
 screen blend (`LayerBlend.SCREEN`): black disappears and the light adds up, so
@@ -1038,6 +1047,95 @@ the pictures the export lays, and the preview adds them to the pictures of the
 whole video, so the two always agree and the editor never keeps them. The
 transitions panel shows them as a "Magic" family, each tile cutting between its
 two pictures under the effect's own frames.
+
+**Punches: an effect with its own opacity.** The 3D fists of
+`TransitionKind.PUNCH` and `PUNCH_BACK` are not light on black: a fist hides
+what is behind it. `scripts/punch3d.py` draws them (a right fist built of
+rounded shapes blended into one signed distance field, ray marched in numpy,
+lit by a key, a fill and a rim light, with soft shadows, ambient occlusion,
+skin that lets light through near its edges, ACES tone mapping, six-sample
+motion blur and the fist's soft shadow on the picture), as colour plus
+opacity. `generate-effects.py` packs each frame as its colour over its opacity
+(grey) in a plain H.264 MP4 twice as tall (1280x1440), so every phone and
+FFmpeg read it; `index.json` marks them `"kind": "companion"` and
+`"alpha": true`, with a sheet of 512x288 frames with transparency (WebP, six a
+row, 30 fps). They are not offered among the magic transitions: each belongs
+to its kind (`TransitionKind.companionEffect`). A punch is a recipe like the
+others (the clip leans into the blow, the new clip springs back from it, or
+the clip shakes as if struck) and lasts `PUNCH_MS` whatever its length was
+(`Transition.requestedMs`, `TransitionKind.fixedMs`); `transitionEffects`
+lays its fist over the stretch the clips overlap
+(`OutputClock.transitionOutputRange`), the fist's cut on the moment the recipe
+swaps the clips (`companionSwitch`), as large as `Transition.size` (30 to
+100 percent, the panel's "Fist size", kept in the project). The export reads
+the two halves apart (`ImagePlacement.stackedAlpha`: `split`, `crop` each
+half, the lower half's luma taken out as it is with `extractplanes` and
+stretched from 16..235 by `lut`, `alphamerge`; a `format=gray` there would
+turn the whole split grey) and lays the fist with the normal blend, scaled to
+`coverSize` of the cover frame, in the middle; a smaller fist fades out towards
+the edges of its frame (`COVER_FEATHER` of its shorter side, a `geq` on its
+opacity), so that its arm and the flash are never cut sharp. The preview draws the fist from
+its sheet, the frame of the file at the output clock (`AlphaEffectFrames`),
+so it never drifts from the clips; the tiles draw it over their two pictures
+(`TileCompanion`). Below Android 13 the clips cross-fade under the fist.
+
+## Transitions told as layers
+
+The first 25 `TransitionKind`s are FFmpeg's `xfade` transitions, drawn in the
+preview by `transitionLook` (`core/preview/TransitionLook.kt`). The others are
+told as layers: a `TransitionRecipe` (`core/transition/`) says what shows
+behind, how each clip's picture is moved, bent, blurred, faded and tinted at
+each point and moment, and what light is laid over them, as small expressions
+(`Ex`, `core/transition/Ex.kt`) of the point (X, Y), the progress (T) and the
+frame's size. One recipe gives everything:
+
+- **The preview** (`TransitionLayers` in `app/.../TransitionPanels.kt`,
+  `app/.../preview/TransitionShaders.kt`): each clip's layer runs an AGSL
+  shader written from its part (`partShader`), the light one more
+  (`overlayShader`), the progress a uniform, so a running transition never
+  recomposes. Android 13 and later; before, or where a device refuses a
+  shader, the layer is cross-faded (`transitionLook` gives a fade for these
+  kinds) and the panel says so.
+- **The export** (`nativeTransitionJoin`, `core/transition/TransitionGraph.kt`):
+  the kinds whose `xfade` name is a transition of FFmpeg's own (dissolve,
+  pixelize, the corner and diagonal wipes, cover and reveal up and down,
+  squeezes, closing doors and shutters, soft wipes up and down) are exported by
+  `xfade`, their recipe drawing the same for the preview. The rest
+  (`TransitionKind.isCustom`) cannot be one `xfade` custom expression: worked
+  out pixel by pixel at full size it takes minutes for a second of video. So
+  the joined video is cut where the transition starts and the clip coming in
+  where it ends (`split`, `trim` by frame), the two pieces that overlap make a
+  region, and the three parts are joined again by `concat` (then `settb`, the
+  clips' clock, which `xfade` after it needs). In the region each clip is
+  drawn with FFmpeg's own filters, frame by frame:
+  `perspective` where the recipe gives where the picture's corners go
+  (`Part.corners`: moved, enlarged, turned, a face of a cube), with a
+  transparent edge when it does not cover the frame; `remap` through maps of
+  where each pixel comes from, worked out by `geq` at 192 pixels wide and
+  enlarged (swirl, wave, spin with mirrored edges...); opacity and light as
+  masks worked out by `geq` at 256 pixels wide (a tiny one when they do not
+  change across the frame), enlarged and merged (`alphamerge`); `eq` for
+  saturation and dips toward black or white; `gblur`, `dblur` and
+  `chromashift` with their strength sent for each frame (`sendcmd`, the values
+  worked out here); `mix` of copies for the zoom and spin blurs
+  (`NativeBlur.Echo`); `noise` for TV static; `overlay` lays the layers. The
+  region's frames run from T = 0 to T = 1, so it starts and ends on one clip.
+  HDR videos (10 bits, which `perspective` does not take) get a cross-fade
+  instead.
+
+`TransitionRecipeTest` checks that every recipe starts on one clip and ends
+on the other, that its corners agree with where it reads its picture and that
+its shaders are whole; `TransitionGraphTest` that every graph makes and uses
+each of its labels once.
+
+The transitions panel groups the kinds in twelve families (`TransitionFamily`,
+as CapCut does), two rows of tiles that scroll sideways, each tile playing its
+transition through the same layers; the duration slider reaches as far as the
+two clips allow (half of the shorter), and a button plays the transition in
+the preview. On the timeline the edges of two clips joined by a transition
+lean alike across the join (`transitionSlants` in `EditorTimeline.kt`), as
+wide as the footage the transition takes from each, the join's button on the
+middle of the slant.
 
 ## Shape layers
 
@@ -1179,7 +1277,8 @@ later ask for the notification permission at the first export.
 | the layers of a picture (texts, stickers)   | `app/.../LayerPanels.kt`, `core/model/Stacking.kt`   |
 | blend modes (export and preview)            | `core/model/LayerBlend.kt`, `layOver` in `CommandBuilder.kt`, `app/.../BlendPanels.kt` |
 | shape layers                                | `app/.../ShapeLayers.kt`, `app/.../ShapePanels.kt`, `updateShape` in the view model |
-| the video effects and effect transitions    | `scripts/generate-effects.py`, `app/.../effects/`, `app/.../EffectPanels.kt`, `app/.../EffectOverlays.kt` |
+| transitions between clips                   | `core/model/Transition.kt`, `core/transition/` (recipes, shaders, export graph), `transitionJoin` in `CommandBuilder.kt`, `app/.../TransitionPanels.kt` |
+| the video effects and effect transitions    | `scripts/generate-effects.py`, `scripts/punch3d.py` (the punches' 3D fist), `scripts/math_effect.py` (the math formulas), `app/.../effects/`, `app/.../EffectPanels.kt`, `app/.../EffectOverlays.kt` |
 | the SVG editor                              | `core/vector/svg/`, `app/.../svgedit/`               |
 | subtitle translation (models, text, UI)     | `core/translate/`, `app/.../translate/`              |
 | dubbing in the subtitles' language          | `core/dub/`, `app/.../dub/`                          |
@@ -2032,6 +2131,8 @@ Next steps, which have to move together:
 - Transitions between clips (`xfade` and `acrossfade`, see
   `core/model/Transition.kt` and `transitionJoin` in `CommandBuilder.kt`) need
   the clips re-encoded: stream copy ignores them, as it ignores every filter.
+  The transitions told as layers are cross-faded in an HDR video (10 bits)
+  and, in the preview, before Android 13.
 - `reverse` keeps a whole clip in memory while it is reversed: very long
   reversed clips can exhaust it on a phone.
 - Stream copy can only cut and split on key frames, and with several clips it

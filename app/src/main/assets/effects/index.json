@@ -150,6 +150,21 @@
   }
  },
  {
+  "name": "math",
+  "file": "math.mp4",
+  "kind": "loop",
+  "frames": 180,
+  "fps": 30,
+  "sheet": {
+   "file": "math.jpg",
+   "frames": 90,
+   "columns": 8,
+   "fps": 15,
+   "width": 160,
+   "height": 90
+  }
+ },
+ {
   "name": "fairy",
   "file": "fairy.mp4",
   "kind": "transition",
@@ -195,6 +210,40 @@
    "fps": 15,
    "width": 160,
    "height": 90
+  }
+ },
+ {
+  "name": "punch",
+  "file": "punch.mp4",
+  "kind": "companion",
+  "frames": 30,
+  "fps": 30,
+  "cut": 0.43,
+  "alpha": true,
+  "sheet": {
+   "file": "punch.webp",
+   "frames": 30,
+   "columns": 6,
+   "fps": 30,
+   "width": 512,
+   "height": 288
+  }
+ },
+ {
+  "name": "punch_back",
+  "file": "punch_back.mp4",
+  "kind": "companion",
+  "frames": 30,
+  "fps": 30,
+  "cut": 0.55,
+  "alpha": true,
+  "sheet": {
+   "file": "punch_back.webp",
+   "frames": 30,
+   "columns": 6,
+   "fps": 30,
+   "width": 512,
+   "height": 288
   }
  }
 ]

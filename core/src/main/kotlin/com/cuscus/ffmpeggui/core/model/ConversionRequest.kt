@@ -377,6 +377,19 @@ data class ImagePlacement(
     val cover: Boolean = false,
     /** Its colours turned round the colour wheel by this many degrees (0 = untouched). */
     val hueDegrees: Float = 0f,
+    /**
+     * With [cover], how large the fill is beside the frame's (1 the frame's
+     * size; smaller fills a smaller frame in the middle, and a video with
+     * [stackedAlpha] then fades out towards that frame's edges, over
+     * [COVER_FEATHER] of its shorter side).
+     */
+    val coverSize: Float = 1f,
+    /**
+     * A video packed with its opacity: each frame its colours on top and its
+     * opacity (grey) below, twice as tall as the picture (the app's effects
+     * that hide what is behind them, a 3D fist).
+     */
+    val stackedAlpha: Boolean = false,
 ) {
     /** True when the picture fades, which needs it as a stream of frames rather than one. */
     val fades: Boolean get() = clipId == null && (fadeInSeconds > 0f || (fadeOutSeconds > 0f && endMs != null))
@@ -403,6 +416,15 @@ data class ImagePlacement(
          */
         const val POSITION_MIN = -1f
         const val POSITION_MAX = 2f
+
+        /** A [coverSize] below this is smaller than the frame. */
+        const val FULL_COVER = 0.999f
+
+        /**
+         * How far in from its edges a smaller [cover] with [stackedAlpha] fades
+         * out, a fraction of its shorter side (the export and the preview alike).
+         */
+        const val COVER_FEATHER = 0.18
     }
 }
 

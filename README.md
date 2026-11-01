@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <sub>With <a href="https://github.com/ImranR98/Obtainium">Obtainium</a> installed, a tap adds the app and keeps it updated from the releases here: the green button follows only stable releases, the orange one also takes the pre-releases.</sub>
+  <sub>With <a href="https://github.com/ImranR98/Obtainium">Obtainium</a> installed, a tap adds the app and keeps it updated from the releases here: the first button follows only stable releases, the second one also takes the pre-releases.</sub>
 </p>
 
 ---
@@ -59,11 +59,11 @@
 ### Video
 - A timeline of clips from one or more files: split, trim by dragging, reorder, duplicate, freeze frames, pictures as clips with Ken Burns motion
 - Speed (with automatic `atempo` chaining) or a **speed curve** drawn along a clip, with ready-made ramps (montage, hero, bullet, flash in / out...), the pitch kept or following the speed like a tape; reverse, crop and aspect ratio, rotation, mirror, resolution and frame rate
-- **Transitions** between clips, as in CapCut: 25 of them (dissolves, dips to black or white, slides, covers, reveals, wipes, soft wipes, circles, iris, box, doors, shutter, clock, zoom), each with its own length; every choice plays in a loop on its tile, the joins between clips are buttons on the timeline, and the preview draws them live with the same math as the export (`xfade` and `acrossfade`)
+- **Transitions** between clips, as in CapCut: 100 of them in twelve families (basic, camera, motion, slide, wipe, light, glitch, blur, shapes, masks, 3D, social): dissolves and dips, zooms, pulls, whip pans, spins, rolls, shake, impact shake and swirl, pendulums, bounce, rebounds and spring, slides, covers, reveals, splits and squeezes, straight, soft, corner and diagonal wipes, white flash, light leak, film burn, glow and lens flare, glitch, RGB split, wave, TV static and pixelate, zoom, motion and spin blur and defocus, diamond, hexagon, star, stripes, checkerboard, paper tear and brush stroke, doors and shutters, iris, diagonal split and luma fade, two 3D punches (a fist punches the clip away, or into the picture so that it shakes; the fist can be made smaller), cube, flip and page turn, swipes and hearts. Each has its own length, up to half of the shorter clip; every choice plays in a loop on its tile and can be played in the preview, and on the timeline the clips' edges lean across each join as far as its transition lasts. The preview draws them live (shaders written from the same description as the export, Android 13 and later); the export uses `xfade` where FFmpeg has the transition and FFmpeg's own filters for the others (`perspective`, `remap`, `gblur`, `dblur`, `chromashift`, masks worked out small), with `acrossfade` for the sound. The punches' fist is rendered in 3D (ray-marched, with soft shadows, skin shading and motion blur) by the project's own script and laid over the clips with its own transparency
 - Colour, fades and **keyframes**: clips zoom, pan and change colour and volume; texts and pictures move, grow, turn and fade; each keyframe moves on to the next with an easing (linear, smooth, ease in / out, overshoot, bounce, elastic, hold) or a curve drawn by hand
 - **Texts** and **pictures or videos laid over the video**, each on its own row of the timeline: crop, rounded or round shape, outline, shadow or glow, blur, layers and ready-made animations in and out; texts with an outline, a shadow or a box behind them, in the phone's fonts or a .ttf / .otf of your own
 - **Shapes** laid over the video, **blend modes** for pictures, videos and shapes, and a **layers** list to reorder them by dragging
-- **Effects** on their own lane, as in CapCut: sparks, fireworks, flames, smoke, snow, rain, confetti, dust in the light, bokeh and hearts, looping for as long as they last, with their strength and colour; and **magic transitions**: a fairy's wand, an explosion, a flash, the cut hidden under them. All drawn by the project's own script, light on black, screened over the video
+- **Effects** on their own lane, as in CapCut: sparks, fireworks, flames, smoke, snow, rain, confetti, dust in the light, bokeh, hearts and math (formulas and diagrams written on in light, as in the confused-maths meme), looping for as long as they last, with their strength and colour; and **magic transitions**: a fairy's wand, an explosion, a flash, the cut hidden under them. All drawn by the project's own script, light on black, screened over the video
 - **Chroma key and colour key** on clips, the whole video and overlays, with spill removal and transparency
 - **Sounds** on their own rows, with their real waveform: volume, speed (keeping the pitch or not), pitch shift, fades, equaliser, repeat
 - Burned-in subtitles (`.srt`, `.ass`), undo and redo of every edit
@@ -324,7 +324,7 @@ FFmpeg GUI is made by one person, in spare time, and will stay free and open sou
 - [Google Sans Flex](https://fonts.google.com/specimen/Google+Sans+Flex) (SIL Open Font License)
 - The [Obtainium](https://github.com/ImranR98/Obtainium) logo by ImranR98 (GPL 3.0), in this page's Obtainium buttons only ([its licence](docs/badges/LICENSE-obtainium-logo.txt))
 
-The video effects are made by the project's own `scripts/generate-effects.py` and are part of FFmpeg GUI, under its licence.
+The video effects are made by the project's own `scripts/generate-effects.py` (the punches' 3D fist by `scripts/punch3d.py`, the math formulas by `scripts/math_effect.py` with its own stroke font) and are part of FFmpeg GUI, under its licence.
 
 Each component stays under its own licence.
 

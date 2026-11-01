@@ -1,6 +1,8 @@
 package com.cuscus.ffmpeggui.core.preview
 
 import com.cuscus.ffmpeggui.core.model.TransitionKind
+import com.cuscus.ffmpeggui.core.transition.Rgb
+import com.cuscus.ffmpeggui.core.transition.recipe
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.max
@@ -59,16 +61,22 @@ data class PartLook(
 
 /** The clip going out is drawn over the one coming in (it moves or zooms away from it). */
 val TransitionKind.outgoingOnTop: Boolean
-    get() = this == TransitionKind.REVEAL_LEFT || this == TransitionKind.REVEAL_RIGHT || this == TransitionKind.ZOOM_IN
+    get() = recipe?.outgoingOnTop ?: (this == TransitionKind.REVEAL_LEFT || this == TransitionKind.REVEAL_RIGHT || this == TransitionKind.ZOOM_IN)
 
 /** What shows behind both clips: white for [TransitionKind.FADE_WHITE], black otherwise. */
-val TransitionKind.whiteBehind: Boolean get() = this == TransitionKind.FADE_WHITE
+val TransitionKind.whiteBehind: Boolean get() = recipe?.let { it.backdrop == Rgb.WHITE } ?: (this == TransitionKind.FADE_WHITE)
 
-/** How the clip going out ([incoming] false) or coming in looks [t] of the way through a [kind] transition. */
+/**
+ * How the clip going out ([incoming] false) or coming in looks [t] of the way
+ * through a [kind] transition. A kind told as layers (see core.transition's
+ * TransitionRecipe) is drawn by shaders where the device has them; without,
+ * it is drawn here as a plain cross-fade.
+ */
 fun transitionLook(kind: TransitionKind, t: Float, incoming: Boolean): PartLook {
     val t = t.coerceIn(0f, 1f)
     val p = 1f - t
     fun moved(dx: Float = 0f, dy: Float = 0f) = PartLook(dx = dx, dy = dy)
+    if (kind.recipe != null) return if (incoming) PartLook(alpha = t) else PartLook.PLAIN
     return when (kind) {
         TransitionKind.FADE -> if (incoming) PartLook(alpha = t) else PartLook.PLAIN
         TransitionKind.FADE_BLACK, TransitionKind.FADE_WHITE -> {
@@ -112,6 +120,8 @@ fun transitionLook(kind: TransitionKind, t: Float, incoming: Boolean): PartLook 
             val zoom = smoothstep(0.5f, 1f, p)
             if (incoming) PartLook.PLAIN else PartLook(alpha = smoothstep(0f, 0.5f, p), scale = 1f / max(zoom, MIN_ZOOM))
         }
+        // Told as layers: answered above.
+        else -> if (incoming) PartLook(alpha = t) else PartLook.PLAIN
     }
 }
 

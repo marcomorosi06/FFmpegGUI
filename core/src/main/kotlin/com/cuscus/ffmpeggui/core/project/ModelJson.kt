@@ -86,7 +86,7 @@ object ModelJson {
         putKeyframes(e.keyframes)
         put("speedCurve", e.speedCurve, ::write)
         put("keepPitch", e.keepPitch)
-        put("transition", e.transition) { t -> jsonObject { put("kind", t.kind); put("durationMs", t.durationMs); put("effect", t.effect) } }
+        put("transition", e.transition) { t -> jsonObject { put("kind", t.kind); put("durationMs", t.durationMs); put("effect", t.effect); put("size", t.size) } }
         put("hdrLook", e.hdrLook)
         put("placement", e.placement) { p ->
             jsonObject {
@@ -180,7 +180,12 @@ object ModelJson {
             speedCurve = o.obj("speedCurve")?.let(::speedCurve),
             keepPitch = o.bool("keepPitch", d.keepPitch),
             transition = o.objOrNull("transition", d.transition) { t ->
-                Transition(kind = t.enum("kind", TransitionKind.FADE), durationMs = t.long("durationMs", Transition.DEFAULT_MS), effect = t.stringOrNull("effect"))
+                Transition(
+                    kind = t.enum("kind", TransitionKind.FADE),
+                    durationMs = t.long("durationMs", Transition.DEFAULT_MS),
+                    effect = t.stringOrNull("effect"),
+                    size = t.float("size", 1f),
+                )
             },
             hdrLook = o.doubleOrNull("hdrLook", d.hdrLook?.toDouble())?.toFloat(),
             placement = o.objOrNull("placement", d.placement) { p ->

@@ -9,7 +9,10 @@ FFmpeg GUI
   Source code: EUPL-1.2. The APK as a whole: GPL-3.0 (EUPL Article 5).
   Files: ffmpeg-gui/NOTICE.txt, ffmpeg-gui/EUPL-1.2.txt
   The video effects (assets/effects/) are part of FFmpeg GUI: every frame
-  is drawn by its own scripts/generate-effects.py, under the same licence.
+  is drawn by its own scripts/generate-effects.py (the 3D fists of the
+  punch transitions by scripts/punch3d.py, the formulas of the math
+  effect by scripts/math_effect.py with its own stroke font), under the
+  same licence.
 
 Each component below keeps its own licence. Paths are relative to this
 folder.

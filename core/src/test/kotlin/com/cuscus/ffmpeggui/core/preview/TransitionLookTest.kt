@@ -1,6 +1,7 @@
 package com.cuscus.ffmpeggui.core.preview
 
 import com.cuscus.ffmpeggui.core.model.TransitionKind
+import com.cuscus.ffmpeggui.core.transition.recipe
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
@@ -85,6 +86,8 @@ class TransitionLookTest {
                 val v = 0.5f + (y.toFloat() / h - 0.5f) * zf
                 mix(a(ceil(u * (w - 1)).toInt(), ceil(v * (h - 1)).toInt()), b(x, y), smoothstep(0f, 0.5f, p))
             }
+            // Told as layers (core.transition): not drawn by transitionLook.
+            else -> error("$kind has a recipe")
         }
     }
 
@@ -119,7 +122,7 @@ class TransitionLookTest {
 
     @Test
     fun `the layers give xfade's picture`() {
-        for (kind in TransitionKind.entries) {
+        for (kind in TransitionKind.entries.filter { it.recipe == null }) {
             for (step in 0..20) {
                 val t = step / 20f
                 var wrong = 0

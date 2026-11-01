@@ -32,6 +32,7 @@ import com.cuscus.ffmpeggui.core.time.Segmenting
 import com.cuscus.ffmpeggui.core.time.expectedOutputDurationMs
 import com.cuscus.ffmpeggui.core.time.footageLengthMs
 import com.cuscus.ffmpeggui.core.time.transitionsMs
+import com.cuscus.ffmpeggui.core.transition.nativeTransitionJoin
 import com.cuscus.ffmpeggui.core.time.formatTimecode
 import com.cuscus.ffmpeggui.core.time.playedLengthMs
 import com.cuscus.ffmpeggui.core.time.segmenting
@@ -846,7 +847,11 @@ class CommandBuilder(fonts: FontProvider) {
         if (transitions) {
             val played = segments.map { (request.playedLengthMs(it) ?: 0L) / 1000.0 }
             val kinds = segments.map { it.effects.transition?.kind }
-            if (withVideo) graph += transitionJoin(videoLabels, played, overlaps, kinds, video = true, output = VIDEO_JOINED)
+            // The transitions told as layers are drawn by FFmpeg's own filters in 8 bits (see
+            // core.transition's TransitionGraph); in an HDR video a cross-fade stands in.
+            val rate = transitionFrameRate(request)
+            val drawn = if (keptHdr(request) == null) TransitionFrame(width, height, rate) else null
+            if (withVideo) graph += transitionJoin(videoLabels, played, overlaps, kinds, video = true, output = VIDEO_JOINED, frame = drawn, rate = rate)
             if (audio) graph += transitionJoin(audioLabels, played, overlaps, kinds, video = false, output = AUDIO_JOINED)
         } else {
             graph += "${concatInputs}concat=n=${segments.size}:v=${if (withVideo) 1 else 0}:a=${if (audio) 1 else 0}" +
@@ -987,10 +992,11 @@ class CommandBuilder(fonts: FontProvider) {
      * The scale of a picture filling a frame [frameWidth] x [frameHeight] (even
      * sides), its shape kept and what overflows cut evenly from both sides.
      */
-    private fun coverScale(frameWidth: Int, frameHeight: Int): String {
-        val width = (frameWidth.coerceAtLeast(2) / 2) * 2
+    private fun coverScale(frameWidth: Int, frameHeight: Int, size: Float = 1f): String {
+        val f = size.coerceIn(0.05f, 1f)
+        val width = ((frameWidth.coerceAtLeast(2) * f).toInt() / 2 * 2).coerceAtLeast(2)
         if (frameHeight <= 0) return "scale=w=$width:h='max(2,trunc(ow/dar/2)*2)'"
-        val height = (frameHeight.coerceAtLeast(2) / 2) * 2
+        val height = ((frameHeight.coerceAtLeast(2) * f).toInt() / 2 * 2).coerceAtLeast(2)
         return "scale=w=$width:h=$height:force_original_aspect_ratio=increase,crop=w=$width:h=$height"
     }
 
@@ -1198,6 +1204,19 @@ class CommandBuilder(fonts: FontProvider) {
                 source = "${prefix}ovp$index"
                 segments += "[${overlay.source}]${prepared.joinToString(",")}[$source]"
             }
+            // Colours over opacity in one frame: the two halves merged into one picture with
+            // transparency (the opacity, read back to full range, its ends made exact).
+            if (placement.stackedAlpha) {
+                val colours = "${prefix}sc$index"
+                val opacity = "${prefix}so$index"
+                segments += "[$source]split=2[${colours}a][${opacity}a]"
+                segments += "[${colours}a]crop=iw:ih/2:0:0[$colours]"
+                // The opacity is the lower half's luma as stored (limited range): taken out as it is (a
+                // conversion to grey here would turn the whole split grey, colours too), then stretched.
+                segments += "[${opacity}a]crop=iw:ih/2:0:ih/2,format=yuv420p,extractplanes=y,lut=c0='$STACKED_ALPHA_LUT'[$opacity]"
+                source = "${prefix}sm$index"
+                segments += "[$colours][$opacity]alphamerge[$source]"
+            }
 
             if (placement.animated) {
                 segments += animatedOverlay(placement, source, previous, next, "${prefix}k$index", keepAlpha, frameWidth)
@@ -1216,7 +1235,10 @@ class CommandBuilder(fonts: FontProvider) {
             // (scale2ref, which would read it, never ends in the bundled FFmpeg 6.1.6 once
             // the picture's single frame is over: see overlayScale).
             val cover = placement.cover && timed
-            segments += "[$source]" + (if (cover) coverScale(frameWidth, frameHeight) else overlayScale(frameWidth, fraction)) + "[$scaled]"
+            // A smaller fist fades out towards its frame's edges, so that its arm is not cut there.
+            val feathered = cover && placement.stackedAlpha && placement.coverSize < ImagePlacement.FULL_COVER
+            segments += "[$source]" + (if (cover) coverScale(frameWidth, frameHeight, placement.coverSize) else overlayScale(frameWidth, fraction)) +
+                (if (feathered) ",$FEATHER_EDGES" else "") + "[$scaled]"
             // Its look, at the size it shows: blur, shape, outline and shadow.
             val looked = if (decorated) "${prefix}ovl$index" else scaled
             if (decorated) {
@@ -1272,6 +1294,9 @@ class CommandBuilder(fonts: FontProvider) {
      * overlapping the next for its length ([overlaps], one per gap), with concat
      * where none does. [played] are the segments' lengths in seconds; a picture's
      * cross-fade starts where the joined video so far ends, less the overlap.
+     * A transition told as layers (TransitionKind.isCustom) is drawn by
+     * nativeTransitionJoin on pictures of [frame]; without one, or where it
+     * cannot, a plain cross-fade stands in.
      */
     private fun transitionJoin(
         labels: List<String>,
@@ -1280,7 +1305,11 @@ class CommandBuilder(fonts: FontProvider) {
         kinds: List<TransitionKind?>,
         video: Boolean,
         output: String,
+        frame: TransitionFrame? = null,
+        rate: Int = 0,
     ): List<String> {
+        // concat gives its own clock (microseconds); xfade wants both its pictures on one, the clips' frame rate.
+        val clock = if (video && rate > 0) ",settb=1/$rate" else ""
         val prefix = if (video) "tv" else "ta"
         val parts = mutableListOf<String>()
         var current = labels.first()
@@ -1291,15 +1320,36 @@ class CommandBuilder(fonts: FontProvider) {
             val kind = kinds.getOrNull(k - 1)
             parts += when {
                 overlap <= 0.0 || kind == null ->
-                    "$current${labels[k]}concat=n=2:v=${if (video) 1 else 0}:a=${if (video) 0 else 1}$next"
-                video -> "$current${labels[k]}" + fmt("xfade=transition=%s:duration=%.3f:offset=%.3f", kind.xfade, overlap, (length - overlap).coerceAtLeast(0.0)) + next
-                else -> "$current${labels[k]}" + fmt("acrossfade=d=%.3f:c1=tri:c2=tri", overlap) + next
+                    listOf("$current${labels[k]}concat=n=2:v=${if (video) 1 else 0}:a=${if (video) 0 else 1}$clock$next")
+                video && kind.isCustom && frame != null -> nativeTransitionJoin(
+                    kind = kind,
+                    outgoing = current,
+                    incoming = labels[k],
+                    startFrame = Math.round((length - overlap) * frame.fps).toInt(),
+                    frames = Math.round(overlap * frame.fps).toInt(),
+                    width = frame.width,
+                    height = frame.height,
+                    fps = frame.fps,
+                    prefix = "tr${k}x",
+                    output = next,
+                    clock = clock.removePrefix(","),
+                ) ?: listOf(customFallback(current, labels[k], overlap, length, next))
+                video && kind.isCustom -> listOf(customFallback(current, labels[k], overlap, length, next))
+                video -> listOf("$current${labels[k]}" + fmt("xfade=transition=%s:duration=%.3f:offset=%.3f", kind.xfade, overlap, (length - overlap).coerceAtLeast(0.0)) + next)
+                else -> listOf("$current${labels[k]}" + fmt("acrossfade=d=%.3f:c1=tri:c2=tri", overlap) + next)
             }
             length += played[k] - (if (kind != null) overlap else 0.0)
             current = next
         }
         return parts
     }
+
+    /** A cross-fade standing in for a transition told as layers that cannot be drawn here. */
+    private fun customFallback(current: String, incoming: String, overlap: Double, length: Double, next: String): String =
+        "$current$incoming" + fmt("xfade=transition=fade:duration=%.3f:offset=%.3f", overlap, (length - overlap).coerceAtLeast(0.0)) + next
+
+    /** The pictures transitions are drawn on: their size and frame rate. */
+    private class TransitionFrame(val width: Int, val height: Int, val fps: Int)
 
     /** Frame rate the clips are brought to when transitions join them: the output's, else a common one. */
     private fun transitionFrameRate(request: ConversionRequest): Int =
@@ -1624,5 +1674,23 @@ class CommandBuilder(fonts: FontProvider) {
 
         /** Length of a still segment whose end is not set (it never should be). */
         const val DEFAULT_STILL_MS = 3_000L
+
+        /**
+         * The opacity of a video packed as colours over opacity (see
+         * ImagePlacement.stackedAlpha), from its lower half's luma as stored
+         * (16..235): stretched to 0..255, the ends a little inside snapped
+         * exact, so that what was clear stays clear and what was solid stays
+         * solid through the compression.
+         */
+        const val STACKED_ALPHA_LUT = "if(lt(val,19),0,if(gt(val,232),255,(val-16)*255/219))"
+
+        /**
+         * The opacity of a picture with transparency faded to nothing at its
+         * edges, over ImagePlacement.COVER_FEATHER of its shorter side (the
+         * preview's AlphaEffectFrames fades the same way).
+         */
+        private const val F = ImagePlacement.COVER_FEATHER
+        const val FEATHER_EDGES = "format=yuva420p,geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':" +
+            "a='alpha(X,Y)*clip(min(X,W-1-X)/($F*min(W,H)),0,1)*clip(min(Y,H-1-Y)/($F*min(W,H)),0,1)'"
     }
 }

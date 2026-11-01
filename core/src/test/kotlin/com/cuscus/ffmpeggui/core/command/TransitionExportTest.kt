@@ -46,7 +46,8 @@ class TransitionExportTest {
         assertTrue(g, g.contains("setsar=1,fps=60,format=yuv420p[sv3]"))
         // Clip 2 lasts 1 s: its transition into it is half of that at most.
         assertTrue(g, g.contains("[sv0][sv1]xfade=transition=wipeleft:duration=0.500:offset=2.500[tv1]"))
-        assertTrue(g, g.contains("[tv1][sv2]concat=n=2:v=1:a=0[tv2]"))
+        // Back on the clips' clock, which concat leaves and xfade after it wants.
+        assertTrue(g, g.contains("[tv1][sv2]concat=n=2:v=1:a=0,settb=1/60[tv2]"))
         // 2.5 + 1 + 2 seconds joined so far, less the overlap.
         assertTrue(g, g.contains("[tv2][sv3]xfade=transition=radial:duration=0.500:offset=5.000[vcat]"))
         assertTrue(g, g.contains("[ta2][sa3]acrossfade=d=0.500:c1=tri:c2=tri[acat]"))
@@ -54,6 +55,26 @@ class TransitionExportTest {
         assertTrue(g, g.contains("anullsrc=r=48000:cl=stereo,atrim=duration=1.000,aformat=sample_fmts=fltp:channel_layouts=stereo[sa1]"))
         assertFalse(g, g.contains("concat=n=4"))
         assertEquals(3_000L + 1_000L + 2_000L + 1_000L - 500L - 500L, request.expectedOutputDurationMs())
+    }
+
+    @Test
+    fun `a transition told as layers is drawn by FFmpeg's own filters`() {
+        val request = video.copy(
+            segments = listOf(
+                Segment(0, 0, 3_000, Effects(transition = Transition(TransitionKind.CUBE_LEFT, 500))),
+                Segment(0, 4_000, 6_000),
+            ),
+        )
+        val g = graph(request)
+        assertFalse(g, g.contains("xfade"))
+        // The region starts 2.5 s (150 frames at 60 per second) in and lasts 30 frames.
+        assertTrue(g, g.contains("[sv0]split=2"))
+        assertTrue(g, g.contains("trim=start_frame=150:end_frame=180,setpts=PTS-STARTPTS"))
+        assertTrue(g, g.contains("perspective="))
+        assertTrue(g, g.contains("concat=n=3:v=1:a=0,settb=1/60[vcat]"))
+        // The sound is cross-faded as for any transition.
+        assertTrue(g, g.contains("[sa0][sa1]acrossfade=d=0.500:c1=tri:c2=tri[acat]"))
+        assertEquals(3_000L + 2_000L - 500L, request.expectedOutputDurationMs())
     }
 
     @Test

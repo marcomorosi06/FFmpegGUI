@@ -1,6 +1,7 @@
 * Command studio for your own commands
 * One-tap dub, magic eraser, stem split
 * Video effects, magic transitions
+* 100 transitions, 3D punches, slanted joins
 * On-device subtitle translation
 * Texts: outline, soft shadow, box, your own fonts
 * SVG editor: gradients, symmetry, booleans, layers, snapping

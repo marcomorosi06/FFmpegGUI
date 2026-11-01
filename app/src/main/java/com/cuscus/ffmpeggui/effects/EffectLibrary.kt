@@ -17,10 +17,16 @@ import java.util.concurrent.ConcurrentHashMap
  * explosion, a flash) that play once over the cut between two clips.
  *
  * Each is light on black, laid with the screen blend: black disappears and the
- * light adds up. The players and FFmpeg read a file, not an asset, so each one
+ * light adds up. A few carry their own opacity instead (the 3D fists of the
+ * punch transitions, drawn by scripts/punch3d.py): their file holds the
+ * colours over the opacity, one above the other, laid as they are; their
+ * small frames keep the opacity too. Those "companions" belong to a
+ * transition told as layers (see TransitionKind.companionEffect) and are not
+ * offered on their own. The players and FFmpeg read a file, not an asset, so each one
  * is copied once into the app's own files (again when a new version of the app
  * brings a different one). The picker shows each from a sheet of small frames
- * (a JPEG next to it), so that no video is decoded to show it.
+ * (a JPEG next to it, a WebP for one with its opacity), so that no video is
+ * decoded to show it.
  */
 
 /** One effect of the library. */
@@ -36,6 +42,10 @@ data class EffectInfo(
     val cutMs: Long,
     /** Its small frames for the picker, if there are any. */
     val sheet: SheetInfo? = null,
+    /** True when it carries its own opacity (colours over opacity in its file), laid without the screen blend. */
+    val alpha: Boolean = false,
+    /** True when it belongs to a transition told as layers (see TransitionKind.companionEffect), not offered alone. */
+    val companion: Boolean = false,
 ) {
     /** How long it lasts (one turn of a loop). */
     val lengthMs: Long get() = if (fps > 0) frames * 1000L / fps else 0L
@@ -77,8 +87,8 @@ object EffectLibrary {
     /** The effects that loop, in the library's order. */
     val loops: List<EffectInfo> get() = index.filter { !it.transition }
 
-    /** The transitions, in the library's order. */
-    val transitions: List<EffectInfo> get() = index.filter { it.transition }
+    /** The transitions offered on their own, in the library's order. */
+    val transitions: List<EffectInfo> get() = index.filter { it.transition && !it.companion }
 
     fun info(name: String?): EffectInfo? = name?.let { n -> index.firstOrNull { it.name == n } }
 
@@ -137,8 +147,11 @@ object EffectLibrary {
     fun sheet(name: String): EffectSheet? {
         sheets[name]?.let { return it }
         val context = appContext ?: return null
-        val about = info(name)?.sheet ?: return null
-        val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 }
+        val effect = info(name) ?: return null
+        val about = effect.sheet ?: return null
+        // Light on black needs no opacity; a fist does.
+        val config = if (effect.alpha) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565
+        val options = BitmapFactory.Options().apply { inPreferredConfig = config }
         val bitmap = try {
             context.assets.open("$ASSETS/${about.file}").use { BitmapFactory.decodeStream(it, null, options) }
         } catch (e: Exception) {
@@ -153,13 +166,18 @@ object EffectLibrary {
     /** The sheet of effect [name] if it was read already, without reading it. */
     fun sheetIfRead(name: String): EffectSheet? = sheets[name]
 
-    /** The index as the generator writes it: a list of {name, file, kind, frames, fps, cut, sheet}. */
+    /**
+     * The index as the generator writes it: a list of {name, file, kind, frames,
+     * fps, cut, sheet, alpha}, kind one of "loop", "transition" and "companion".
+     */
     internal fun parse(text: String): List<EffectInfo> {
         val list = JsonText.parse(text) as? Json.Arr ?: return emptyList()
         return list.items.mapNotNull { item ->
             val o = item as? Json.Obj ?: return@mapNotNull null
             val name = o.stringOrNull("name") ?: return@mapNotNull null
-            val transition = o.string("kind", "loop") == "transition"
+            val kind = o.string("kind", "loop")
+            val companion = kind == "companion"
+            val transition = kind == "transition" || companion
             EffectInfo(
                 name = name,
                 file = o.string("file", "$name.mp4"),
@@ -177,6 +195,8 @@ object EffectLibrary {
                         height = sh.int("height", 0),
                     ).takeIf { it.frames > 0 && it.width > 0 && it.height > 0 }
                 },
+                alpha = o.bool("alpha", false),
+                companion = companion,
             ).takeIf { it.frames > 0 }
         }
     }

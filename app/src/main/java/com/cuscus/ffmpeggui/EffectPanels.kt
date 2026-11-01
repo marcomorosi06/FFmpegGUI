@@ -115,6 +115,7 @@ fun effectLabelRes(name: String): Int? = when (name) {
     "dust" -> R.string.effect_dust
     "bokeh" -> R.string.effect_bokeh
     "hearts" -> R.string.effect_hearts
+    "math" -> R.string.effect_math
     "fairy" -> R.string.effect_fairy
     "explosion" -> R.string.effect_explosion
     "flash" -> R.string.effect_flash
@@ -139,14 +140,15 @@ internal fun rememberSheet(name: String): EffectSheet? {
 
 /**
  * Frame [index] of [sheet] drawn to fill this scope (its shape kept, the
- * overflow cut evenly), through [filter].
+ * overflow cut evenly), through [filter]; [fraction] of that size, in the
+ * middle (as the export lays a sized effect, see ImagePlacement.coverSize).
  */
-internal fun DrawScope.drawSheetFrame(sheet: EffectSheet, image: ImageBitmap, index: Int, filter: ColorFilter?) {
+internal fun DrawScope.drawSheetFrame(sheet: EffectSheet, image: ImageBitmap, index: Int, filter: ColorFilter?, fraction: Float = 1f) {
     val about = sheet.about
     val i = index.coerceIn(0, about.frames - 1)
     val column = i % about.columns
     val row = i / about.columns
-    val scale = maxOf(size.width / about.width, size.height / about.height)
+    val scale = maxOf(size.width / about.width, size.height / about.height) * fraction
     val width = (about.width * scale).roundToInt()
     val height = (about.height * scale).roundToInt()
     drawImage(
@@ -156,9 +158,12 @@ internal fun DrawScope.drawSheetFrame(sheet: EffectSheet, image: ImageBitmap, in
         dstOffset = IntOffset(((size.width - width) / 2f).roundToInt(), ((size.height - height) / 2f).roundToInt()),
         dstSize = IntSize(width, height),
         colorFilter = filter,
-        filterQuality = FilterQuality.Low,
+        filterQuality = if (sheet.about.width >= SHARP_SHEET_WIDTH) FilterQuality.Medium else FilterQuality.Low,
     )
 }
+
+/** Sheets this wide are drawn smoothly (a fist's are large enough to show it). */
+private const val SHARP_SHEET_WIDTH = 400
 
 /**
  * Effect [name] playing on black at its own speed from its small frames, its

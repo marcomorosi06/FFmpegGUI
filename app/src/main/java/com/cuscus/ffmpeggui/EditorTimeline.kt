@@ -76,6 +76,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cuscus.ffmpeggui.core.model.TextOverlay
+import com.cuscus.ffmpeggui.core.model.transitionLengths
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
@@ -241,6 +242,11 @@ fun EditorTimeline(
 
     val totalMs = timeline.durationMs
     val starts = remember(timeline) { timeline.clips.indices.map { timeline.startOf(it) } }
+    // How long each transition between two clips really lasts (0 where there is none), for the
+    // slanted edges that show it (see transitionSlants).
+    val transitionMs = remember(timeline) {
+        transitionLengths(timeline.clips.map { it.effects.transition }, timeline.clips.map { it.effects.playedMs(it.lengthMs) })
+    }
     val sourcesById = remember(sources) { sources.associateBy { it.id } }
 
     // Sizes in pixels.
@@ -347,6 +353,7 @@ fun EditorTimeline(
 
     val currentTimeline by rememberUpdatedState(timeline)
     val currentStarts by rememberUpdatedState(starts)
+    val currentTransitionMs by rememberUpdatedState(transitionMs)
     val currentItems by rememberUpdatedState(items)
     val currentLanes by rememberUpdatedState(lanes)
     val currentClock by rememberUpdatedState(clock)
@@ -945,6 +952,13 @@ fun EditorTimeline(
             val moving = clipMove
             val moveStarts = moving?.let { moveLayout(it).second }
             val drawOrder = if (moving == null) clips.indices.toList() else clips.indices.sortedBy { clips[it].id == moving.clipId }
+            // The joins with a transition: the two clips' edges slanted alike, as wide as it is long (CapCut's
+            // look), unless one of the clips is selected (its edges are trim handles) or being moved.
+            val slants = if (moving == null) {
+                transitionSlants(clips, currentStarts, currentTransitionMs, selectedClipId, pxPerMs, MIN_SLANT.toPx(), corner.x)
+            } else {
+                emptyList()
+            }
             drawOrder.forEach { index ->
                 val original = clips[index]
                 val held = moving != null && original.id == moving.clipId
@@ -971,14 +985,33 @@ fun EditorTimeline(
                 val rect = RoundRect(left + gap / 2, trackTop - lift, right - gap / 2, trackTop + trackHeight - lift, corner)
                 if (held) drawRoundRect(Color.Black.copy(alpha = 0.35f), Offset(rect.left, rect.top + lift * 2f), Size(rect.width, rect.height), corner)
                 val source = sourcesById[clip.sourceId]
+                val before = slants.getOrNull(index - 1)
+                val after = slants.getOrNull(index)
                 clipShape.reset()
-                clipShape.addRoundRect(rect)
+                if (before == null && after == null) {
+                    clipShape.addRoundRect(rect)
+                } else {
+                    clipShape.addSlantedClip(
+                        left = rect.left,
+                        top = rect.top,
+                        right = rect.right,
+                        bottom = rect.bottom,
+                        leftTop = before?.top ?: 0f,
+                        leftBottom = -(before?.bottom ?: 0f),
+                        rightTop = after?.top ?: 0f,
+                        rightBottom = -(after?.bottom ?: 0f),
+                        radius = corner.x,
+                    )
+                }
+                // The picture reaches into the slanted tips too.
+                val stripLeft = rect.left - (before?.bottom ?: 0f)
+                val stripRight = rect.right + (after?.top ?: 0f)
                 clipPath(clipShape) {
-                    drawRect(surfaceColor, topLeft = Offset(rect.left, rect.top), size = Size(rect.width, rect.height))
+                    drawRect(surfaceColor, topLeft = Offset(stripLeft, rect.top), size = Size(stripRight - stripLeft, rect.height))
                     if (source != null && soundClips) {
                         drawClipWaveform(bars, viewState.waveform(source.uri), clip, rect.left, rect.right, trackTop, trackHeight, pxPerMs, primary)
                     } else if (source != null) {
-                        drawFilmstrip(cache, source.uri, source.isStill, clip, rect.left, rect.right, trackTop, trackHeight, pxPerMs)
+                        drawFilmstrip(cache, source.uri, source.isStill, clip, stripLeft, stripRight, trackTop, trackHeight, pxPerMs)
                         // Its own sound along the bottom (a picture, or a file without sound, has none).
                         if (clipWaveforms && !source.isStill && source.info?.hasAudio != false) {
                             drawClipSoundBand(
@@ -1054,13 +1087,7 @@ fun EditorTimeline(
                         drawText(measured, topLeft = Offset(pillLeft + padH, pillTop + padV))
                     }
                 } else {
-                    drawRoundRect(
-                        color = Color.Black.copy(alpha = 0.4f),
-                        topLeft = Offset(rect.left, rect.top),
-                        size = Size(rect.width, rect.height),
-                        cornerRadius = corner,
-                        style = Stroke(width = 1.dp.toPx()),
-                    )
+                    drawPath(clipShape, Color.Black.copy(alpha = 0.4f), style = Stroke(width = 1.dp.toPx()))
                 }
             }
 
@@ -1072,7 +1099,9 @@ fun EditorTimeline(
                 for (index in 0 until clips.size - 1) {
                     // The selected clip's edges are its trim handles.
                     if (clips[index].id == selectedClipId || clips[index + 1].id == selectedClipId) continue
-                    val cx = x((currentStarts.getOrNull(index + 1) ?: continue).toFloat())
+                    // On the middle of the slanted edges, where there are some.
+                    val slant = slants.getOrNull(index)
+                    val cx = x((currentStarts.getOrNull(index + 1) ?: continue).toFloat()) + (slant?.let { (it.top - it.bottom) / 2f } ?: 0f)
                     if (cx < -radius || cx > size.width + radius) continue
                     val on = clips[index].effects.transition != null
                     val centre = Offset(cx, cy)
@@ -1770,6 +1799,79 @@ private fun DrawScope.drawLabel(
 
 /** Widths a label cut short is measured at are multiples of this (dp). */
 private const val LABEL_WIDTH_STEP = 16
+
+/** How far the edges at a join lean: out over the next clip at the top, back over this one at the bottom (px). */
+private class Slant(val top: Float, val bottom: Float)
+
+/** The narrowest slant drawn, so that a short transition still shows. */
+private val MIN_SLANT = 4.dp
+
+/**
+ * The slant of each join between [clips] (null where it has no transition,
+ * or touches [selectedId]): half of the transition's footage on each side,
+ * the clip going out reaching over the next at the top and the next reaching
+ * back under it at the bottom, so that the slant is as wide as the
+ * transition is long (an effect laid over a cut, which has no length, gets
+ * the narrowest one). Never more than half of either clip, less its corner.
+ */
+private fun transitionSlants(
+    clips: List<Clip>,
+    starts: List<Long>,
+    lengthsMs: List<Long>,
+    selectedId: String?,
+    pxPerMs: Float,
+    least: Float,
+    corner: Float,
+): List<Slant?> = (0 until (clips.size - 1).coerceAtLeast(0)).map { gap ->
+    val out = clips[gap]
+    val into = clips[gap + 1]
+    val transition = out.effects.transition ?: return@map null
+    if (out.id == selectedId || into.id == selectedId || starts.getOrNull(gap + 1) == null) return@map null
+    val ms = lengthsMs.getOrNull(gap) ?: 0L
+    if (!transition.isEffect && ms <= 0L) return@map null
+    // The footage each clip plays in that time.
+    val outPx = if (transition.isEffect) least else max(least, ms * out.effects.effectiveSpeed * pxPerMs / 2f)
+    val intoPx = if (transition.isEffect) least else max(least, ms * into.effects.effectiveSpeed * pxPerMs / 2f)
+    val room = { clip: Clip -> max(0f, clip.lengthMs * pxPerMs / 2f - corner) }
+    Slant(top = min(intoPx, room(into)), bottom = min(outPx, room(out)))
+}
+
+/**
+ * A clip's outline with its ends leaning: its corners at ([left] +
+ * [leftTop], [top]), ([right] + [rightTop], [top]), ([right] + [rightBottom],
+ * [bottom]) and ([left] + [leftBottom], [bottom]), each rounded by [radius]
+ * (less where an edge is short).
+ */
+private fun Path.addSlantedClip(
+    left: Float,
+    top: Float,
+    right: Float,
+    bottom: Float,
+    leftTop: Float,
+    leftBottom: Float,
+    rightTop: Float,
+    rightBottom: Float,
+    radius: Float,
+) {
+    val corners = listOf(
+        Offset(left + leftTop, top),
+        Offset(right + rightTop, top),
+        Offset(right + rightBottom, bottom),
+        Offset(left + leftBottom, bottom),
+    )
+    corners.forEachIndexed { i, corner ->
+        val before = corners[(i + 3) % 4]
+        val after = corners[(i + 1) % 4]
+        val toBefore = before - corner
+        val toAfter = after - corner
+        val r = minOf(radius, toBefore.getDistance() / 2f, toAfter.getDistance() / 2f)
+        val start = corner + toBefore / toBefore.getDistance().coerceAtLeast(1e-3f) * r
+        val end = corner + toAfter / toAfter.getDistance().coerceAtLeast(1e-3f) * r
+        if (i == 0) moveTo(start.x, start.y) else lineTo(start.x, start.y)
+        quadraticTo(corner.x, corner.y, end.x, end.y)
+    }
+    close()
+}
 
 /**
  * Frames of [clip] side by side between [left] and [right]. Each tile shows the

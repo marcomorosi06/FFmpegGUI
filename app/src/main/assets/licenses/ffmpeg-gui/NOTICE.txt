@@ -24,7 +24,11 @@ The complete source code of this APK is:
   by scripts/build-ffmpeg-kit-next.sh;
 - the video effects (assets/effects/): their source is
   scripts/generate-effects.py of that tag, which draws every frame and
-  encodes them with FFmpeg (python3 scripts/generate-effects.py);
+  encodes them with FFmpeg (python3 scripts/generate-effects.py), with
+  scripts/punch3d.py, which renders the 3D fist of the punch transitions
+  (punch.mp4, punch_back.mp4 and their WebP frame sheets), and
+  scripts/math_effect.py, which draws the formulas of the math effect
+  with its own stroke font (math.mp4, math.jpg);
 - sherpa-onnx v1.13.8 (https://github.com/k2-fsa/sherpa-onnx) and the
   sources its build pins, and ONNX Runtime 1.28.0
   (https://github.com/microsoft/onnxruntime).
@@ -34,6 +38,11 @@ CODE BASED ON OTHER PROJECTS
   and overlap-add the way sherpa-onnx does (Apache-2.0, ../sherpa-onnx/
   LICENSE.txt), written again in Kotlin; the model is Spleeter's, by
   Deezer (MIT, ../spleeter/LICENSE.txt), downloaded by the user.
+- The live preview of the transitions between clips (core/preview/
+  TransitionLook.kt, and the recipes of the transitions FFmpeg's xfade has,
+  core/transition/Recipes.kt) works out the math of FFmpeg's xfade filter
+  (libavfilter/vf_xfade.c, LGPL-2.1-or-later, ../ffmpeg/LICENSE.md), written
+  again in Kotlin and AGSL; the other transitions are this project's own.
 - The dubbing runs Kokoro-82M (hexgrad, Apache-2.0, ../kokoro/LICENSE.txt)
   through sherpa-onnx's own text-to-speech, already in the APK; the model
   and its eSpeak NG data are downloaded by the user.

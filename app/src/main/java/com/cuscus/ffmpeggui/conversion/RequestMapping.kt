@@ -25,6 +25,7 @@ import com.cuscus.ffmpeggui.core.model.SplitMode
 import com.cuscus.ffmpeggui.core.model.Stabilization
 import com.cuscus.ffmpeggui.core.time.parseTimecodeMs
 import com.cuscus.ffmpeggui.core.subtitles.SourceWords
+import com.cuscus.ffmpeggui.effects.EffectLibrary
 import com.cuscus.ffmpeggui.effects.transitionEffects
 
 /*
@@ -304,4 +305,7 @@ internal fun ImageOverlay.toPlacement(): ImagePlacement = ImagePlacement(
     blend = blend,
     cover = effect != null,
     hueDegrees = if (effect != null) hue else 0f,
+    // A punch's fist: colours over opacity in its file, as large as its transition asks.
+    stackedAlpha = effect != null && EffectLibrary.info(effect)?.alpha == true,
+    coverSize = if (effect != null && EffectLibrary.info(effect)?.alpha == true) scaleW.coerceIn(0.05f, 1f) else 1f,
 )

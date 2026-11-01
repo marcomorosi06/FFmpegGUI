@@ -2,8 +2,11 @@
 
 package com.cuscus.ffmpeggui
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -41,6 +44,8 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.Landscape
 import androidx.compose.material.icons.rounded.LocalFlorist
+import androidx.compose.material.icons.rounded.OpenInFull
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -48,6 +53,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -58,8 +64,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -67,12 +75,15 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -92,6 +103,13 @@ import com.cuscus.ffmpeggui.core.preview.maskAlpha
 import com.cuscus.ffmpeggui.core.preview.outgoingOnTop
 import com.cuscus.ffmpeggui.core.preview.transitionLook
 import com.cuscus.ffmpeggui.core.preview.whiteBehind
+import com.cuscus.ffmpeggui.core.transition.Rgb
+import com.cuscus.ffmpeggui.core.transition.TransitionRecipe
+import com.cuscus.ffmpeggui.core.transition.recipe
+import com.cuscus.ffmpeggui.preview.TransitionShaders
+import com.cuscus.ffmpeggui.preview.gpuTransitions
+import com.cuscus.ffmpeggui.preview.layerEffect
+import com.cuscus.ffmpeggui.preview.setTransition
 import com.cuscus.ffmpeggui.ui.expressive.ConnectedChoiceGroup
 import com.cuscus.ffmpeggui.ui.expressive.PanelCard
 import com.cuscus.ffmpeggui.ui.expressive.PanelHint
@@ -201,7 +219,9 @@ private const val JUMP = 0.0005f
 
 /**
  * Two layers (the clip going out, then the one coming in, each a full-frame
- * box) drawn as a [kind] transition, for the preview and the tiles alike.
+ * box) drawn as a [kind] transition, for the preview and the tiles alike. A
+ * kind told as layers (core.transition's TransitionRecipe) is drawn by its
+ * shaders where the device has them (see [gpuTransitions]).
  */
 @Composable
 fun BoxScope.TransitionLayers(
@@ -210,6 +230,11 @@ fun BoxScope.TransitionLayers(
     outgoing: @Composable BoxScope.() -> Unit,
     incoming: (@Composable BoxScope.() -> Unit)?,
 ) {
+    val recipe = kind?.recipe
+    if (kind != null && recipe != null && gpuTransitions && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        RecipeLayers(kind, recipe, progress, outgoing, incoming)
+        return
+    }
     val current = { kind }
     if (kind?.whiteBehind == true) Box(modifier = Modifier.matchParentSize().background(Color.White))
     Box(
@@ -234,33 +259,167 @@ fun BoxScope.TransitionLayers(
     }
 }
 
+/**
+ * A transition told as layers: what shows behind, the two clips each through
+ * its own shader (in the recipe's order), the light over them through one
+ * more. A layer whose shader the device refuses is cross-faded instead.
+ */
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+@Composable
+private fun BoxScope.RecipeLayers(
+    kind: TransitionKind,
+    recipe: TransitionRecipe,
+    progress: () -> Float,
+    outgoing: @Composable BoxScope.() -> Unit,
+    incoming: (@Composable BoxScope.() -> Unit)?,
+) {
+    Box(modifier = Modifier.matchParentSize().background(if (recipe.backdrop == Rgb.WHITE) Color.White else Color.Black))
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .matchParentSize()
+            .zIndex(if (recipe.outgoingOnTop) 1f else 0f)
+            .recipePart(kind, incoming = false, progress)
+            .background(Color.Black),
+        content = outgoing,
+    )
+    if (incoming != null) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .matchParentSize()
+                .zIndex(0.5f)
+                .recipePart(kind, incoming = true, progress)
+                .background(Color.Black),
+            content = incoming,
+        )
+    }
+    if (recipe.overlays.isNotEmpty()) {
+        val light = remember(kind) { TransitionShaders.light(kind) }
+        if (light != null) {
+            Spacer(
+                modifier = Modifier
+                    .matchParentSize()
+                    .zIndex(2f)
+                    .drawBehind {
+                        if (size.width <= 0f || size.height <= 0f) return@drawBehind
+                        light.setTransition(size.width, size.height, progress())
+                        drawRect(ShaderBrush(light))
+                    },
+            )
+        }
+    }
+}
+
+/**
+ * Draws this layer as the clip going out ([incoming] false) or coming in of a
+ * [kind] transition told as layers, through its shader, [progress] read while
+ * drawing (a running transition never recomposes). A clip shown as it is
+ * needs none; one whose shader the device refuses is cross-faded.
+ */
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+private fun Modifier.recipePart(kind: TransitionKind, incoming: Boolean, progress: () -> Float): Modifier = composed {
+    val recipe = remember(kind) { kind.recipe }
+    val part = if (incoming) recipe?.incoming else recipe?.outgoing
+    if (part == null || part.plain) return@composed Modifier
+    val shader = remember(kind, incoming) { TransitionShaders.part(kind, incoming) }
+    if (shader == null) {
+        Modifier.transitionPart({ kind }, progress, incoming)
+    } else {
+        Modifier.graphicsLayer {
+            renderEffect = if (size.width > 0f && size.height > 0f) {
+                shader.layerEffect(size.width, size.height, progress()).asComposeRenderEffect()
+            } else {
+                null
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Names
 // ---------------------------------------------------------------------------
 
-/** Transitions grouped as the panel shows them. */
+/** Transitions grouped as the panel shows them, as CapCut groups its own. */
 enum class TransitionFamily(@StringRes val labelRes: Int, val kinds: List<TransitionKind>) {
-    DISSOLVE(R.string.transition_family_dissolve, listOf(TransitionKind.FADE, TransitionKind.FADE_BLACK, TransitionKind.FADE_WHITE)),
+    BASIC(
+        R.string.transition_family_basic,
+        listOf(
+            TransitionKind.FADE, TransitionKind.FADE_BLACK, TransitionKind.FADE_WHITE,
+            TransitionKind.DISSOLVE, TransitionKind.FADE_GRAYS, TransitionKind.OVERLAP_CUT,
+        ),
+    ),
+    CAMERA(
+        R.string.transition_family_camera,
+        listOf(
+            TransitionKind.ZOOM_IN, TransitionKind.ZOOM_OUT, TransitionKind.PULL_IN, TransitionKind.PULL_OUT,
+            TransitionKind.WHIP_LEFT, TransitionKind.WHIP_RIGHT, TransitionKind.WHIP_UP, TransitionKind.WHIP_DOWN,
+            TransitionKind.SPIN_CW, TransitionKind.SPIN_CCW, TransitionKind.ROLL, TransitionKind.SHAKE, TransitionKind.IMPACT_SHAKE,
+            TransitionKind.SWIRL,
+        ),
+    ),
+    MOTION(
+        R.string.transition_family_motion,
+        listOf(
+            TransitionKind.PENDULUM_1, TransitionKind.PENDULUM_2, TransitionKind.BOUNCE,
+            TransitionKind.REBOUND_1, TransitionKind.REBOUND_2, TransitionKind.SPRING,
+        ),
+    ),
     SLIDE(
         R.string.transition_family_slide,
         listOf(
             TransitionKind.SLIDE_LEFT, TransitionKind.SLIDE_RIGHT, TransitionKind.SLIDE_UP, TransitionKind.SLIDE_DOWN,
-            TransitionKind.COVER_LEFT, TransitionKind.COVER_RIGHT, TransitionKind.REVEAL_LEFT, TransitionKind.REVEAL_RIGHT,
+            TransitionKind.COVER_LEFT, TransitionKind.COVER_RIGHT, TransitionKind.COVER_UP, TransitionKind.COVER_DOWN,
+            TransitionKind.REVEAL_LEFT, TransitionKind.REVEAL_RIGHT, TransitionKind.REVEAL_UP, TransitionKind.REVEAL_DOWN,
+            TransitionKind.SPLIT_H, TransitionKind.SPLIT_V, TransitionKind.SQUEEZE_H, TransitionKind.SQUEEZE_V,
         ),
     ),
     WIPE(
         R.string.transition_family_wipe,
         listOf(
             TransitionKind.WIPE_LEFT, TransitionKind.WIPE_RIGHT, TransitionKind.WIPE_UP, TransitionKind.WIPE_DOWN,
-            TransitionKind.SMOOTH_LEFT, TransitionKind.SMOOTH_RIGHT,
+            TransitionKind.SMOOTH_LEFT, TransitionKind.SMOOTH_RIGHT, TransitionKind.SMOOTH_UP, TransitionKind.SMOOTH_DOWN,
+            TransitionKind.WIPE_TL, TransitionKind.WIPE_TR, TransitionKind.WIPE_BL, TransitionKind.WIPE_BR,
+            TransitionKind.DIAG_TL, TransitionKind.DIAG_TR, TransitionKind.DIAG_BL, TransitionKind.DIAG_BR,
         ),
+    ),
+    LIGHT(
+        R.string.transition_family_light,
+        listOf(TransitionKind.FLASH, TransitionKind.LIGHT_LEAK, TransitionKind.FILM_BURN, TransitionKind.GLOW, TransitionKind.LENS_FLARE),
+    ),
+    GLITCH(
+        R.string.transition_family_glitch,
+        listOf(TransitionKind.GLITCH, TransitionKind.RGB_SPLIT, TransitionKind.WAVE, TransitionKind.TV_NOISE, TransitionKind.PIXELATE),
+    ),
+    BLUR(
+        R.string.transition_family_blur,
+        listOf(TransitionKind.ZOOM_BLUR, TransitionKind.MOTION_BLUR, TransitionKind.SPIN_BLUR, TransitionKind.DEFOCUS),
     ),
     SHAPE(
         R.string.transition_family_shape,
         listOf(
-            TransitionKind.CIRCLE_OPEN, TransitionKind.CIRCLE_CLOSE, TransitionKind.CIRCLE_CROP, TransitionKind.RECT_CROP,
-            TransitionKind.VERT_OPEN, TransitionKind.HORZ_OPEN, TransitionKind.RADIAL, TransitionKind.ZOOM_IN,
+            TransitionKind.CIRCLE_OPEN, TransitionKind.RECT_CROP, TransitionKind.RADIAL, TransitionKind.DIAMOND,
+            TransitionKind.HEXAGON, TransitionKind.STAR, TransitionKind.STRIPES, TransitionKind.CHECKER,
+            TransitionKind.PAPER_TEAR, TransitionKind.BRUSH,
         ),
+    ),
+    MASK(
+        R.string.transition_family_mask,
+        listOf(
+            TransitionKind.VERT_OPEN, TransitionKind.VERT_CLOSE, TransitionKind.HORZ_OPEN, TransitionKind.HORZ_CLOSE,
+            TransitionKind.CIRCLE_CLOSE, TransitionKind.CIRCLE_CROP, TransitionKind.DIAGONAL_SPLIT, TransitionKind.LUMA_FADE,
+        ),
+    ),
+    THREE_D(
+        R.string.transition_family_3d,
+        listOf(
+            TransitionKind.PUNCH, TransitionKind.PUNCH_BACK,
+            TransitionKind.CUBE_LEFT, TransitionKind.CUBE_RIGHT, TransitionKind.FLIP_H, TransitionKind.FLIP_V, TransitionKind.PAGE_TURN,
+        ),
+    ),
+    SOCIAL(
+        R.string.transition_family_social,
+        listOf(TransitionKind.SWIPE_UP, TransitionKind.SWIPE_DOWN, TransitionKind.HEARTS),
     ),
 
     /** The app's own transition effects, laid over a cut (see Transition.effect). */
@@ -269,7 +428,7 @@ enum class TransitionFamily(@StringRes val labelRes: Int, val kinds: List<Transi
 
     companion object {
         fun of(transition: Transition?): TransitionFamily =
-            if (transition?.isEffect == true) MAGIC else entries.firstOrNull { transition?.kind in it.kinds } ?: DISSOLVE
+            if (transition?.isEffect == true) MAGIC else entries.firstOrNull { transition?.kind in it.kinds } ?: BASIC
     }
 }
 
@@ -301,6 +460,81 @@ fun transitionLabel(kind: TransitionKind): Int = when (kind) {
     TransitionKind.HORZ_OPEN -> R.string.transition_horz_open
     TransitionKind.RADIAL -> R.string.transition_radial
     TransitionKind.ZOOM_IN -> R.string.transition_zoom_in
+    TransitionKind.DISSOLVE -> R.string.transition_dissolve
+    TransitionKind.FADE_GRAYS -> R.string.transition_fade_grays
+    TransitionKind.OVERLAP_CUT -> R.string.transition_overlap_cut
+    TransitionKind.ZOOM_OUT -> R.string.transition_zoom_out
+    TransitionKind.PULL_IN -> R.string.transition_pull_in
+    TransitionKind.PULL_OUT -> R.string.transition_pull_out
+    TransitionKind.WHIP_LEFT -> R.string.transition_whip_left
+    TransitionKind.WHIP_RIGHT -> R.string.transition_whip_right
+    TransitionKind.WHIP_UP -> R.string.transition_whip_up
+    TransitionKind.WHIP_DOWN -> R.string.transition_whip_down
+    TransitionKind.SPIN_CW -> R.string.transition_spin_cw
+    TransitionKind.SPIN_CCW -> R.string.transition_spin_ccw
+    TransitionKind.SHAKE -> R.string.transition_shake
+    TransitionKind.SWIRL -> R.string.transition_swirl
+    TransitionKind.ROLL -> R.string.transition_roll
+    TransitionKind.COVER_UP -> R.string.transition_cover_up
+    TransitionKind.COVER_DOWN -> R.string.transition_cover_down
+    TransitionKind.REVEAL_UP -> R.string.transition_reveal_up
+    TransitionKind.REVEAL_DOWN -> R.string.transition_reveal_down
+    TransitionKind.SPLIT_H -> R.string.transition_split_h
+    TransitionKind.SPLIT_V -> R.string.transition_split_v
+    TransitionKind.SQUEEZE_H -> R.string.transition_squeeze_h
+    TransitionKind.SQUEEZE_V -> R.string.transition_squeeze_v
+    TransitionKind.SMOOTH_UP -> R.string.transition_smooth_up
+    TransitionKind.SMOOTH_DOWN -> R.string.transition_smooth_down
+    TransitionKind.WIPE_TL -> R.string.transition_wipe_tl
+    TransitionKind.WIPE_TR -> R.string.transition_wipe_tr
+    TransitionKind.WIPE_BL -> R.string.transition_wipe_bl
+    TransitionKind.WIPE_BR -> R.string.transition_wipe_br
+    TransitionKind.DIAG_TL -> R.string.transition_diag_tl
+    TransitionKind.DIAG_TR -> R.string.transition_diag_tr
+    TransitionKind.DIAG_BL -> R.string.transition_diag_bl
+    TransitionKind.DIAG_BR -> R.string.transition_diag_br
+    TransitionKind.FLASH -> R.string.transition_flash
+    TransitionKind.LIGHT_LEAK -> R.string.transition_light_leak
+    TransitionKind.FILM_BURN -> R.string.transition_film_burn
+    TransitionKind.GLOW -> R.string.transition_glow
+    TransitionKind.LENS_FLARE -> R.string.transition_lens_flare
+    TransitionKind.GLITCH -> R.string.transition_glitch
+    TransitionKind.RGB_SPLIT -> R.string.transition_rgb_split
+    TransitionKind.WAVE -> R.string.transition_wave
+    TransitionKind.TV_NOISE -> R.string.transition_tv_noise
+    TransitionKind.PIXELATE -> R.string.transition_pixelate
+    TransitionKind.ZOOM_BLUR -> R.string.transition_zoom_blur
+    TransitionKind.MOTION_BLUR -> R.string.transition_motion_blur
+    TransitionKind.SPIN_BLUR -> R.string.transition_spin_blur
+    TransitionKind.DEFOCUS -> R.string.transition_defocus
+    TransitionKind.DIAMOND -> R.string.transition_diamond
+    TransitionKind.HEXAGON -> R.string.transition_hexagon
+    TransitionKind.STAR -> R.string.transition_star
+    TransitionKind.STRIPES -> R.string.transition_stripes
+    TransitionKind.CHECKER -> R.string.transition_checker
+    TransitionKind.PAPER_TEAR -> R.string.transition_paper_tear
+    TransitionKind.BRUSH -> R.string.transition_brush
+    TransitionKind.VERT_CLOSE -> R.string.transition_vert_close
+    TransitionKind.HORZ_CLOSE -> R.string.transition_horz_close
+    TransitionKind.DIAGONAL_SPLIT -> R.string.transition_diagonal_split
+    TransitionKind.LUMA_FADE -> R.string.transition_luma_fade
+    TransitionKind.CUBE_LEFT -> R.string.transition_cube_left
+    TransitionKind.CUBE_RIGHT -> R.string.transition_cube_right
+    TransitionKind.FLIP_H -> R.string.transition_flip_h
+    TransitionKind.FLIP_V -> R.string.transition_flip_v
+    TransitionKind.PAGE_TURN -> R.string.transition_page_turn
+    TransitionKind.SWIPE_UP -> R.string.transition_swipe_up
+    TransitionKind.SWIPE_DOWN -> R.string.transition_swipe_down
+    TransitionKind.HEARTS -> R.string.transition_hearts
+    TransitionKind.PENDULUM_1 -> R.string.transition_pendulum_1
+    TransitionKind.PENDULUM_2 -> R.string.transition_pendulum_2
+    TransitionKind.BOUNCE -> R.string.transition_bounce
+    TransitionKind.REBOUND_1 -> R.string.transition_rebound_1
+    TransitionKind.REBOUND_2 -> R.string.transition_rebound_2
+    TransitionKind.SPRING -> R.string.transition_spring
+    TransitionKind.IMPACT_SHAKE -> R.string.transition_impact_shake
+    TransitionKind.PUNCH -> R.string.transition_punch
+    TransitionKind.PUNCH_BACK -> R.string.transition_punch_back
 }
 
 // ---------------------------------------------------------------------------
@@ -311,20 +545,25 @@ fun transitionLabel(kind: TransitionKind): Int = when (kind) {
  * Picks how the selected clip gives way to the next one ([transition], null
  * for a plain cut) and how long that takes. [hasNext] is false for the last
  * clip, which has nothing to go into; [effectiveMs] is how long the transition
- * really lasts (shorter when a clip is too short for it).
+ * really lasts (shorter when a clip is too short for it), [limitMs] the
+ * longest these two clips allow (half of the shorter, as CapCut has it).
+ * [onPlay] plays the transition in the preview.
  */
 @Composable
 internal fun TransitionContent(
     transition: Transition?,
     hasNext: Boolean,
     effectiveMs: Long,
+    limitMs: Long,
     onTransition: (Transition?) -> Unit,
     onApplyToAll: () -> Unit,
+    onPlay: () -> Unit,
 ) {
     var family by rememberSaveable { mutableStateOf(TransitionFamily.of(transition)) }
     val effectScope = rememberCoroutineScope()
     val effectNames = effectLabels()
     val durationMs = transition?.durationMs ?: Transition.DEFAULT_MS
+    val motion = MaterialTheme.motionScheme
     // Every tile plays its transition at the length chosen, so that the slider is seen at once.
     val loop = rememberTransitionLoop(durationMs)
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
@@ -336,89 +575,188 @@ internal fun TransitionContent(
             onSelect = { family = it },
             enabled = hasNext,
         )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .selectableGroup()
-                .horizontalScroll(rememberScrollState()),
-        ) {
-            TransitionTile(
-                kind = null,
-                label = stringResource(R.string.transition_none),
-                selected = transition == null,
-                enabled = hasNext,
-                loop = loop,
-                onClick = { onTransition(null) },
-            )
-            family.kinds.forEach { kind ->
-                TransitionTile(
-                    kind = kind,
-                    label = stringResource(transitionLabel(kind)),
-                    selected = transition?.isEffect != true && transition?.kind == kind,
-                    enabled = hasNext,
-                    loop = loop,
-                    onClick = { onTransition(Transition(kind, durationMs)) },
-                )
+        // The tiles of one family, two rows that scroll sideways; another family fades in.
+        Crossfade(targetState = family, animationSpec = motion.defaultEffectsSpec(), label = "transitionFamily") { shown ->
+            val tiles = buildList<TransitionChoice> {
+                add(TransitionChoice.None)
+                if (shown == TransitionFamily.MAGIC) {
+                    EffectLibrary.transitions.forEach { add(TransitionChoice.Effect(it)) }
+                } else {
+                    shown.kinds.forEach { add(TransitionChoice.Kind(it)) }
+                }
             }
-            if (family == TransitionFamily.MAGIC) {
-                EffectLibrary.transitions.forEach { effect ->
-                    EffectTransitionTile(
-                        effect = effect,
-                        label = effectNames[effect.name] ?: effect.name,
-                        selected = transition?.effect == effect.name,
-                        enabled = hasNext,
-                        onClick = {
-                            // Its file is made ready for the preview and the export.
-                            effectScope.launch(Dispatchers.IO) { EffectLibrary.ensure(effect.name) }
-                            onTransition(Transition(durationMs = durationMs, effect = effect.name))
-                        },
-                    )
+            fun TransitionChoice.chosen(): Boolean = when (this) {
+                TransitionChoice.None -> transition == null
+                is TransitionChoice.Kind -> transition?.isEffect != true && transition?.kind == kind
+                is TransitionChoice.Effect -> transition?.effect == effect.name
+            }
+            val scroll = rememberScrollState()
+            val density = LocalDensity.current
+            // The chosen tile in sight when the family opens.
+            LaunchedEffect(shown) {
+                val index = tiles.indexOfFirst { it.chosen() }
+                val column = if (index < 0) 0 else index / TILE_ROWS
+                scroll.animateScrollTo(with(density) { ((TILE_WIDTH + 12.dp + TILE_GAP) * column).roundToPx() }, motion.defaultSpatialSpec())
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(TILE_GAP),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectableGroup()
+                    .horizontalScroll(scroll),
+            ) {
+                tiles.chunked(TILE_ROWS).forEach { column ->
+                    Column(verticalArrangement = Arrangement.spacedBy(TILE_GAP)) {
+                        column.forEach { choice ->
+                            when (choice) {
+                                TransitionChoice.None -> TransitionTile(
+                                    kind = null,
+                                    label = stringResource(R.string.transition_none),
+                                    selected = choice.chosen(),
+                                    enabled = hasNext,
+                                    loop = loop,
+                                    onClick = { onTransition(null) },
+                                )
+                                is TransitionChoice.Kind -> TransitionTile(
+                                    kind = choice.kind,
+                                    label = stringResource(transitionLabel(choice.kind)),
+                                    selected = choice.chosen(),
+                                    enabled = hasNext,
+                                    loop = loop,
+                                    onClick = {
+                                        // A fist is made ready for the preview and the export.
+                                        choice.kind.companionEffect?.let { name -> effectScope.launch(Dispatchers.IO) { EffectLibrary.ensure(name) } }
+                                        onTransition(Transition(choice.kind, durationMs, size = transition?.size ?: Transition.MAX_SIZE))
+                                    },
+                                )
+                                is TransitionChoice.Effect -> EffectTransitionTile(
+                                    effect = choice.effect,
+                                    label = effectNames[choice.effect.name] ?: choice.effect.name,
+                                    selected = choice.chosen(),
+                                    enabled = hasNext,
+                                    onClick = {
+                                        // Its file is made ready for the preview and the export.
+                                        effectScope.launch(Dispatchers.IO) { EffectLibrary.ensure(choice.effect.name) }
+                                        onTransition(Transition(durationMs = durationMs, effect = choice.effect.name))
+                                    },
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
         val effect = EffectLibrary.info(transition?.effect)
+        val fixedMs = transition?.takeIf { !it.isEffect }?.kind?.fixedMs
         if (effect != null && hasNext) {
             // An effect has its own length: nothing to set, the video keeps its length.
             PanelCard {
                 PanelHint(stringResource(R.string.transition_effect_hint, decimal(effect.lengthMs / 1000f)))
             }
+        } else if (fixedMs != null && transition != null && hasNext) {
+            // A punch keeps the length of its blow; what can be set is how large the fist is.
+            PanelCard {
+                PanelHint(stringResource(R.string.transition_punch_hint, decimal(fixedMs / 1000f)))
+                ValueSlider(
+                    label = stringResource(R.string.transition_fist_size),
+                    valueText = stringResource(R.string.value_percent, Math.round(transition.size * 100f)),
+                    value = transition.size.coerceIn(Transition.MIN_SIZE, Transition.MAX_SIZE),
+                    onValueChange = { size ->
+                        val stepped = (Math.round(size * 20f) / 20f).coerceIn(Transition.MIN_SIZE, Transition.MAX_SIZE)
+                        if (stepped != transition.size) onTransition(transition.copy(size = stepped))
+                    },
+                    valueRange = Transition.MIN_SIZE..Transition.MAX_SIZE,
+                    icon = Icons.Rounded.OpenInFull,
+                    defaultValue = Transition.MAX_SIZE,
+                    startLabel = stringResource(R.string.value_percent, Math.round(Transition.MIN_SIZE * 100f)),
+                    endLabel = stringResource(R.string.value_percent, Math.round(Transition.MAX_SIZE * 100f)),
+                    enabled = true,
+                )
+                AnimatedVisibility(visible = effectiveMs in 1 until fixedMs) {
+                    PanelHint(stringResource(R.string.transition_shortened, decimal(effectiveMs / 1000f)))
+                }
+                AnimatedVisibility(visible = effectiveMs <= 0L) {
+                    PanelHint(stringResource(R.string.transition_too_short))
+                }
+                AnimatedVisibility(visible = gpuMissing) {
+                    PanelHint(stringResource(R.string.transition_preview_fade))
+                }
+            }
         } else PanelCard {
+            // The slider reaches as far as these two clips allow (half of the shorter one).
+            val roomMs = limitMs.coerceAtMost(Transition.MAX_MS)
+            val room = roomMs >= Transition.MIN_MS
+            val endMs = if (room) roomMs.coerceAtLeast(Transition.MIN_MS + 100L) else Transition.MAX_MS
             ValueSlider(
                 label = stringResource(R.string.transition_duration),
-                valueText = stringResource(R.string.value_seconds_decimal, decimal(durationMs / 1000f)),
-                value = durationMs / 1000f,
+                valueText = stringResource(R.string.value_seconds_decimal, decimal((if (transition != null && room) effectiveMs.coerceAtLeast(Transition.MIN_MS) else durationMs) / 1000f)),
+                value = (durationMs.coerceIn(Transition.MIN_MS, endMs)) / 1000f,
                 onValueChange = { seconds ->
-                    val ms = (Math.round(seconds * 10f) * 100L).coerceIn(Transition.MIN_MS, Transition.MAX_MS)
+                    val ms = (Math.round(seconds * 10f) * 100L).coerceIn(Transition.MIN_MS, endMs)
                     transition?.let { onTransition(it.copy(durationMs = ms)) }
                 },
-                valueRange = Transition.MIN_MS / 1000f..Transition.MAX_MS / 1000f,
+                valueRange = Transition.MIN_MS / 1000f..endMs / 1000f,
                 icon = Icons.Rounded.Timer,
-                defaultValue = Transition.DEFAULT_MS / 1000f,
-                enabled = transition != null && hasNext,
+                defaultValue = Transition.DEFAULT_MS.coerceAtMost(endMs) / 1000f,
+                startLabel = stringResource(R.string.value_seconds_decimal, decimal(Transition.MIN_MS / 1000f)),
+                endLabel = stringResource(R.string.value_seconds_decimal, decimal(endMs / 1000f)),
+                enabled = transition != null && hasNext && room,
             )
-            AnimatedVisibility(visible = transition != null && !transition.isEffect && hasNext && effectiveMs < durationMs) {
+            AnimatedVisibility(visible = transition != null && !transition.isEffect && hasNext && (!room || effectiveMs < durationMs)) {
                 PanelHint(
-                    if (effectiveMs <= 0L) {
+                    if (effectiveMs <= 0L || !room) {
                         stringResource(R.string.transition_too_short)
                     } else {
                         stringResource(R.string.transition_shortened, decimal(effectiveMs / 1000f))
                     },
                 )
             }
+            AnimatedVisibility(visible = gpuMissing && transition != null && !transition.isEffect && transition.kind.recipe != null && hasNext) {
+                PanelHint(stringResource(R.string.transition_preview_fade))
+            }
         }
-        FilledTonalButton(
-            onClick = onApplyToAll,
-            enabled = hasNext,
-            shapes = ButtonDefaults.shapes(),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(Icons.Rounded.DoneAll, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(stringResource(if (transition == null) R.string.transition_none_to_all else R.string.transition_apply_all))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            FilledTonalButton(
+                onClick = onPlay,
+                enabled = hasNext && transition != null,
+                shapes = ButtonDefaults.shapes(),
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.transition_play), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            FilledTonalButton(
+                onClick = onApplyToAll,
+                enabled = hasNext,
+                shapes = ButtonDefaults.shapes(),
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(Icons.Rounded.DoneAll, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    stringResource(if (transition == null) R.string.transition_none_to_all else R.string.transition_apply_all),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
+
+/** True on a device that draws the transitions told as layers as cross-fades in the preview. */
+private val gpuMissing: Boolean get() = !gpuTransitions
+
+/** One tile of the panel. */
+private sealed interface TransitionChoice {
+    data object None : TransitionChoice
+    data class Kind(val kind: TransitionKind) : TransitionChoice
+    data class Effect(val effect: EffectInfo) : TransitionChoice
+}
+
+/** Rows of tiles, and the space between tiles. */
+private const val TILE_ROWS = 2
+private val TILE_GAP = 4.dp
 
 /** A loop of 0..1 that a tile's transition follows: a pause on each clip around a transition of [transitionMs]. */
 @Composable
@@ -485,12 +823,16 @@ private fun TransitionTile(
                         Icon(Icons.Rounded.Block, contentDescription = null, tint = scheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
                     }
                 } else {
+                    // A punch plays at the length of its blow, whatever the slider says.
+                    val fixed = kind.fixedMs
+                    val progress = if (fixed != null) rememberTransitionLoop(fixed) else loop
                     TransitionLayers(
                         kind = kind,
-                        progress = loop,
+                        progress = progress,
                         outgoing = { TileScene(first = true) },
                         incoming = { TileScene(first = false) },
                     )
+                    kind.companionEffect?.let { name -> TileCompanion(kind, name, progress, fixed ?: Transition.DEFAULT_MS) }
                 }
             }
             // The check pops in and out with a spring.
@@ -518,6 +860,7 @@ private fun TransitionTile(
             style = if (selected) MaterialTheme.typography.labelMediumEmphasized else MaterialTheme.typography.labelMedium,
             color = if (selected) scheme.onSurface else scheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
+            minLines = 2,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -611,9 +954,32 @@ private fun EffectTransitionTile(
             style = if (selected) MaterialTheme.typography.labelMediumEmphasized else MaterialTheme.typography.labelMedium,
             color = if (selected) scheme.onSurface else scheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
+            minLines = 2,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+/**
+ * The effect a [kind] lays over its clips (a punch's fist, [name]) on a tile,
+ * from its small frames, in step with the tile's [progress] through
+ * [lengthMs]: its blow on the moment the clips swap, as on the video.
+ */
+@Composable
+private fun BoxScope.TileCompanion(kind: TransitionKind, name: String, progress: () -> Float, lengthMs: Long) {
+    val sheet = rememberSheet(name)
+    val image = remember(sheet) { sheet?.bitmap?.asImageBitmap() }
+    val cutMs = EffectLibrary.info(name)?.cutMs ?: 0L
+    Canvas(modifier = Modifier.matchParentSize().zIndex(3f).clipToBounds()) {
+        val loaded = sheet ?: return@Canvas
+        val bitmap = image ?: return@Canvas
+        val p = progress()
+        // Nothing before the transition starts or once it is over: the tile rests on a picture.
+        if (p <= 0f || p >= 1f) return@Canvas
+        val fileMs = cutMs + ((p - kind.companionSwitch) * lengthMs).toLong()
+        if (fileMs < 0L || fileMs >= loaded.lengthMs) return@Canvas
+        drawSheetFrame(loaded, bitmap, (fileMs * loaded.about.fps / 1000L).toInt(), null)
     }
 }
 

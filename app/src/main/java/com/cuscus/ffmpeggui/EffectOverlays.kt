@@ -1,6 +1,7 @@
 package com.cuscus.ffmpeggui
 
 import android.view.TextureView
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,7 +15,18 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
@@ -24,6 +36,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
+import com.cuscus.ffmpeggui.core.model.ImagePlacement
 import com.cuscus.ffmpeggui.core.preview.combineColorMatrices
 import com.cuscus.ffmpeggui.core.preview.hueColorMatrix
 import com.cuscus.ffmpeggui.effects.EffectLibrary
@@ -37,8 +50,10 @@ import kotlin.math.roundToInt
  * the frame (its shape kept, the overflow cut), screened over what lies under
  * it, at its opacity and with its fades, its colours turned by its hue. A
  * looping effect plays its file over and over from where it starts; a
- * transition's effect plays its part once. Nothing here takes a touch: an
- * effect is chosen on the timeline.
+ * transition's effect plays its part once. One that carries its own opacity
+ * (a punch's fist) is drawn from its small frames instead, frame by frame on
+ * the output clock, laid as it is and as large as its transition asks.
+ * Nothing here takes a touch: an effect is chosen on the timeline.
  */
 
 /** [effects] (overlays of the whole video), on the output clock [outputMs]. */
@@ -59,8 +74,81 @@ internal fun BoxScope.EffectsLayer(
     }
     shown.forEach { effect ->
         key(effect.id) {
-            EffectSurface(effect, outputMs, playing, colorMatrix, Modifier.matchParentSize())
+            if (EffectLibrary.info(effect.effect)?.alpha == true) {
+                AlphaEffectFrames(effect, outputMs, colorMatrix, Modifier.matchParentSize())
+            } else {
+                EffectSurface(effect, outputMs, playing, colorMatrix, Modifier.matchParentSize())
+            }
         }
+    }
+}
+
+/**
+ * An effect with its own opacity (see EffectInfo.alpha), drawn from its small
+ * frames: the frame of its file at the output clock, so that it never drifts
+ * from the clips it lies on, filling [effect]'s share of the frame (its
+ * scaleW) in the middle and faded out towards that share's edges, as the
+ * export's sized cover (ImagePlacement.coverSize).
+ */
+@Composable
+private fun AlphaEffectFrames(
+    effect: ImageOverlay,
+    outputMs: () -> Long,
+    colorMatrix: FloatArray?,
+    modifier: Modifier,
+) {
+    val name = effect.effect ?: return
+    val sheet = rememberSheet(name)
+    val image = remember(sheet) { sheet?.bitmap?.asImageBitmap() }
+    val filter = remember(effect.hue, colorMatrix) {
+        combineColorMatrices(colorMatrix, hueColorMatrix(effect.hue))?.let { ColorFilter.colorMatrix(ColorMatrix(it)) }
+    }
+    val current by rememberUpdatedState(effect)
+    Canvas(modifier = modifier.clipToBounds()) {
+        val loaded = sheet ?: return@Canvas
+        val bitmap = image ?: return@Canvas
+        val now = outputMs()
+        val shown = current
+        if (now < shown.startMs || (shown.endMs != null && now >= shown.endMs)) return@Canvas
+        val fileMs = shown.video?.fileMsAt(now) ?: Math.floorMod(now - shown.startMs, loaded.lengthMs.coerceAtLeast(1L))
+        val index = (fileMs * loaded.about.fps / 1000L).toInt()
+        val alpha = shown.opacity * overlayFade(shown.startMs, shown.endMs, shown.fadeInSeconds, shown.fadeOutSeconds, now)
+        if (alpha <= 0f) return@Canvas
+        val fraction = shown.scaleW.coerceIn(0.05f, 1f)
+        // As the export: the frame's own shape, [fraction] of its size, in the middle, the fist
+        // filling it (the overflow cut) and, when smaller than the frame, faded out towards its edges.
+        val inner = Rect(
+            Offset(size.width * (1f - fraction) / 2f, size.height * (1f - fraction) / 2f),
+            Size(size.width * fraction, size.height * fraction),
+        )
+        drawContext.canvas.saveLayer(Rect(Offset.Zero, size), Paint().apply { this.alpha = alpha })
+        clipRect(inner.left, inner.top, inner.right, inner.bottom) {
+            drawSheetFrame(loaded, bitmap, index, filter, fraction)
+        }
+        if (fraction < ImagePlacement.FULL_COVER) {
+            val feather = (ImagePlacement.COVER_FEATHER * minOf(inner.width, inner.height)).toFloat()
+            val fx = feather / inner.width.coerceAtLeast(1f)
+            val fy = feather / inner.height.coerceAtLeast(1f)
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    0f to Color.Transparent, fx to Color.Black, 1f - fx to Color.Black, 1f to Color.Transparent,
+                    startX = inner.left, endX = inner.right,
+                ),
+                topLeft = inner.topLeft,
+                size = inner.size,
+                blendMode = BlendMode.DstIn,
+            )
+            drawRect(
+                brush = Brush.verticalGradient(
+                    0f to Color.Transparent, fy to Color.Black, 1f - fy to Color.Black, 1f to Color.Transparent,
+                    startY = inner.top, endY = inner.bottom,
+                ),
+                topLeft = inner.topLeft,
+                size = inner.size,
+                blendMode = BlendMode.DstIn,
+            )
+        }
+        drawContext.canvas.restore()
     }
 }
 
