@@ -251,6 +251,25 @@ class PreviewTimeline(
         return null
     }
 
+    /**
+     * Where the timeline's playhead goes at [outputMs], on the media clock (the
+     * clips laid end to end): the media time on screen, except across a
+     * transition, where it glides from where the transition starts in the
+     * outgoing clip to where it ends in the incoming one (whose first footage
+     * the transition already showed). Without it, the playhead would jump
+     * ahead by that footage the moment the transition ends.
+     */
+    fun playheadMs(outputMs: Long): Long {
+        val point = transitionAt(outputMs) ?: return mediaMsForOutput(outputMs)
+        val range = transitionOutputRange(point.outgoing)
+        val span = range.last - range.first
+        if (range.isEmpty() || span <= 0L) return mediaMsForOutput(outputMs)
+        val from = mediaMsForOutput(range.first)
+        val to = mediaMsForOutput(range.last)
+        val progress = ((outputMs - range.first).toDouble() / span).coerceIn(0.0, 1.0)
+        return Math.round(from + (to - from) * progress)
+    }
+
     /** The stretch of the output (ms, in order) the transition after clip [gap] shows over; empty when it has none. */
     fun transitionOutputRange(gap: Int): LongRange {
         val overlap = overlaps.getOrNull(gap) ?: return LongRange.EMPTY

@@ -65,6 +65,24 @@ class ConversionEngine(
 ) {
 
     /**
+     * Runs [command] with its log joined into whole lines (FFmpeg hands it over in
+     * pieces), each sent on as a [ConversionEvent.LogLine] and read for the
+     * progress against [expectedMs]; notes in [full] when the storage ran out.
+     */
+    private suspend fun logged(command: FfmpegCommand, expectedMs: Long?, full: StorageFull, onEvent: (ConversionEvent) -> Unit): ExecutionResult {
+        val lines = LogLineJoiner { line ->
+            if (StorageFull.saysSo(line)) full.seen = true
+            onEvent(ConversionEvent.LogLine(line))
+            progressParser.fraction(line, expectedMs)?.let { onEvent(ConversionEvent.Progress(it)) }
+        }
+        return try {
+            executor.execute(command) { lines.feed(it) }
+        } finally {
+            lines.flush()
+        }
+    }
+
+    /**
      * Runs [job], reporting through [onEvent] (which may be invoked from other
      * threads). Cancelling the calling coroutine stops FFmpeg, removes temporary
      * files and any partial output, then rethrows the cancellation.
@@ -74,6 +92,8 @@ class ConversionEngine(
         var packedPlan: OutputPlan? = null
         var succeeded = false
         val session = stager.open()
+        // Set when FFmpeg says the phone's storage is full, whichever pass it was.
+        val full = StorageFull()
         try {
             onEvent(ConversionEvent.StageChanged(ConversionStage.PREPARING))
 
@@ -92,10 +112,10 @@ class ConversionEngine(
             if (commandBuilder.needsStabilizationAnalysis(request)) {
                 onEvent(ConversionEvent.StageChanged(ConversionStage.ANALYZING))
                 val analysis = commandBuilder.buildStabilizationAnalysis(request, paths)
-                when (executor.execute(analysis) { onEvent(ConversionEvent.LogLine(it)) }) {
+                when (logged(analysis, null, full, onEvent)) {
                     ExecutionResult.Success -> Unit
                     ExecutionResult.Cancelled -> return ConversionOutcome.Cancelled
-                    is ExecutionResult.Failed -> return ConversionOutcome.Failure(FailureReason.ANALYSIS_FAILED)
+                    is ExecutionResult.Failed -> return full.or(FailureReason.ANALYSIS_FAILED)
                 }
             }
 
@@ -105,14 +125,10 @@ class ConversionEngine(
                 val firstPass = commandBuilder.buildFirstPass(request, paths)
                 onEvent(ConversionEvent.LogLine(firstPass.toDisplayString()))
                 val expected = request.progressDurationMs()
-                val measured = executor.execute(firstPass) { line ->
-                    onEvent(ConversionEvent.LogLine(line))
-                    progressParser.fraction(line, expected)?.let { onEvent(ConversionEvent.Progress(it)) }
-                }
-                when (measured) {
+                when (logged(firstPass, expected, full, onEvent)) {
                     ExecutionResult.Success -> onEvent(ConversionEvent.Progress(0f))
                     ExecutionResult.Cancelled -> return ConversionOutcome.Cancelled
-                    is ExecutionResult.Failed -> return ConversionOutcome.Failure(FailureReason.ANALYSIS_FAILED)
+                    is ExecutionResult.Failed -> return full.or(FailureReason.ANALYSIS_FAILED)
                 }
             }
 
@@ -166,17 +182,15 @@ class ConversionEngine(
             val encode: suspend (FfmpegCommand) -> ExecutionResult = { command ->
                 // The command first: the log then tells what was asked, not only what came of it.
                 onEvent(ConversionEvent.LogLine(command.toDisplayString()))
-                executor.execute(command) { line ->
-                    onEvent(ConversionEvent.LogLine(line))
-                    progressParser.fraction(line, expectedMs)?.let { onEvent(ConversionEvent.Progress(it)) }
-                }
+                logged(command, expectedMs, full, onEvent)
             }
             if (hardware) onEvent(ConversionEvent.Encoder(hardware = true))
             var result = encode(prepared.command)
             var encoder = if (hardware) VideoEncoderUse.HARDWARE else VideoEncoderUse.NONE
             // The phone's encoder refused (a size, a format it does not take, a busy chip):
             // the same file again, from the start, with x264.
-            if (hardware && result is ExecutionResult.Failed) {
+            // (Not when the storage is full: x264 would not find more room.)
+            if (hardware && result is ExecutionResult.Failed && !full.seen) {
                 currentCoroutineContext().ensureActive()
                 File(prepared.plan.commandPath).delete()
                 onEvent(ConversionEvent.LogLine("The phone's video encoder failed (exit code ${result.returnCode}): encoding on the processor"))
@@ -224,7 +238,7 @@ class ConversionEngine(
                 }
                 ExecutionResult.Cancelled -> ConversionOutcome.Cancelled
                 is ExecutionResult.Failed ->
-                    ConversionOutcome.Failure(FailureReason.ENCODING_FAILED, "exit code ${result.returnCode}")
+                    full.or(FailureReason.ENCODING_FAILED, "exit code ${result.returnCode}")
             }
         } finally {
             // Runs on success, failure and cancellation alike.
@@ -515,13 +529,15 @@ class ConversionEngine(
         val provider = fonts ?: return null
         val style = request.subtitleStyle ?: return null
         val bold = style.bold
-        val main = File(provider.fontPath(style.font, bold))
+        // The user's own file while it can be read (as a caption's), else the family's.
+        val own = style.fontFile?.let(provider::customFontPath)?.let(::File)?.takeIf { it.isFile && FontFacts.read(it) != null }
+        val main = own ?: File(provider.fontPath(style.font, bold))
         val facts = FontFacts.read(main) ?: return null
         val folder = File(session.scratchFile("fonts"))
         return try {
             folder.mkdirs()
             // Both weights when they are separate files, so that libass finds the one the style asks for.
-            listOf(main, File(provider.fontPath(style.font, !bold))).distinctBy { it.absolutePath }.forEach { source ->
+            (if (own != null) listOf(own) else listOf(main, File(provider.fontPath(style.font, !bold)))).distinctBy { it.absolutePath }.forEach { source ->
                 if (source.isFile && FontFacts.read(source)?.family == facts.family) source.copyTo(File(folder, source.name), overwrite = true)
             }
             StagedFont(facts, folder.absolutePath)

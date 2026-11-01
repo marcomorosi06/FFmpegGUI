@@ -97,6 +97,9 @@ enum class FailureReason {
 
     /** FFmpeg wrote the parts, but they could not be packed into a zip (storage full?). */
     PACKING_FAILED,
+
+    /** The phone's storage filled up while FFmpeg was writing; the unfinished file is deleted. */
+    STORAGE_FULL,
 }
 
 /** How the picture of a finished video was encoded. */

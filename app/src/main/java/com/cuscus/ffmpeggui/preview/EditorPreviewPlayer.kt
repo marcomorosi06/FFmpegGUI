@@ -77,6 +77,8 @@ data class ClipLevels(
 data class PreviewSnapshot(
     /** Position in the file the export would produce. */
     val outputMs: Long = 0L,
+    /** Where the timeline's playhead goes, on the media clock: it glides across a transition (see PreviewTimeline.playheadMs). */
+    val playheadMs: Long = 0L,
     val outputDurationMs: Long = 0L,
     /** Position in the joined video, before the speed of the whole video (the subtitle clock). */
     val timelineMs: Long = 0L,
@@ -470,6 +472,7 @@ class EditorPreviewPlayer(context: Context) {
 
         return PreviewSnapshot(
             outputMs = outputMs,
+            playheadMs = if (transition != null) timeline.playheadMs(outputMs) else mediaMs,
             outputDurationMs = timeline.outputDurationMs,
             timelineMs = timeline.timelineMs(mediaMs),
             mediaMs = mediaMs,

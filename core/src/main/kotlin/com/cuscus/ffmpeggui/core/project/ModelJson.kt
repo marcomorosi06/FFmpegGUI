@@ -799,6 +799,9 @@ object ModelJson {
         put("highlight", s.highlight)
         put("maxLines", s.maxLines)
         put("font", s.font)
+        put("fontFile", s.fontFile)
+        put("dropShadow", s.dropShadow)
+        put("shadowColor", s.shadowColor)
     }
 
     fun subtitleStyle(o: Json.Obj): SubtitleStyle {
@@ -815,6 +818,9 @@ object ModelJson {
             highlight = o.enum("highlight", d.highlight),
             maxLines = o.int("maxLines", d.maxLines),
             font = o.enum("font", d.font),
+            fontFile = o.stringOrNull("fontFile", d.fontFile),
+            dropShadow = o.bool("dropShadow", d.dropShadow),
+            shadowColor = o.long("shadowColor", d.shadowColor),
         ).sane()
     }
 

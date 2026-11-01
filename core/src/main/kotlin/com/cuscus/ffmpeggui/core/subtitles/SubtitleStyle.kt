@@ -48,6 +48,12 @@ data class SubtitleStyle(
     /** Lines shown at once, 1 or 2. */
     val maxLines: Int = 2,
     val font: TextFont = TextFont.SANS,
+    /** A font file the user added (as a caption's, see TextOverlay.fontFile); null, or no longer readable: [font]. */
+    val fontFile: String? = null,
+    /** A shadow under the outline or the box too (the SHADOW look always has one). */
+    val dropShadow: Boolean = false,
+    /** The shadow's colour, its alpha used. */
+    val shadowColor: Long = SHADOW_COLOR,
 ) {
     /** The style with every value inside the range it can take. */
     fun sane(): SubtitleStyle = copy(
@@ -67,7 +73,11 @@ data class SubtitleStyle(
 
     /** How far the shadow is moved right and down, as a fraction of the frame height. */
     val shadow: Float
-        get() = if (look == SubtitleLook.SHADOW) size * SHADOW_PER_SIZE else 0f
+        get() = if (hasShadow) size * SHADOW_PER_SIZE else 0f
+
+    /** True when a shadow is drawn: the SHADOW look, or [dropShadow] with the others. */
+    val hasShadow: Boolean
+        get() = look == SubtitleLook.SHADOW || dropShadow
 
     companion object {
         const val DEFAULT_SIZE = 0.06f
@@ -97,7 +107,7 @@ data class SubtitleStyle(
     }
 }
 
-/** A ready-made look; [apply] keeps the position, the number of lines and the font. */
+/** A ready-made look; [apply] keeps the position, the number of lines and the font (the user's own file too). */
 enum class SubtitlePreset(private val look: SubtitleStyle) {
     CLASSIC(SubtitleStyle(size = 0.055f, look = SubtitleLook.OUTLINE, bold = false, highlight = WordHighlight.NONE)),
     POP(SubtitleStyle(size = 0.075f, look = SubtitleLook.OUTLINE, bold = true, uppercase = true, highlight = WordHighlight.WORD, highlightColor = 0xFFFFD60AL)),
@@ -106,7 +116,7 @@ enum class SubtitlePreset(private val look: SubtitleStyle) {
     MINIMAL(SubtitleStyle(size = 0.045f, look = SubtitleLook.SHADOW, bold = false, highlight = WordHighlight.NONE)),
     ;
 
-    fun apply(to: SubtitleStyle): SubtitleStyle = look.copy(x = to.x, y = to.y, maxLines = to.maxLines, font = to.font)
+    fun apply(to: SubtitleStyle): SubtitleStyle = look.copy(x = to.x, y = to.y, maxLines = to.maxLines, font = to.font, fontFile = to.fontFile)
 
     /** The preset [style] matches, if any (position and lines aside). */
     companion object {

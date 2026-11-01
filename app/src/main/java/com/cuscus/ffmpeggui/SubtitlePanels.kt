@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FormatBold
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SaveAlt
@@ -174,6 +175,9 @@ class SubtitleEditing(
 }
 
 private enum class SubtitlePage(val label: Int) { SOURCE(R.string.subtitle_page_source), STYLE(R.string.subtitle_page_style), LINES(R.string.subtitle_page_lines) }
+
+private const val ALPHA_MASK = 0xFF000000L
+private const val RGB_ONLY = 0x00FFFFFFL
 
 private val SUBTITLE_COLORS = listOf(
     0xFFFFFFFFL, 0xFFFFD60AL, 0xFFFFEB3BL, 0xFF30D158L, 0xFF64D2FFL,
@@ -507,7 +511,14 @@ private fun StylePage(subtitles: SubtitleEditing) {
         selected = SubtitlePreset.of(style),
         onSelect = { preset -> onStyle(null) { preset.apply(it) } },
     )
-    FontPicker(selected = style.font, bold = style.bold, onSelect = { font -> onStyle(null) { it.copy(font = font) } })
+    // The phone's families and the fonts the user added, as for the texts.
+    CaptionFontPicker(
+        font = style.font,
+        bold = style.bold,
+        fontFile = style.fontFile,
+        onFont = { font -> onStyle(null) { it.copy(font = font) } },
+        onFontFile = { file -> onStyle(null) { it.copy(fontFile = file) } },
+    )
     PanelCard {
         ValueSlider(
             label = stringResource(R.string.subtitle_size),
@@ -554,6 +565,26 @@ private fun StylePage(subtitles: SubtitleEditing) {
         )
         Text(stringResource(R.string.subtitle_text_color), style = MaterialTheme.typography.labelLargeEmphasized, color = MaterialTheme.colorScheme.onSurface)
         ColorSwatchRow(colors = SUBTITLE_COLORS, selected = style.textColor, onSelect = { color -> onStyle(null) { it.copy(textColor = color) } })
+    }
+    // A shadow under the outline or the box too (the shadow look always has one), in any colour.
+    SwitchCard(
+        icon = Icons.Rounded.Layers,
+        title = stringResource(R.string.subtitle_shadow),
+        subtitle = stringResource(if (style.look == SubtitleLook.SHADOW) R.string.subtitle_shadow_always else R.string.subtitle_shadow_hint),
+        checked = style.hasShadow,
+        enabled = style.look != SubtitleLook.SHADOW,
+        onCheckedChange = { on -> onStyle(null) { it.copy(dropShadow = on) } },
+    )
+    if (style.hasShadow) {
+        PanelCard {
+            Text(stringResource(R.string.subtitle_shadow_color), style = MaterialTheme.typography.labelLargeEmphasized, color = MaterialTheme.colorScheme.onSurface)
+            // Its see-through stays as it was: only the colour changes.
+            ColorSwatchRow(
+                colors = SUBTITLE_COLORS.reversed(),
+                selected = style.shadowColor,
+                onSelect = { color -> onStyle(null) { it.copy(shadowColor = (it.shadowColor and ALPHA_MASK) or (color and RGB_ONLY)) } },
+            )
+        }
     }
     SwitchCard(
         icon = Icons.Rounded.FormatBold,
@@ -669,7 +700,7 @@ private fun PresetSample(style: SubtitleStyle) {
             }
             SampleLetters(
                 text,
-                if (style.look == SubtitleLook.SHADOW) base.copy(shadow = Shadow(Color(SubtitleStyle.SHADOW_COLOR), androidx.compose.ui.geometry.Offset(2f, 2f))) else base,
+                if (style.hasShadow) base.copy(shadow = Shadow(Color(style.shadowColor), androidx.compose.ui.geometry.Offset(2f, 2f))) else base,
                 style,
             )
         }

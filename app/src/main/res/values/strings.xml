@@ -130,6 +130,7 @@
     <string name="error_analysis_failed">Stabilization analysis failed</string>
     <string name="error_encoding_failed">Conversion failed. Check the log.</string>
     <string name="error_packing_failed">The files were made but could not be packed into a zip. Is the storage full?</string>
+    <string name="error_storage_full">The phone\'s storage is full: the export stopped and its unfinished file was deleted. Free some space, or export smaller or at a lower quality.</string>
     <string name="error_manual_empty">The command is empty</string>
     <string name="error_manual_without_output">The command has no output file (e.g. output.mp4)</string>
 
@@ -1482,6 +1483,10 @@
     <string name="subtitle_look_box">Box</string>
     <string name="subtitle_look_shadow">Shadow</string>
     <string name="subtitle_text_color">Text colour</string>
+    <string name="subtitle_shadow">Shadow</string>
+    <string name="subtitle_shadow_hint">Under the outline or the box too, moved down and to the right</string>
+    <string name="subtitle_shadow_always">The shadow look always has one</string>
+    <string name="subtitle_shadow_color">Shadow colour</string>
     <string name="subtitle_bold">Bold</string>
     <string name="subtitle_uppercase">Capital letters</string>
     <string name="subtitle_uppercase_hint">Every word in capitals, as in short videos</string>
@@ -1758,7 +1763,9 @@
     <string name="welcome_look_kicker">Look</string>
     <string name="welcome_look_title">Make it yours</string>
     <string name="welcome_look_text">Pick a theme and its colours. Everything changes as you tap, this page too.</string>
-    <string name="welcome_look_dynamic">Colours from your wallpaper. Off, the app\'s own teal, on its home screen icon too.</string>
+    <string name="welcome_look_wallpaper">The colours of your wallpaper, on the home screen icon too.</string>
+    <string name="welcome_look_teal">The app\'s own teal, on the home screen icon too.</string>
+    <string name="welcome_look_teal_only">The app\'s own teal. Colours from the wallpaper need Android 12.</string>
 
     <string name="welcome_feel_kicker">Feel</string>
     <string name="welcome_feel_title">Feel every touch</string>
@@ -1799,6 +1806,7 @@
     <string name="welcome_ready_theme_dark">Dark theme</string>
     <string name="welcome_ready_colors_wallpaper">Wallpaper colours</string>
     <string name="welcome_ready_colors_teal">Teal colours</string>
+    <string name="welcome_ready_colors_monochrome">Greys only</string>
     <string name="welcome_ready_haptics_on">Touch feedback on</string>
     <string name="welcome_ready_haptics_off">Touch feedback off</string>
     <string name="welcome_ready_copies_on">Copies in your folders</string>

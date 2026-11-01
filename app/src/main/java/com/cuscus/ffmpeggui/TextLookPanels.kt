@@ -217,6 +217,16 @@ internal fun CaptionFontPicker(
     text: TextOverlay,
     onFont: (TextFont) -> Unit,
     onFontFile: (String?) -> Unit,
+) = CaptionFontPicker(text.font, text.isBold, text.fontFile, onFont, onFontFile)
+
+/** The same picker for any text drawn in [font] (bold when [bold]) or the user's [fontFile]: the styled subtitles too. */
+@Composable
+internal fun CaptionFontPicker(
+    font: TextFont,
+    bold: Boolean,
+    fontFile: String?,
+    onFont: (TextFont) -> Unit,
+    onFontFile: (String?) -> Unit,
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -242,18 +252,18 @@ internal fun CaptionFontPicker(
         }
     }
     // The caption's own file first among the added ones, also when it was added elsewhere.
-    val own = (listOfNotNull(text.fontFile) + fonts).distinct()
-    val options = TextFont.entries.map { font ->
+    val own = (listOfNotNull(fontFile) + fonts).distinct()
+    val options = TextFont.entries.map { family ->
         TileOption<FontChoice>(
-            value = FontChoice.Family(font),
-            label = stringResource(captionFontLabel(font)),
+            value = FontChoice.Family(family),
+            label = stringResource(captionFontLabel(family)),
             preview = { color ->
                 Text(
                     text = "Aa",
                     color = color,
                     fontSize = 22.sp,
-                    fontWeight = if (text.isBold) FontWeight.Bold else FontWeight.Normal,
-                    fontFamily = rememberExportFont(font, text.isBold),
+                    fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+                    fontFamily = rememberExportFont(family, bold),
                 )
             },
         )
@@ -275,12 +285,12 @@ internal fun CaptionFontPicker(
     } + TileOption<FontChoice>(FontChoice.Add, stringResource(R.string.text_font_add), icon = Icons.Rounded.Add)
     OptionTileRow(
         options = options,
-        selected = text.fontFile?.let { FontChoice.Added(it) } ?: FontChoice.Family(text.font),
+        selected = fontFile?.let { FontChoice.Added(it) } ?: FontChoice.Family(font),
         onSelect = { choice ->
             when (choice) {
                 is FontChoice.Family -> {
                     onFont(choice.font)
-                    if (text.fontFile != null) onFontFile(null)
+                    if (fontFile != null) onFontFile(null)
                 }
                 is FontChoice.Added -> onFontFile(choice.path)
                 FontChoice.Add -> picker.launch(CaptionFonts.PICKER_TYPES)

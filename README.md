@@ -179,7 +179,7 @@ It downloads the AAR pinned in `scripts/ffmpeg-kit-next-aar.txt` into `media/lib
 ./gradlew :core:test        # backend unit tests, plain JVM
 ```
 
-`./gradlew assembleRelease` makes an unsigned APK in `app/build/outputs/apk/release/`, to sign with your own key (`apksigner`; see "Releasing"). In Android Studio, open the project folder after step 2 and run the `app` configuration.
+`./gradlew assembleRelease` makes an unsigned APK in `app/build/outputs/apk/release/`, to sign with your own key (`apksigner`; see "Releasing"). In Android Studio, open the project folder after step 2 and run the `app` configuration (shared in `.run/`: it opens `MainActivity`, whichever launcher entry the app has enabled).
 
 ### Building FFmpeg yourself
 
@@ -250,6 +250,7 @@ Later runs reuse the checked sources. `--clean` starts from an empty work folder
 | `Dependency verification failed` in `build.log` | Gradle downloaded something that differs from `scripts/ffmpeg-kit-next.verification-metadata.xml`. If it is a file of another host (Linux / macOS), run `--write-gradle-verification` there; otherwise do not regenerate the file to get past it. |
 | `the build failed` | The details are in `build.log`, in the `ffmpeg-kit-next` folder of the work folder. |
 | `refusing to use ... as the work folder` | `FFMPEG_KIT_WORKDIR` points at a folder that is not the script's (the project, your home, a folder with other files). Point it at a new or empty folder, or leave it unset. |
+| `Activity class {...LauncherDynamic} does not exist` (Android Studio) | The app keeps one of its two launcher entries enabled, following the colours setting, and Android Studio tried the other. Run the shared `app` configuration (`.run/app.run.xml`), which opens `MainActivity` itself; or in *Run > Edit Configurations*, set *Launch* to *Specified Activity* `com.cuscus.ffmpeggui.MainActivity`. |
 | `... everything built from it was deleted` | A source changed during the build. Run the script again: it fetches the pinned commit and builds everything anew. |
 
 The script ignores the variables of your shell (only the ones listed in `KEEP_ENV`, at the top of the script, reach the build), so a variable left over from an experiment cannot change what is built. Each build starts from sources put back exactly as their pinned commits; libraries built earlier are only reused when sources, lock, options and script are all the same.
@@ -326,6 +327,7 @@ FFmpeg GUI is made by one person, in spare time, and will stay free and open sou
 - [anti-vocale](https://github.com/RisorseArtificiali/anti-vocale) (Apache 2.0), where the idea of on-device transcription and the way to run the model come from
 - [Google Sans Flex](https://fonts.google.com/specimen/Google+Sans+Flex) (SIL Open Font License)
 - The [Obtainium](https://github.com/ImranR98/Obtainium) logo by ImranR98 (GPL 3.0), in this page's Obtainium buttons only ([its licence](docs/badges/LICENSE-obtainium-logo.txt))
+- The photos and the video inside the store screenshots, from [Pexels](https://www.pexels.com/license/) (free to use, no attribution required): [winter forest](https://www.pexels.com/video/aerial-winter-landscape-over-forest-and-snow-29513356/), [gerbera](https://www.pexels.com/photo/elegant-woman-with-pink-gerbera-flower-39296598/), [Victoria Street](https://www.pexels.com/it-it/foto/la-pittoresca-victoria-street-di-edimburgo-in-scozia-39767336/), [puppy](https://www.pexels.com/photo/adorable-puppy-running-through-autumn-leaves-34928384/); not part of the app ([credits](fastlane/metadata/android/en-US/images/CREDITS.txt))
 
 The video effects are made by the project's own `scripts/generate-effects.py` (the punches' 3D fist by `scripts/punch3d.py`, the math formulas by `scripts/math_effect.py` with its own stroke font, the TV break's test card and tune by `scripts/tv_break.py`) and are part of FFmpeg GUI, under its licence.
 

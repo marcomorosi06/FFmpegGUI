@@ -265,6 +265,22 @@ class ConversionEngineTest {
     }
 
     @Test
+    fun `a full storage is told as such, the unfinished file removed and not encoded again`() = runBlocking {
+        val outputDir = temp.newFolder("out")
+        val hardware = request.copy(encoding = request.encoding.copy(hardwareEncoder = HardwareEncoder("c2.test.avc.encoder")))
+        val executor = FakeExecutor(ExecutionResult.Failed(-28)).apply {
+            logLines = listOf("[out#0/mp4 @ 0x7b] ", "Error writing trailer: ", "No space left on device", "\n")
+        }
+        val events = mutableListOf<ConversionEvent>()
+        val outcome = engine(executor, FakeStager(), outputDir).run(ConversionJob(hardware, MediaSources(listOf(main)))) { events += it }
+        assertEquals(ConversionOutcome.Failure(FailureReason.STORAGE_FULL), outcome)
+        assertEquals(1, executor.commands.size)
+        assertFalse(File(outputDir, "clip_99.mp4").exists())
+        // The pieces of FFmpeg's log come out as one line.
+        assertTrue(ConversionEvent.LogLine("[out#0/mp4 @ 0x7b] Error writing trailer: No space left on device") in events)
+    }
+
+    @Test
     fun `cancellation cleans up and propagates`() = runBlocking {
         val stager = FakeStager()
         val executor = FakeExecutor().apply { throwOnExecute = CancellationException("stop") }

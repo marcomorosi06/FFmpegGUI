@@ -182,7 +182,8 @@ internal fun StyledSubtitleLayer(
             // a layout of its own (its style black): a layout shared with the letters would
             // carry the stroke, the colour and the alpha of one drawing into the other.
             val outlineStyle = textStyle.copy(color = Color(SubtitleStyle.OUTLINE_COLOR))
-            val outlines = if (style.look == SubtitleLook.OUTLINE && border > 0f) {
+            // The shadow takes them too: a lit word casts the shadow's colour, not its own.
+            val outlines = if ((style.look == SubtitleLook.OUTLINE && border > 0f) || shadow > 0f) {
                 block.lines.map { line ->
                     measurer.measure(AnnotatedString(line.joinToString(" ") { it.text }), outlineStyle, overflow = TextOverflow.Visible, softWrap = false, maxLines = 1)
                 }
@@ -205,6 +206,25 @@ internal fun StyledSubtitleLayer(
             // Only a change of place is written: it lays the handle out again.
             if (reach != handle) handle = reach
 
+            // The shadow first, under everything, as libass lays it: the box moved (BOX), else the
+            // letters moved with their outline, in the shadow's colour.
+            if (shadow > 0f) {
+                val shade = Color(style.shadowColor)
+                val away = Offset(shadow, shadow)
+                if (style.look == SubtitleLook.BOX) {
+                    val boxes = Path()
+                    lines.forEach { (_, _, rect) -> boxes.addRect(rect.inflate(border).translate(away)) }
+                    drawPath(boxes, color = shade.copy(alpha = shade.alpha * visibility))
+                } else {
+                    lines.forEachIndexed { index, (_, topLeft, _) ->
+                        val plain = outlines.getOrNull(index) ?: return@forEachIndexed
+                        if (style.look == SubtitleLook.OUTLINE && border > 0f) {
+                            drawText(plain, color = shade, topLeft = topLeft + away, alpha = visibility, drawStyle = Stroke(width = border * 2f, join = StrokeJoin.Round))
+                        }
+                        drawText(plain, color = shade, topLeft = topLeft + away, alpha = visibility, drawStyle = Fill)
+                    }
+                }
+            }
             when (style.look) {
                 SubtitleLook.BOX -> {
                     // One shape for all the boxes, so that where two lines' boxes overlap it is not darker.
@@ -220,9 +240,7 @@ internal fun StyledSubtitleLayer(
                         drawText(plain, color = Color(SubtitleStyle.OUTLINE_COLOR), topLeft = topLeft, alpha = visibility, drawStyle = outline)
                     }
                 }
-                SubtitleLook.SHADOW -> lines.forEach { (layout, topLeft, _) ->
-                    drawText(layout, color = Color(SubtitleStyle.SHADOW_COLOR), topLeft = topLeft + Offset(shadow, shadow), alpha = visibility, drawStyle = Fill)
-                }
+                SubtitleLook.SHADOW -> Unit
             }
             // Filled and in their colour, said outright rather than left to what the layout's
             // paint last held.

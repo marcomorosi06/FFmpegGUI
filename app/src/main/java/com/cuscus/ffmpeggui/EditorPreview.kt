@@ -346,8 +346,8 @@ fun PreviewContainer(
         }
     }
     // The font the export draws with, read once (it is a file).
-    val subtitleFont by produceState<SubtitleFont?>(null, subtitleFonts, subtitleStyle.font, subtitleStyle.bold) {
-        value = subtitleFonts?.let { fonts -> withContext(Dispatchers.IO) { fonts.of(subtitleStyle.font, subtitleStyle.bold) } }
+    val subtitleFont by produceState<SubtitleFont?>(null, subtitleFonts, subtitleStyle.font, subtitleStyle.bold, subtitleStyle.fontFile) {
+        value = subtitleFonts?.let { fonts -> withContext(Dispatchers.IO) { fonts.of(subtitleStyle.font, subtitleStyle.bold, subtitleStyle.fontFile) } }
     }
     val styledSubtitles = spoken || (subtitleFileStyled && timelineCues.isNotEmpty())
     // With the effects laid over the cuts of the effect transitions, as the export lays them (a TV
@@ -415,7 +415,7 @@ fun PreviewContainer(
             lastTick = now
             val current = player.tick()
             snapshot.value = current
-            playback.playheadMs.longValue = current.mediaMs
+            playback.playheadMs.longValue = current.playheadMs
         }
     }
     // The media notification, through which the preview keeps playing in the background.

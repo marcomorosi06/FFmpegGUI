@@ -25,6 +25,7 @@ class ConversionMessages(private val resources: Resources) {
         FailureReason.MANUAL_COMMAND_EMPTY -> resources.getString(R.string.error_manual_empty)
         FailureReason.MANUAL_COMMAND_WITHOUT_OUTPUT -> resources.getString(R.string.error_manual_without_output)
         FailureReason.PACKING_FAILED -> resources.getString(R.string.error_packing_failed)
+        FailureReason.STORAGE_FULL -> resources.getString(R.string.error_storage_full)
     }
 
     /** Why a transcript (.txt) could not be made. */

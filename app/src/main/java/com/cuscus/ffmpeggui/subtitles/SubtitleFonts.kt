@@ -35,6 +35,20 @@ class SubtitleFonts(private val provider: FontProvider) {
 
     fun of(bold: Boolean): SubtitleFont? = of(TextFont.SANS, bold)
 
+    private val added = ConcurrentHashMap<String, SubtitleFont>()
+
+    /**
+     * The font file the user added, [fontFile], while it can be read (as the export
+     * takes it, see the conversion engine); else that of [font]. Reads a file.
+     */
+    fun of(font: TextFont, bold: Boolean, fontFile: String?): SubtitleFont? {
+        if (fontFile == null) return of(font, bold)
+        added[fontFile]?.let { if (it.file.isFile) return it }
+        val file = provider.customFontPath(fontFile)?.let(::File)?.takeIf { it.isFile } ?: return of(font, bold)
+        val facts = FontFacts.read(file) ?: return of(font, bold)
+        return SubtitleFont(file, facts).also { added[fontFile] = it }
+    }
+
     /** The file FFmpeg draws [font] with (captions use it as it is). */
     fun file(font: TextFont, bold: Boolean): File = File(provider.fontPath(font, bold))
 }

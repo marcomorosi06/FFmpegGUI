@@ -1,0 +1,20 @@
+FFmpeg GUI - credits for the store pictures
+============================================
+
+The photos and the video shown inside the screenshots of this folder
+(phoneScreenshots/) come from Pexels, under the Pexels licence
+(https://www.pexels.com/license/): free to use, no attribution required.
+They are credited here all the same:
+
+- Aerial winter landscape over forest and snow (video)
+  https://www.pexels.com/video/aerial-winter-landscape-over-forest-and-snow-29513356/
+- Elegant woman with pink gerbera flower (photo)
+  https://www.pexels.com/photo/elegant-woman-with-pink-gerbera-flower-39296598/
+- The picturesque Victoria Street of Edinburgh, Scotland (photo)
+  https://www.pexels.com/it-it/foto/la-pittoresca-victoria-street-di-edimburgo-in-scozia-39767336/
+- Adorable puppy running through autumn leaves (photo)
+  https://www.pexels.com/photo/adorable-puppy-running-through-autumn-leaves-34928384/
+
+They are not part of the app (the APK) nor of its source code licence:
+each stays under the Pexels licence. The rest of the screenshots (the
+app itself) is part of FFmpeg GUI, under its licence.

@@ -50,7 +50,7 @@ object AssSubtitles {
         )
         out.append("Style: Default,").append(fontName.replace(",", " ")).append(',').append(number(fontSize)).append(',')
             .append(assColorWithAlpha(sane.textColor)).append(',').append(assColorWithAlpha(sane.highlightColor)).append(',')
-            .append(assColorWithAlpha(outlineColor)).append(',').append(assColorWithAlpha(SubtitleStyle.SHADOW_COLOR)).append(',')
+            .append(assColorWithAlpha(outlineColor)).append(',').append(assColorWithAlpha(sane.shadowColor)).append(',')
             .append(if (sane.bold) "-1" else "0").append(",0,0,0,100,100,0,0,")
             .append(borderStyle).append(',').append(number(sane.border * PLAY_HEIGHT)).append(',')
             .append(number(sane.shadow * PLAY_HEIGHT)).append(",2,0,0,0,1\n\n")

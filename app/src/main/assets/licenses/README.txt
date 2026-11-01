@@ -186,7 +186,9 @@ The app reads their files with its own code (SentencePiece models and
 vocabularies of Opus-MT included, and Spleeter's spectrogram and masks, as
 sherpa-onnx computes them, written again in Kotlin); nothing of theirs is
 copied into it. Spleeter's licence is kept here all the same, as its
-results (the voices set apart) are made with it. Build tools (Gradle, the
+results (the voices set apart) are made with it. The photos and the video in the store screenshots (fastlane/) come from
+Pexels, under the Pexels licence: see fastlane/metadata/android/en-US/
+images/CREDITS.txt in the source. Build tools (Gradle, the
 Android Gradle Plugin, R8, the Nix toolchain, GitHub Actions) and test
 libraries (JUnit) are used to build or test the app and are not
 distributed with it.

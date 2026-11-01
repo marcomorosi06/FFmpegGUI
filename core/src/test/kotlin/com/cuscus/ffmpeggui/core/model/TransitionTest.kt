@@ -16,6 +16,19 @@ class TransitionTest {
     private val fade = Transition(TransitionKind.FADE, 1_000)
 
     @Test
+    fun `the playhead glides across a transition and does not jump when it ends`() {
+        val timeline = PreviewTimeline(listOf(SegmentTiming(4_000, transition = fade), SegmentTiming(4_000)), speed = 1f)
+        // Outside it, the media on screen.
+        assertEquals(timeline.mediaMsForOutput(2_000), timeline.playheadMs(2_000))
+        // The transition shows from 3 s to 4 s of the output: from 3 s of the first clip to 1 s into the second.
+        assertEquals(3_000L, timeline.playheadMs(3_000))
+        assertEquals(4_000L, timeline.playheadMs(3_500))
+        val end = timeline.playheadMs(3_999)
+        assertTrue("$end", kotlin.math.abs(end - timeline.mediaMsForOutput(4_000)) <= 3)
+        assertEquals(timeline.mediaMsForOutput(4_000), timeline.playheadMs(4_000))
+    }
+
+    @Test
     fun `a transition is never longer than half of either clip`() {
         assertEquals(1_000L, Transition.effectiveMs(1_000, 4_000, 4_000))
         assertEquals(750L, Transition.effectiveMs(1_000, 1_500, 4_000))

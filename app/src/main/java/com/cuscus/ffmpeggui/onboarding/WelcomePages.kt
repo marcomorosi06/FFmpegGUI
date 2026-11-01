@@ -87,7 +87,6 @@ import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -107,9 +106,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.luminance
+import com.cuscus.ffmpeggui.ui.theme.appColorScheme
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -754,23 +756,11 @@ internal fun LookPage(motion: PageMotion, settings: AppSettings, onChange: ((App
                 )
             }
         }
-        Box(modifier = Modifier.enter(motion, 5)) {
+        PaletteCard(settings, onChange, modifier = Modifier.enter(motion, 5))
+        Box(modifier = Modifier.enter(motion, 6)) {
             SettingsGroup(
                 title = null,
                 rows = listOf<@Composable (Shape) -> Unit>(
-                    { shape ->
-                        SettingsSwitchRow(
-                            shape = shape,
-                            icon = Icons.Rounded.Wallpaper,
-                            title = stringResource(R.string.settings_dynamic),
-                            summary = stringResource(if (dynamicColorAvailable) R.string.welcome_look_dynamic else R.string.settings_dynamic_unavailable),
-                            checked = settings.dynamicColor && dynamicColorAvailable,
-                            onCheckedChange = { on -> onChange { it.copy(dynamicColor = on) } },
-                            badge = MaterialShapes.Cookie9Sided,
-                            colors = ToneColors(scheme.primaryContainer, scheme.onPrimaryContainer),
-                            enabled = dynamicColorAvailable,
-                        )
-                    },
                     { shape ->
                         SettingsSwitchRow(
                             shape = shape,
@@ -791,6 +781,178 @@ internal fun LookPage(motion: PageMotion, settings: AppSettings, onChange: ((App
         }
     }
 }
+
+/** Where the colours come from, as the welcome offers it. */
+internal enum class WelcomePalette { WALLPAPER, TEAL, MONOCHROME }
+
+/** The palette [settings] use. */
+internal fun welcomePalette(settings: AppSettings): WelcomePalette = when {
+    settings.monochrome -> WelcomePalette.MONOCHROME
+    settings.dynamicColor && dynamicColorAvailable -> WelcomePalette.WALLPAPER
+    else -> WelcomePalette.TEAL
+}
+
+/**
+ * The colours to choose: the wallpaper's (where Android has them), the app's
+ * teal or greys only, each a round swatch in its own colours, as Android's
+ * own style picker shows them. What the chosen one does is said below, and
+ * the whole page takes it as it is tapped.
+ */
+@Composable
+private fun PaletteCard(settings: AppSettings, onChange: ((AppSettings) -> AppSettings) -> Unit, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    val haptics = LocalHapticFeedback.current
+    val context = LocalContext.current
+    val dark = scheme.surface.luminance() < 0.5f
+    val palette = welcomePalette(settings)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(scheme.surfaceContainerHigh)
+            .padding(horizontal = 12.dp, vertical = 16.dp),
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            modifier = Modifier.fillMaxWidth().selectableGroup(),
+        ) {
+            WelcomePalette.entries.filter { it != WelcomePalette.WALLPAPER || dynamicColorAvailable }.forEach { choice ->
+                // Each swatch in its own palette, whatever the page is in.
+                val colors = remember(context, dark, choice) {
+                    appColorScheme(context, dark, dynamic = choice == WelcomePalette.WALLPAPER, monochrome = choice == WelcomePalette.MONOCHROME)
+                }
+                PaletteSwatch(
+                    label = stringResource(
+                        when (choice) {
+                            WelcomePalette.WALLPAPER -> R.string.settings_palette_wallpaper
+                            WelcomePalette.TEAL -> R.string.settings_palette_teal
+                            WelcomePalette.MONOCHROME -> R.string.settings_palette_monochrome
+                        },
+                    ),
+                    colors = colors,
+                    selected = palette == choice,
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        onChange {
+                            when (choice) {
+                                WelcomePalette.WALLPAPER -> it.copy(dynamicColor = true, monochrome = false)
+                                WelcomePalette.TEAL -> it.copy(dynamicColor = false, monochrome = false)
+                                WelcomePalette.MONOCHROME -> it.copy(monochrome = true)
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        // What the chosen palette does, sliding in as it changes.
+        AnimatedContent(
+            targetState = palette,
+            transitionSpec = {
+                (fadeIn(motion.defaultEffectsSpec()) + androidx.compose.animation.slideInVertically(motion.defaultSpatialSpec()) { it / 3 })
+                    .togetherWith(fadeOut(motion.fastEffectsSpec()))
+                    .using(androidx.compose.animation.SizeTransform(clip = false))
+            },
+            label = "paletteText",
+        ) { shown ->
+            Text(
+                text = stringResource(
+                    when (shown) {
+                        WelcomePalette.WALLPAPER -> R.string.welcome_look_wallpaper
+                        WelcomePalette.TEAL -> if (dynamicColorAvailable) R.string.welcome_look_teal else R.string.welcome_look_teal_only
+                        WelcomePalette.MONOCHROME -> R.string.settings_monochrome_summary
+                    },
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = scheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 14.dp),
+            )
+        }
+    }
+}
+
+/**
+ * A palette to choose, as a round swatch split as Android's style picker
+ * splits it: its primary on top, its secondary and tertiary below. Chosen, the
+ * circle morphs into a cookie that turns slowly (the colours inside stay
+ * upright), grows on a bouncy spring and gets a ring in the page's primary.
+ */
+@Composable
+private fun PaletteSwatch(
+    label: String,
+    colors: androidx.compose.material3.ColorScheme,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    val interaction = remember { MutableInteractionSource() }
+    val bloom by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.5f, stiffness = 380f),
+        label = "swatchBloom",
+    )
+    val ring by animateColorAsState(if (selected) scheme.primary else Color.Transparent, motion.defaultEffectsSpec(), label = "swatchRing")
+    val turn by rememberTurn(PALETTE_TURN_MS, "swatchTurn")
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .selectable(selected = selected, interactionSource = interaction, indication = LocalIndication.current, role = Role.RadioButton, onClick = onClick)
+            .padding(vertical = 6.dp),
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(76.dp)
+                .springPress(interaction, pressedScale = 0.9f)
+                .graphicsLayer {
+                    val grow = 0.9f + 0.1f * bloom
+                    scaleX = grow
+                    scaleY = grow
+                },
+        ) {
+            // The ring, a gap in the card's colour, then the swatch: the same morph for all three.
+            MorphingContainer(MaterialShapes.Circle, MaterialShapes.Cookie9Sided, selected, ring, Modifier.fillMaxSize(), rotationDegrees = turn * bloom) {}
+            MorphingContainer(MaterialShapes.Circle, MaterialShapes.Cookie9Sided, selected, scheme.surfaceContainerHigh, Modifier.fillMaxSize(0.88f), rotationDegrees = turn * bloom) {}
+            MorphingContainer(MaterialShapes.Circle, MaterialShapes.Cookie9Sided, selected, colors.primary, Modifier.fillMaxSize(0.76f), rotationDegrees = turn * bloom) {
+                androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                    val half = size.height / 2f
+                    drawRect(colors.primary, size = androidx.compose.ui.geometry.Size(size.width, half))
+                    drawRect(colors.secondary, topLeft = androidx.compose.ui.geometry.Offset(0f, half), size = androidx.compose.ui.geometry.Size(size.width / 2f, half))
+                    drawRect(colors.tertiary, topLeft = androidx.compose.ui.geometry.Offset(size.width / 2f, half), size = androidx.compose.ui.geometry.Size(size.width / 2f, half))
+                }
+                // Chosen, a tick pops onto the middle.
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = selected,
+                    enter = scaleIn(motion.fastSpatialSpec()) + fadeIn(),
+                    exit = scaleOut(motion.fastSpatialSpec()) + fadeOut(),
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(26.dp).clip(CircleShape).background(colors.primaryContainer)) {
+                        Icon(Icons.Rounded.Check, contentDescription = null, tint = colors.onPrimaryContainer, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        // One line whatever the language: the name shrinks a little rather than wrap.
+        Text(
+            label,
+            style = if (selected) MaterialTheme.typography.labelLargeEmphasized else MaterialTheme.typography.labelLarge,
+            color = if (selected) scheme.primary else scheme.onSurfaceVariant,
+            maxLines = 1,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = 14.sp, stepSize = 0.5.sp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        )
+    }
+}
+
+/** One turn of a chosen swatch. */
+private const val PALETTE_TURN_MS = 20_000
 
 /**
  * A theme to choose, as a tile with a tiny screen of it: chosen, the tile
@@ -1383,7 +1545,13 @@ internal fun ReadyPage(
         ),
         Summary(
             Icons.Rounded.Palette,
-            stringResource(if (settings.dynamicColor && dynamicColorAvailable) R.string.welcome_ready_colors_wallpaper else R.string.welcome_ready_colors_teal),
+            stringResource(
+                when (welcomePalette(settings)) {
+                    WelcomePalette.WALLPAPER -> R.string.welcome_ready_colors_wallpaper
+                    WelcomePalette.TEAL -> R.string.welcome_ready_colors_teal
+                    WelcomePalette.MONOCHROME -> R.string.welcome_ready_colors_monochrome
+                },
+            ),
             WelcomePage.LOOK,
             true,
         ),
