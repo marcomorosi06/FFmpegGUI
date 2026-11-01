@@ -37,6 +37,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import com.cuscus.ffmpeggui.core.model.ImagePlacement
+import com.cuscus.ffmpeggui.core.model.LayerBlend
 import com.cuscus.ffmpeggui.core.preview.combineColorMatrices
 import com.cuscus.ffmpeggui.core.preview.hueColorMatrix
 import com.cuscus.ffmpeggui.effects.EffectLibrary
@@ -69,7 +70,8 @@ internal fun BoxScope.EffectsLayer(
     val shown by remember(effects) {
         derivedStateOf {
             val now = outputMs()
-            effects.filter { now >= it.startMs - EFFECT_PRELOAD_MS && (it.endMs == null || now < it.endMs) }
+            // A picture look is drawn on the whole frame (see pictureLooks), not here.
+            effects.filter { it.pictureLook == null && now >= it.startMs - EFFECT_PRELOAD_MS && (it.endMs == null || now < it.endMs) }
         }
     }
     shown.forEach { effect ->
@@ -232,8 +234,9 @@ private fun EffectSurface(
                 } else {
                     shown.opacity * overlayFade(shown.startMs, shown.endMs, shown.fadeInSeconds, shown.fadeOutSeconds, now)
                 }
-                // Light on black: screened, black disappears and the light adds up.
-                blendMode = BlendMode.Screen
+                // Light on black: screened, black disappears and the light adds up. An opaque
+                // effect (a TV break's card) is laid as it is.
+                blendMode = if (shown.blend == LayerBlend.SCREEN) BlendMode.Screen else BlendMode.SrcOver
             }
             // As the export's cover fill: as large as it must be to fill the frame, in the middle.
             .layout { measurable, constraints ->

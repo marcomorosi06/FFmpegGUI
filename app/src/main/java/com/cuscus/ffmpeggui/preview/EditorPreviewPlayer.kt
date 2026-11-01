@@ -451,8 +451,8 @@ class EditorPreviewPlayer(context: Context) {
 
         val transition = if (clips.size > 1) timeline.transitionAt(outputMs) else null
         val incoming = driveIncoming(outputMs, transition, now)
-        // The sounds cross-fade, as the export's acrossfade does.
-        val outgoingShare = if (transition != null) 1f - transition.progress else 1f
+        // The sounds cross-fade, as the export's acrossfade does (or give way to a TV break's own).
+        val outgoingShare = transition?.outgoingShare ?: 1f
 
         // Sound played backwards cannot be produced on the fly, so it is muted meanwhile.
         val backwards = timeline.playsBackwards(point.segment)
@@ -463,7 +463,7 @@ class EditorPreviewPlayer(context: Context) {
             if (incoming == null || transition == null || timeline.playsBackwards(transition.incoming)) {
                 0f
             } else {
-                sourceGain * (levels.getOrNull(transition.incoming) ?: ClipLevels()).gainAt(incoming.fileMs) * fade * incoming.fadeLevel * transition.progress
+                sourceGain * (levels.getOrNull(transition.incoming) ?: ClipLevels()).gainAt(incoming.fileMs) * fade * incoming.fadeLevel * transition.incomingShare
             },
         )
         voices.sync(outputMs, playing, soundGain, fade)

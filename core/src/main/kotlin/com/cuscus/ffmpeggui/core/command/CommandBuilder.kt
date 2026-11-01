@@ -12,6 +12,7 @@ import com.cuscus.ffmpeggui.core.image.pictureSize
 import com.cuscus.ffmpeggui.core.image.pictureFrameMs
 import com.cuscus.ffmpeggui.core.image.imageStages
 import com.cuscus.ffmpeggui.core.model.TransitionKind
+import com.cuscus.ffmpeggui.core.model.CLIP_SOUND_FADE_MS
 import com.cuscus.ffmpeggui.core.model.stackOrder
 import com.cuscus.ffmpeggui.core.model.ConversionRequest
 import com.cuscus.ffmpeggui.core.model.Effects
@@ -20,6 +21,8 @@ import com.cuscus.ffmpeggui.core.model.FrameExtraction
 import com.cuscus.ffmpeggui.core.model.sequenceFormat
 import com.cuscus.ffmpeggui.core.model.HardwareEncoder
 import com.cuscus.ffmpeggui.core.model.ImagePlacement
+import com.cuscus.ffmpeggui.core.model.LookSpan
+import com.cuscus.ffmpeggui.core.look.lookSpanGraph
 import com.cuscus.ffmpeggui.core.model.KeyProperty
 import com.cuscus.ffmpeggui.core.model.LayerBlend
 import com.cuscus.ffmpeggui.core.model.MotionKind
@@ -381,13 +384,17 @@ class CommandBuilder(fonts: FontProvider) {
 
         var withAudio = keepSourceAudio || sounds.isNotEmpty()
 
-        if (footage.graph.isNotEmpty() || wholeOverlays.isNotEmpty() || sounds.isNotEmpty()) {
+        // The picture looks: after everything else on the picture, before the encoder's own steps.
+        val looks = if (format.hasVideo) request.looks.filter { it.endMs > it.startMs } else emptyList()
+        if (footage.graph.isNotEmpty() || wholeOverlays.isNotEmpty() || sounds.isNotEmpty() || looks.isNotEmpty()) {
             val graph = footage.graph.toMutableList()
             if (format.hasVideo) {
-                graph += if (wholeOverlays.isEmpty()) {
-                    videoGraph(footage.video, videoChain, videoTail, wholeOverlays, wholeFrameSize(request))
+                val frame = wholeFrameSize(request)
+                val looked = looks.takeIf { it.isNotEmpty() }?.let { LookPass(it, frame, transitionFrameRate(request)) }
+                graph += if (wholeOverlays.isEmpty() && looked == null) {
+                    videoGraph(footage.video, videoChain, videoTail, wholeOverlays, frame)
                 } else {
-                    videoGraph(footage.video, videoBefore, videoTail, wholeOverlays, wholeFrameSize(request), videoCaptions, videoAfter)
+                    videoGraph(footage.video, videoBefore, videoTail, wholeOverlays, frame, videoCaptions, videoAfter, looked)
                 }
             }
             if (sounds.isNotEmpty()) {
@@ -1116,12 +1123,29 @@ class CommandBuilder(fonts: FontProvider) {
         frame: Pair<Int, Int>,
         captions: List<Pair<Int, String>> = emptyList(),
         post: List<String> = emptyList(),
+        looks: LookPass? = null,
     ): List<String> {
         val lastLabel = if (tail == null) VIDEO_OUT else "vpre"
-        val segments = overlayGraph(input, chain, overlays, prefix = "w", output = lastLabel, frameWidth = frame.first, frameHeight = frame.second, captions = captions, post = post).toMutableList()
+        if (looks == null) {
+            val segments = overlayGraph(input, chain, overlays, prefix = "w", output = lastLabel, frameWidth = frame.first, frameHeight = frame.second, captions = captions, post = post).toMutableList()
+            if (tail != null) segments += "[$lastLabel]$tail[$VIDEO_OUT]"
+            return segments
+        }
+        // The looks change the picture with its captions and pictures, before the whole video's
+        // frame rate and fades (which cover them, as they cover everything).
+        val segments = overlayGraph(input, chain, overlays, prefix = "w", output = "vlook0", frameWidth = frame.first, frameHeight = frame.second, captions = captions).toMutableList()
+        val looked = "vlook${looks.spans.size}"
+        looks.spans.forEachIndexed { index, span ->
+            val next = if (index == looks.spans.lastIndex && post.isEmpty()) lastLabel else "vlook${index + 1}"
+            segments += lookSpanGraph(span, "vlook$index", next, "lk${index}x", looks.frame.first, looks.frame.second, looks.fps)
+        }
+        if (post.isNotEmpty()) segments += "[$looked]${post.joinToString(",")}[$lastLabel]"
         if (tail != null) segments += "[$lastLabel]$tail[$VIDEO_OUT]"
         return segments
     }
+
+    /** The picture looks of the whole video, on a frame of [frame] at [fps] frames a second. */
+    private class LookPass(val spans: List<LookSpan>, val frame: Pair<Int, Int>, val fps: Int)
 
     /**
      * [input] through [chain], then [captions] (drawtext filters, each with its
@@ -1336,6 +1360,16 @@ class CommandBuilder(fonts: FontProvider) {
                 ) ?: listOf(customFallback(current, labels[k], overlap, length, next))
                 video && kind.isCustom -> listOf(customFallback(current, labels[k], overlap, length, next))
                 video -> listOf("$current${labels[k]}" + fmt("xfade=transition=%s:duration=%.3f:offset=%.3f", kind.xfade, overlap, (length - overlap).coerceAtLeast(0.0)) + next)
+                // The clips fall silent under a TV break and its own sound (see TransitionKind.mutesClips):
+                // the one going out at its start, the one coming in back at its end.
+                kind.mutesClips -> {
+                    val fade = minOf(CLIP_SOUND_FADE_MS / 1000.0, overlap / 2)
+                    listOf(
+                        current + fmt("afade=t=out:st=%.3f:d=%.3f", (length - overlap).coerceAtLeast(0.0), fade) + "[${prefix}q${k}a]",
+                        labels[k] + fmt("afade=t=in:st=%.3f:d=%.3f", (overlap - fade).coerceAtLeast(0.0), fade) + "[${prefix}q${k}b]",
+                        "[${prefix}q${k}a][${prefix}q${k}b]" + fmt("acrossfade=d=%.3f:c1=nofade:c2=nofade", overlap) + next,
+                    )
+                }
                 else -> listOf("$current${labels[k]}" + fmt("acrossfade=d=%.3f:c1=tri:c2=tri", overlap) + next)
             }
             length += played[k] - (if (kind != null) overlap else 0.0)

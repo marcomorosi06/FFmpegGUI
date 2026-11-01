@@ -470,6 +470,12 @@ internal object Recipes {
         }
 
         // -- Punches (their fist is an effect laid over them, see TransitionKind.companionEffect) --
+        TransitionKind.TECHNICAL_DIFFICULTIES -> TransitionRecipe(
+            // A plain cut halfway, always under the TV break's card (laid by the app, see tvBreak).
+            outgoing = Part(),
+            incoming = Part(alpha = gte(T, num(0.5))),
+        )
+
         TransitionKind.PUNCH -> {
             // The clip going out leans in as the fist comes; the clips change under the fist, which
             // fills the frame; the clip coming in recoils and shakes off the blow as the fist draws back.

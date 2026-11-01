@@ -245,5 +245,55 @@
    "width": 512,
    "height": 288
   }
+ },
+ {
+  "name": "tv_intro",
+  "file": "tv_intro.mp4",
+  "kind": "companion",
+  "frames": 21,
+  "fps": 30,
+  "audio": true,
+  "alpha": true,
+  "sheet": {
+   "file": "tv_intro.webp",
+   "frames": 21,
+   "columns": 6,
+   "fps": 30,
+   "width": 512,
+   "height": 288
+  }
+ },
+ {
+  "name": "tv_card",
+  "file": "tv_card.mp4",
+  "kind": "companion",
+  "frames": 480,
+  "fps": 30,
+  "audio": true,
+  "sheet": {
+   "file": "tv_card.jpg",
+   "frames": 30,
+   "columns": 8,
+   "fps": 15,
+   "width": 160,
+   "height": 90
+  }
+ },
+ {
+  "name": "tv_outro",
+  "file": "tv_outro.mp4",
+  "kind": "companion",
+  "frames": 21,
+  "fps": 30,
+  "audio": true,
+  "alpha": true,
+  "sheet": {
+   "file": "tv_outro.webp",
+   "frames": 21,
+   "columns": 6,
+   "fps": 30,
+   "width": 512,
+   "height": 288
+  }
  }
 ]

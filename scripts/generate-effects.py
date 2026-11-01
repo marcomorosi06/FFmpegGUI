@@ -17,6 +17,14 @@ on top, its opacity as grey below it. The app lays them over the cut of
 TransitionKind.PUNCH and PUNCH_BACK ("companion" in index.json), its preview
 from a sheet of frames with transparency (a WebP).
 
+The TV break (TransitionKind.TECHNICAL_DIFFICULTIES) has three such parts,
+drawn and composed by tv_break.py: the channel changing into a test card
+(tv_intro, with opacity), the card itself (tv_card, opaque, as long as the
+longest break) and the channel changing onto the next clip (tv_outro, with
+opacity). Each carries its own sound ("audio" in index.json): a click and
+the snow's hiss, the card's little tune (looping within its file), the hiss
+and the screen coming on.
+
 Looping effects loop seamlessly: each particle has a phase within the loop
 and its age is taken modulo the loop's length, so the last frame leads into
 the first. Transitions (the fairy, an explosion, a flash) play once over the
@@ -43,6 +51,7 @@ from scipy.ndimage import gaussian_filter
 
 import math_effect
 import punch3d
+import tv_break
 
 W, H = 1280, 720
 FPS = 30
@@ -820,6 +829,21 @@ def punch_back():
     return (lambda i: punch3d.frame(W, H, i, "punch_back")), punch3d.frame_count(), False
 
 
+def tv_intro():
+    """The channel changing into the TV break's card (see tv_break.py)."""
+    return (lambda i: tv_break.intro_frame(W, H, i)), tv_break.INTRO_FRAMES, False
+
+
+def tv_card():
+    """The TV break's test card, its tune looping (see tv_break.py)."""
+    return (lambda i: tv_break.card_frame(W, H, i)), tv_break.card_frame_count(), False
+
+
+def tv_outro():
+    """The channel changing out of the TV break's card onto the next clip (see tv_break.py)."""
+    return (lambda i: tv_break.outro_frame(W, H, i)), tv_break.OUTRO_FRAMES, False
+
+
 EFFECTS = {
     "sparks": sparks,
     "fireworks": fireworks,
@@ -837,10 +861,23 @@ EFFECTS = {
     "flash": flash,
     "punch": punch,
     "punch_back": punch_back,
+    "tv_intro": tv_intro,
+    "tv_card": tv_card,
+    "tv_outro": tv_outro,
 }
 
 # Drawn with their opacity (see encode_alpha), not as light on black.
-ALPHA = {"punch", "punch_back"}
+ALPHA = {"punch", "punch_back", "tv_intro", "tv_outro"}
+
+# With a sound of their own (mono, tv_break.SR): the TV break's parts.
+AUDIO = {"tv_intro": tv_break.intro_audio, "tv_card": tv_break.card_audio, "tv_outro": tv_break.outro_audio}
+
+# Snow is noise: it is kept smaller, at a lower quality nobody can see.
+CRF = {"tv_intro": 34, "tv_outro": 34}
+SHEET_QUALITY = {"tv_intro": 50, "tv_outro": 50}
+
+# A sheet of only the first seconds of a long file that repeats itself.
+SHEET_SECONDS = {"tv_card": tv_break.CARD_LOOP_FRAMES / tv_break.FPS}
 
 # What each is: a looping effect, or a transition (and the second at which it cuts).
 # The cut falls just inside the first frame of the flash (the fairy's wand lands
@@ -854,6 +891,10 @@ KINDS = {
     # not offered among the effects: the cut is where the recipe switches clips (punch3d.CUTS).
     "punch": ("companion", punch3d.CUTS["punch"]),
     "punch_back": ("companion", punch3d.CUTS["punch_back"]),
+    # The TV break's three parts, laid one after the other over TECHNICAL_DIFFICULTIES.
+    "tv_intro": ("companion", None),
+    "tv_card": ("companion", None),
+    "tv_outro": ("companion", None),
 }
 
 
@@ -861,13 +902,34 @@ KINDS = {
 # Output
 # ---------------------------------------------------------------------------
 
+def sound_arguments(name, out_dir):
+    """The ffmpeg arguments that add effect [name]'s own sound (see AUDIO), after its picture; none without one."""
+    make = AUDIO.get(name)
+    if make is None:
+        return [], ["-an"], None
+    wav = os.path.join(out_dir, "." + name + ".wav")
+    samples = np.clip(make(), -1, 1)
+    with open(wav, "wb") as f:
+        f.write(wav_bytes(samples, tv_break.SR))
+    return ["-i", wav], ["-map", "0:v", "-map", "1:a", "-c:a", "aac", "-b:a", "96k", "-ac", "1"], wav
+
+
+def wav_bytes(samples, rate):
+    """A mono 16-bit WAV of [samples] (-1..1)."""
+    import struct
+    data = (np.asarray(samples) * 32767).astype("<i2").tobytes()
+    return (b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt " +
+            struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16) + b"data" + struct.pack("<I", len(data)) + data)
+
+
 def encode(name, frame_fn, frames, out_dir, crf):
     path = os.path.join(out_dir, name + ".mp4")
+    sound_in, sound_out, wav = sound_arguments(name, out_dir)
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
+        "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-", *sound_in,
         "-c:v", "libx264", "-preset", "veryslow", "-crf", str(crf), "-pix_fmt", "yuv420p",
-        "-g", str(FPS), "-threads", "1", "-movflags", "+faststart", "-an",
+        "-g", str(FPS), "-threads", "1", "-movflags", "+faststart", *sound_out,
         path,
     ]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
@@ -878,17 +940,20 @@ def encode(name, frame_fn, frames, out_dir, crf):
     proc.stdin.close()
     if proc.wait() != 0:
         sys.exit(f"ffmpeg failed on {name}")
+    if wav:
+        os.remove(wav)
     return path
 
 
 def encode_alpha(name, frame_fn, frames, out_dir, crf):
     """An effect with opacity: each RGBA frame packed as its colour over its opacity (grey), one frame twice as tall."""
     path = os.path.join(out_dir, name + ".mp4")
+    sound_in, sound_out, wav = sound_arguments(name, out_dir)
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{2 * H}", "-r", str(FPS), "-i", "-",
+        "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{2 * H}", "-r", str(FPS), "-i", "-", *sound_in,
         "-c:v", "libx264", "-preset", "veryslow", "-crf", str(crf), "-pix_fmt", "yuv420p",
-        "-g", str(FPS), "-threads", "1", "-movflags", "+faststart", "-an",
+        "-g", str(FPS), "-threads", "1", "-movflags", "+faststart", *sound_out,
         path,
     ]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
@@ -901,6 +966,8 @@ def encode_alpha(name, frame_fn, frames, out_dir, crf):
     proc.stdin.close()
     if proc.wait() != 0:
         sys.exit(f"ffmpeg failed on {name}")
+    if wav:
+        os.remove(wav)
     return path
 
 
@@ -934,7 +1001,7 @@ def make_alpha_sheet(name, out_dir):
     path = os.path.join(out_dir, name + ".webp")
     subprocess.run(
         ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgba",
-         "-s", f"{sheet.shape[1]}x{sheet.shape[0]}", "-i", "-", "-c:v", "libwebp", "-quality", "82", path],
+         "-s", f"{sheet.shape[1]}x{sheet.shape[0]}", "-i", "-", "-c:v", "libwebp", "-quality", str(SHEET_QUALITY.get(name, 82)), path],
         input=sheet.tobytes(), check=True)
     return {"file": name + ".webp", "frames": count, "columns": ALPHA_SHEET_COLUMNS,
             "fps": FPS, "width": ALPHA_SHEET_W, "height": ALPHA_SHEET_H}
@@ -959,8 +1026,9 @@ def frame_count(path):
 def make_sheet(name, out_dir):
     """The effect's sheet of small frames, from its video; returns what the index says of it."""
     video = os.path.join(out_dir, name + ".mp4")
+    limit = ["-t", f"{SHEET_SECONDS[name]:.3f}"] if name in SHEET_SECONDS else []
     raw = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", video, "-vf",
+        ["ffmpeg", "-v", "error", *limit, "-i", video, "-vf",
          f"fps={SHEET_FPS},scale={SHEET_W}:{SHEET_H}:flags=area",
          "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
         capture_output=True, check=True).stdout
@@ -993,9 +1061,9 @@ def main():
         frame_fn, frames, loops = EFFECTS[name]()
         print(f"{name}: {frames} frames", file=sys.stderr)
         if name in ALPHA:
-            path = encode_alpha(name, frame_fn, frames, args.out, args.crf)
+            path = encode_alpha(name, frame_fn, frames, args.out, CRF.get(name, args.crf))
         else:
-            path = encode(name, frame_fn, frames, args.out, args.crf)
+            path = encode(name, frame_fn, frames, args.out, CRF.get(name, args.crf))
         print(f"  {path}: {os.path.getsize(path) // 1024} KB", file=sys.stderr)
     # The index lists every effect whose file is there, in the order above.
     index = []
@@ -1007,6 +1075,8 @@ def main():
         entry = {"name": name, "file": name + ".mp4", "kind": kind, "frames": frames, "fps": FPS}
         if cut is not None:
             entry["cut"] = cut
+        if name in AUDIO:
+            entry["audio"] = True
         if name in ALPHA:
             entry["alpha"] = True
             entry["sheet"] = make_alpha_sheet(name, args.out)

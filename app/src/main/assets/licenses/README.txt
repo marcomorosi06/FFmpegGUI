@@ -11,8 +11,10 @@ FFmpeg GUI
   The video effects (assets/effects/) are part of FFmpeg GUI: every frame
   is drawn by its own scripts/generate-effects.py (the 3D fists of the
   punch transitions by scripts/punch3d.py, the formulas of the math
-  effect by scripts/math_effect.py with its own stroke font), under the
-  same licence.
+  effect by scripts/math_effect.py with its own stroke font, the TV
+  break's test card, channel changes and tune by scripts/tv_break.py:
+  the music is composed and played by that script, no recording is used),
+  under the same licence.
 
 Each component below keeps its own licence. Paths are relative to this
 folder.

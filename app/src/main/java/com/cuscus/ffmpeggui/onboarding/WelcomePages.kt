@@ -51,6 +51,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.AutoAwesomeMotion
+import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Balance
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.BrightnessAuto
@@ -71,16 +73,18 @@ import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.LinearScale
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.TouchApp
-import androidx.compose.material.icons.rounded.Undo
+import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Wallpaper
@@ -108,6 +112,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -118,6 +123,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -346,6 +352,13 @@ internal fun FormatsPage(motion: PageMotion) {
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
     var chosen by rememberSaveable { mutableStateOf(OutputFormat.MP4) }
+    // The names' column is as wide as the widest name, on one line, in any language and font size.
+    val labels = CATEGORIES.map { stringResource(categoryLabel(it)) }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val labelWidth = remember(labels, measurer, density) {
+        with(density) { labels.maxOf { measurer.measure(it, SettingsRowTitle, maxLines = 1).size.width }.toDp() + 10.dp }.coerceAtMost(160.dp)
+    }
     PageColumn {
         PageHeading(
             motion,
@@ -366,10 +379,12 @@ internal fun FormatsPage(motion: PageMotion) {
                         .padding(horizontal = 14.dp, vertical = 10.dp),
                 ) {
                     Text(
-                        text = stringResource(categoryLabel(category)),
+                        text = labels[index],
                         style = SettingsRowTitle,
                         color = scheme.onSurface,
-                        modifier = Modifier.width(92.dp),
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.width(labelWidth),
                     )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f)) {
                         formats.forEach { format ->
@@ -447,10 +462,19 @@ private val FEATURES: List<Feature>
         Feature(Icons.Rounded.TextFields, R.string.welcome_feature_texts, MaterialShapes.Clover4Leaf),
         Feature(Icons.Rounded.Diamond, R.string.welcome_feature_keyframes, MaterialShapes.Diamond),
         Feature(Icons.Rounded.Palette, R.string.welcome_feature_colours, MaterialShapes.Flower),
-        Feature(Icons.Rounded.Speed, R.string.welcome_feature_speed, MaterialShapes.SoftBurst),
+        Feature(Icons.Rounded.AutoAwesomeMotion, R.string.welcome_feature_transitions, MaterialShapes.SoftBurst),
+        Feature(Icons.Rounded.AutoAwesome, R.string.welcome_feature_effects, MaterialShapes.Sunny),
         Feature(Icons.Rounded.GraphicEq, R.string.welcome_feature_sound, MaterialShapes.Cookie6Sided),
         Feature(Icons.Rounded.ClosedCaption, R.string.welcome_feature_subtitles, MaterialShapes.Cookie12Sided),
-        Feature(Icons.Rounded.Undo, R.string.welcome_feature_undo, MaterialShapes.Sunny),
+    )
+
+/** The other smart features, named under the two shown at work. */
+private val SMART_MORE: List<Feature>
+    get() = listOf(
+        Feature(Icons.Rounded.Translate, R.string.welcome_smart_translate, MaterialShapes.Cookie9Sided),
+        Feature(Icons.Rounded.RecordVoiceOver, R.string.welcome_smart_dub, MaterialShapes.Clover4Leaf),
+        Feature(Icons.Rounded.Mic, R.string.welcome_smart_stems, MaterialShapes.Flower),
+        Feature(Icons.Rounded.AutoFixHigh, R.string.welcome_smart_eraser, MaterialShapes.SoftBurst),
     )
 
 @Composable
@@ -540,11 +564,24 @@ internal fun SmartPage(
         ) {
             CutoutArt(modifier = Modifier.fillMaxWidth().height(132.dp))
         }
+        // And what else the models do, in a few words each.
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().enter(motion, 5),
+        ) {
+            val tones = listOf(
+                ToneColors(scheme.tertiaryContainer, scheme.onTertiaryContainer),
+                ToneColors(scheme.primaryContainer, scheme.onPrimaryContainer),
+                ToneColors(scheme.secondaryContainer, scheme.onSecondaryContainer),
+            )
+            SMART_MORE.forEachIndexed { index, feature -> FeatureChip(feature, tones[index % tones.size]) }
+        }
         AnimatedVisibility(
             visible = !(speechReady && cutoutReady),
             enter = expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(),
             exit = shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeOut(),
-            modifier = Modifier.enter(motion, 5),
+            modifier = Modifier.enter(motion, 6),
         ) {
             SettingsGroup(
                 title = null,

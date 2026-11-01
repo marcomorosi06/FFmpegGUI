@@ -6,6 +6,7 @@ import com.cuscus.ffmpeggui.ConversionSettings
 import com.cuscus.ffmpeggui.EditorSource
 import com.cuscus.ffmpeggui.ImageOverlay
 import com.cuscus.ffmpeggui.isPhoto
+import com.cuscus.ffmpeggui.pictureLook
 import com.cuscus.ffmpeggui.core.engine.CommandMode
 import com.cuscus.ffmpeggui.core.engine.MediaSources
 import com.cuscus.ffmpeggui.core.engine.NamedSource
@@ -14,6 +15,7 @@ import com.cuscus.ffmpeggui.core.model.EncodingSettings
 import com.cuscus.ffmpeggui.core.model.FrameExtraction
 import com.cuscus.ffmpeggui.core.model.FrameExtractionMode
 import com.cuscus.ffmpeggui.core.model.ImagePlacement
+import com.cuscus.ffmpeggui.core.model.LookSpan
 import com.cuscus.ffmpeggui.core.model.OutputFormat
 import com.cuscus.ffmpeggui.core.model.OverlayVideo
 import com.cuscus.ffmpeggui.core.model.PlacedSound
@@ -70,7 +72,8 @@ internal fun ConversionSettings.footage(): EditFootage {
     val clipIds = clips.map { it.id }.toSet()
     // A picture of a clip that the whole-video trim has cut away is not drawn.
     // (The picture itself laid on its canvas is a layer of the picture editor, not a file laid over.)
-    val pictures = imageOverlays.filter { it.uri != null && !it.isPhoto && (it.clipId == null || it.clipId in clipIds) } +
+    // A picture look has no file: it is not laid, it changes the picture (see lookSpans).
+    val pictures = imageOverlays.filter { it.uri != null && !it.isPhoto && it.pictureLook == null && (it.clipId == null || it.clipId in clipIds) } +
         // The effects laid over the cuts that an effect transition joins.
         transitionEffects(clips, wholeEffects)
     return EditFootage(files, segments, pictures)
@@ -183,6 +186,7 @@ private fun ConversionSettings.toRequestOf(
     },
     textOverlays = textOverlays.filter { it.clipId == null || it.clipId in footage.clipIds },
     imageOverlays = footage.pictures.map { it.toPlacement() },
+    looks = if (format.isImage) emptyList() else lookSpans(),
     // The picture on its canvas: placed as its layer says.
     photoPlacement = imageOverlays.firstOrNull { it.isPhoto }?.takeIf { format.isImage && imageEdit.canvas != null }?.toPlacement(),
     // The subtitle file is timed against the main file; without it there is nothing to burn.
@@ -276,6 +280,26 @@ internal fun ConversionSettings.commandMode(format: OutputFormat): CommandMode =
 private fun EditorSource.stagedName(): String {
     val name = fileName.ifBlank { "input" }
     return if (isStill) name.substringBeforeLast('.') + ".png" else name
+}
+
+/**
+ * The picture looks laid over the whole video (effects of the library that are
+ * looks), in their order, on the exported video's clock: each at its opacity
+ * as strength, with its fades and its hue.
+ */
+internal fun ConversionSettings.lookSpans(): List<LookSpan> = imageOverlays.mapNotNull { overlay ->
+    val look = overlay.pictureLook ?: return@mapNotNull null
+    if (overlay.clipId != null) return@mapNotNull null
+    val span = overlay.span
+    LookSpan(
+        look = look,
+        startMs = span.startMs,
+        endMs = span.endMs,
+        strength = overlay.opacity.coerceIn(0f, 1f),
+        fadeInSeconds = overlay.fadeInSeconds,
+        fadeOutSeconds = overlay.fadeOutSeconds,
+        hueDegrees = overlay.hue,
+    )
 }
 
 /** A picture laid over the video (or the picture itself on its canvas) as the request places it. */

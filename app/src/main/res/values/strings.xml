@@ -1699,33 +1699,37 @@
     <string name="welcome_status_later">Not set up yet</string>
 
     <string name="welcome_hello_title">Every file, made just right.</string>
-    <string name="welcome_hello_text">The power of FFmpeg, made simple and fun: convert, cut, edit and export video, sound and pictures, right here on your phone.</string>
+    <string name="welcome_hello_text">The power of FFmpeg, made simple and fun: edit and convert video, sound, photos and SVG drawings, with smart tools that work right here on your phone.</string>
 
     <string name="welcome_formats_kicker">Formats</string>
     <string name="welcome_formats_title">Any file in, the right one out</string>
-    <string name="welcome_formats_text">Videos, sounds, pictures, GIFs, even text from what is said, or your very own FFmpeg command. Tap a format to see what it is good for.</string>
+    <string name="welcome_formats_text">Videos, sounds, pictures, GIFs, SVG, even text from what is said, or your very own FFmpeg command, written with help in the command studio. Tap a format to see what it is good for.</string>
 
     <string name="welcome_editor_kicker">Editor</string>
     <string name="welcome_editor_title">A real editor, in your pocket</string>
-    <string name="welcome_editor_text">Line up clips, trim and split them, add texts, pictures, sounds and subtitles, and bring anything to life with keyframes. Every change shows in the preview at once.</string>
+    <string name="welcome_editor_text">Line up clips, join them with transitions, add texts, stickers, sounds, effects and subtitles, and bring anything to life with keyframes. Photos, sounds and SVG drawings have editors of their own.</string>
     <string name="welcome_editor_sticker">Hello!</string>
     <string name="welcome_feature_trim">Trim and split</string>
     <string name="welcome_feature_texts">Texts and stickers</string>
     <string name="welcome_feature_keyframes">Keyframes</string>
     <string name="welcome_feature_colours">Colours and framing</string>
-    <string name="welcome_feature_speed">Speed and reverse</string>
+    <string name="welcome_feature_transitions">Transitions</string>
     <string name="welcome_feature_sound">Sounds and voice</string>
     <string name="welcome_feature_subtitles">Subtitles</string>
-    <string name="welcome_feature_undo">Undo, redo</string>
+    <string name="welcome_feature_effects">Effects and looks</string>
 
     <string name="welcome_smart_kicker">Smart features</string>
     <string name="welcome_smart_title">Smart, and still offline</string>
-    <string name="welcome_smart_text">Two small AI models can work right on the phone. You download them with your browser and import them; the app checks every file before using it.</string>
+    <string name="welcome_smart_text">AI models that work right on the phone, never online. You download the ones you want with your browser and import them; the app checks every file before using it.</string>
     <string name="welcome_smart_words">Every word you say, written right on time</string>
     <string name="welcome_smart_speech_title">Subtitles from speech</string>
-    <string name="welcome_smart_speech_text">Captions word by word, styled as you like, or a transcript as .srt or .txt that you can read and correct while it plays.</string>
+    <string name="welcome_smart_speech_text">Captions word by word, styled as you like, or a transcript as .srt or .txt.</string>
     <string name="welcome_smart_cutout_title">Cut out the subject</string>
     <string name="welcome_smart_cutout_text">The background of a photo goes away in a tap: clean stickers, overlays and keys.</string>
+    <string name="welcome_smart_translate">Translated subtitles</string>
+    <string name="welcome_smart_dub">Dubbing with natural voices</string>
+    <string name="welcome_smart_stems">Voice and music apart</string>
+    <string name="welcome_smart_eraser">Magic eraser</string>
     <string name="welcome_smart_later_title">Set them up when I finish</string>
     <string name="welcome_smart_later_text">The smart features page opens at the end of the tour. It is always in the settings too.</string>
 
@@ -1968,6 +1972,8 @@
     <string name="transition_impact_shake">Impact shake</string>
     <string name="transition_punch">Punch</string>
     <string name="transition_punch_back">Punch in</string>
+    <string name="transition_technical_difficulties">Technical difficulties</string>
+    <string name="transition_tv_hint">The channel changes, a test card plays its own little tune for as long as you set, then the channel changes again. The clips\' sound gives way to it.</string>
     <string name="transition_punch_hint">A 3D fist lands on the clip and the next one takes its place. It always takes %1$s s.</string>
     <string name="transition_fist_size">Fist size</string>
     <string name="transition_duration">Duration</string>
@@ -2155,6 +2161,22 @@
     <string name="effect_bokeh">Bokeh</string>
     <string name="effect_hearts">Hearts</string>
     <string name="effect_math">Math</string>
+    <string name="look_bw">Black &amp; white</string>
+    <string name="look_old_film">Old film</string>
+    <string name="look_vhs">VHS</string>
+    <string name="look_glitch">Glitch</string>
+    <string name="look_tv_static">TV static</string>
+    <string name="look_prism">Prism</string>
+    <string name="look_shake">Shake</string>
+    <string name="look_pulse">Pulse</string>
+    <string name="look_rainbow">Rainbow</string>
+    <string name="look_strobe">Strobe</string>
+    <string name="look_pixelate">Pixelate</string>
+    <string name="look_invert">Invert</string>
+    <string name="look_mirror">Mirror</string>
+    <string name="look_glow">Glow</string>
+    <string name="effect_looks_title">Looks</string>
+    <string name="effect_looks_hint">They change the picture itself while they last, captions and stickers included, in a seamless loop.</string>
     <string name="effect_fairy">Fairy wand</string>
     <string name="effect_explosion">Explosion</string>
     <string name="effect_flash">Flash</string>

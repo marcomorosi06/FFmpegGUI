@@ -7,6 +7,7 @@
 * SVG editor: gradients, symmetry, booleans, layers, snapping
 * Blank pages, compressor
 * Picture editor: canvas, corners, layers
-* Live scrubbing, frame steps, mono theme
+* Effects, looks (glitch, VHS, B&W...)
+* 101 transitions: 3D punches, TV break
 * New format picker, settings
-* Fixes: low contrast, toolbar outline
+* Fixes

@@ -141,6 +141,9 @@ enum class TransitionKind(val xfade: String) {
     // Punches: a 3D fist laid over the clips (see companionEffect)
     PUNCH(XFADE_CUSTOM),
     PUNCH_BACK(XFADE_CUSTOM),
+
+    // The TV break: the channel changes, a test card with its tune, the channel changes again
+    TECHNICAL_DIFFICULTIES(XFADE_CUSTOM),
     ;
 
     /** True when the export draws this one with xfade's custom expression (see core.transition). */
@@ -169,6 +172,61 @@ enum class TransitionKind(val xfade: String) {
     /** The length of a kind that lasts as long as its [companionEffect], whatever is asked; null for the others. */
     val fixedMs: Long?
         get() = if (companionEffect != null) PUNCH_MS else null
+
+    /**
+     * True for the TV break: the app lays its three parts over the clips (the
+     * channel changing, the test card with its tune, the channel changing
+     * again: the effects tv_intro, tv_card and tv_outro), and the clips' own
+     * sound gives way to theirs (see [mutesClips]).
+     */
+    val tvBreak: Boolean get() = this == TECHNICAL_DIFFICULTIES
+
+    /**
+     * True when the clips' sound does not cross-fade over this one: the clip
+     * going out falls silent at its start, the one coming in is heard at its
+     * end, each over [CLIP_SOUND_FADE_MS].
+     */
+    val mutesClips: Boolean get() = tvBreak
+
+    /** The shortest this kind can last (shorter, the clips meet with a cut). */
+    val minMs: Long get() = if (tvBreak) TV_BREAK_MIN_MS else Transition.MIN_MS / 2
+
+    /** The longest this kind can be asked to last. */
+    val maxMs: Long get() = if (tvBreak) TV_BREAK_MAX_MS else Transition.MAX_MS
+
+    /** The length this kind starts with when it is chosen. */
+    val defaultMs: Long get() = if (tvBreak) TV_BREAK_DEFAULT_MS else Transition.DEFAULT_MS
+}
+
+/** The TV break's lengths: its shortest, longest and first. The longest is its card's file's (scripts/tv_break.py, CARD_SECONDS). */
+const val TV_BREAK_MIN_MS = 1_600L
+const val TV_BREAK_MAX_MS = 15_000L
+const val TV_BREAK_DEFAULT_MS = 3_000L
+
+/** How long the channel takes to change, into the card and out of it (scripts/tv_break.py, INTRO_FRAMES, OUTRO_FRAMES). */
+const val TV_BREAK_PART_MS = 700L
+
+/** How far into the break the card starts under the snow (and how far before its end it stops). */
+const val TV_BREAK_CARD_IN_MS = 450L
+
+/** How quickly the clips' sound falls silent and comes back around a kind that [TransitionKind.mutesClips]. */
+const val CLIP_SOUND_FADE_MS = 250L
+
+/**
+ * How much of each clip's sound is heard [playedMs] into a transition of
+ * [kind] lasting [overlapMs]: the clip going out's, the one coming in's.
+ * They cross-fade, as the export's acrossfade does, unless the kind mutes them.
+ */
+fun clipSoundShares(kind: TransitionKind?, playedMs: Double, overlapMs: Long): Pair<Float, Float> {
+    if (overlapMs <= 0L) return 1f to 0f
+    if (kind?.mutesClips == true) {
+        val fade = CLIP_SOUND_FADE_MS.toDouble()
+        val outgoing = 1.0 - (playedMs / fade).coerceIn(0.0, 1.0)
+        val incoming = ((playedMs - (overlapMs - CLIP_SOUND_FADE_MS)) / fade).coerceIn(0.0, 1.0)
+        return outgoing.toFloat() to incoming.toFloat()
+    }
+    val progress = (playedMs / overlapMs).coerceIn(0.0, 1.0).toFloat()
+    return (1f - progress) to progress
 }
 
 /** How long a punch lasts: as long as its fist's effect (scripts/punch3d.py, DURATION). */
@@ -223,9 +281,9 @@ data class Transition(
          * that the two transitions of a clip never meet, and 0 when that is too
          * short to be seen.
          */
-        fun effectiveMs(requestedMs: Long, outgoingMs: Long, incomingMs: Long): Long {
-            val ms = min(requestedMs.coerceIn(0L, MAX_MS), min(outgoingMs, incomingMs) / 2)
-            return if (ms < MIN_MS / 2) 0L else ms
+        fun effectiveMs(requestedMs: Long, outgoingMs: Long, incomingMs: Long, kind: TransitionKind? = null): Long {
+            val ms = min(requestedMs.coerceIn(0L, kind?.maxMs ?: MAX_MS), min(outgoingMs, incomingMs) / 2)
+            return if (ms < (kind?.minMs ?: (MIN_MS / 2))) 0L else ms
         }
     }
 }
@@ -242,5 +300,5 @@ fun transitionLengths(transitions: List<Transition?>, playedMs: List<Long?>): Li
         if (transition.isEffect) return@map 0L
         val a = playedMs[i] ?: return@map 0L
         val b = playedMs[i + 1] ?: return@map 0L
-        Transition.effectiveMs(transition.requestedMs, a, b)
+        Transition.effectiveMs(transition.requestedMs, a, b, transition.kind)
     }

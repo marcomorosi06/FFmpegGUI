@@ -2,6 +2,7 @@ package com.cuscus.ffmpeggui.core.preview
 
 import com.cuscus.ffmpeggui.core.model.SpeedCurve
 import com.cuscus.ffmpeggui.core.model.Transition
+import com.cuscus.ffmpeggui.core.model.clipSoundShares
 import com.cuscus.ffmpeggui.core.model.transitionLengths
 
 /**
@@ -215,6 +216,10 @@ class PreviewTimeline(
         val progress: Float,
         val incomingOffsetMs: Long,
         val incomingPlayedMs: Long,
+        /** How much of the clip going out's sound is heard (see clipSoundShares). */
+        val outgoingShare: Float = 1f - progress,
+        /** How much of the clip coming in's sound is heard. */
+        val incomingShare: Float = progress,
     )
 
     /** The transition on screen at [outputMs], or null when one clip alone is. */
@@ -231,12 +236,15 @@ class PreviewTimeline(
                 val played = joined - from
                 val consumed = incoming.consumedOffsetMs(played).coerceIn(0.0, incoming.lengthMs.toDouble())
                 val offset = if (incoming.reversed) incoming.lengthMs - consumed else consumed
+                val (outgoingShare, incomingShare) = clipSoundShares(timings[gap].transition?.kind, played, overlap)
                 return TransitionPoint(
                     outgoing = gap,
                     incoming = gap + 1,
                     progress = (played / overlap).toFloat().coerceIn(0f, 1f),
                     incomingOffsetMs = Math.round(offset).coerceIn(0L, incoming.lengthMs),
                     incomingPlayedMs = Math.round(played),
+                    outgoingShare = outgoingShare,
+                    incomingShare = incomingShare,
                 )
             }
         }

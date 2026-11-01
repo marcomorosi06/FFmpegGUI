@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
+import com.cuscus.ffmpeggui.core.model.PictureLook
 import com.cuscus.ffmpeggui.core.project.Json
 import com.cuscus.ffmpeggui.core.project.JsonText
 import java.io.File
@@ -27,6 +28,11 @@ import java.util.concurrent.ConcurrentHashMap
  * brings a different one). The picker shows each from a sheet of small frames
  * (a JPEG next to it, a WebP for one with its opacity), so that no video is
  * decoded to show it.
+ *
+ * The picture looks (black and white, a glitch, TV static..., see
+ * PictureLook) are effects of the library too, after the others: they have
+ * no file (the export draws them with FFmpeg's filters, the preview with a
+ * shader) and show on a little picture of their own (LookFrames).
  */
 
 /** One effect of the library. */
@@ -46,6 +52,10 @@ data class EffectInfo(
     val alpha: Boolean = false,
     /** True when it belongs to a transition told as layers (see TransitionKind.companionEffect), not offered alone. */
     val companion: Boolean = false,
+    /** The picture look it is, with no file of its own; null for an effect drawn in a file. */
+    val look: PictureLook? = null,
+    /** True when its file carries a sound of its own (the TV break's parts), heard where it is laid. */
+    val audio: Boolean = false,
 ) {
     /** How long it lasts (one turn of a loop). */
     val lengthMs: Long get() = if (fps > 0) frames * 1000L / fps else 0L
@@ -84,13 +94,29 @@ object EffectLibrary {
         }
     }
 
-    /** The effects that loop, in the library's order. */
-    val loops: List<EffectInfo> get() = index.filter { !it.transition }
+    /** The effects that loop, in the library's order, then the picture looks. */
+    val loops: List<EffectInfo> get() = index.filter { !it.transition } + looks
+
+    /** The picture looks, as effects of the library (see PictureLook). */
+    val looks: List<EffectInfo> = PictureLook.entries.map { look ->
+        EffectInfo(
+            name = look.id,
+            file = "${look.id}.look",
+            transition = false,
+            frames = Math.round(look.periodSeconds * LOOK_FPS).toInt(),
+            fps = LOOK_FPS,
+            cutMs = 0L,
+            look = look,
+        )
+    }
+
+    /** The rate a look's loop is counted at (it has no frames of its own). */
+    private const val LOOK_FPS = 30
 
     /** The transitions offered on their own, in the library's order. */
     val transitions: List<EffectInfo> get() = index.filter { it.transition && !it.companion }
 
-    fun info(name: String?): EffectInfo? = name?.let { n -> index.firstOrNull { it.name == n } }
+    fun info(name: String?): EffectInfo? = name?.let { n -> index.firstOrNull { it.name == n } ?: looks.firstOrNull { it.name == n } }
 
     private fun dir(): File? = appContext?.let { File(it.filesDir, ASSETS) }
 
@@ -100,7 +126,11 @@ object EffectLibrary {
         return uri.scheme == "file" && uri.path.orEmpty().startsWith(dir.path + "/")
     }
 
-    /** Where the copy of effect [name] is (see [ensure]); null for an unknown effect. */
+    /**
+     * Where the copy of effect [name] is (see [ensure]); null for an unknown
+     * effect. A picture look has no file: its place is only a name the
+     * library owns (see [owns]), never read.
+     */
     fun uri(name: String): Uri? {
         val effect = info(name) ?: return null
         val dir = dir() ?: return null
@@ -116,6 +146,8 @@ object EffectLibrary {
     fun ensure(name: String): Boolean {
         val context = appContext ?: return false
         val effect = info(name) ?: return false
+        // A picture look has nothing to copy.
+        if (effect.look != null) return true
         val dir = dir() ?: return false
         val target = File(dir, effect.file)
         return try {
@@ -168,7 +200,7 @@ object EffectLibrary {
 
     /**
      * The index as the generator writes it: a list of {name, file, kind, frames,
-     * fps, cut, sheet, alpha}, kind one of "loop", "transition" and "companion".
+     * fps, cut, sheet, alpha, audio}, kind one of "loop", "transition" and "companion".
      */
     internal fun parse(text: String): List<EffectInfo> {
         val list = JsonText.parse(text) as? Json.Arr ?: return emptyList()
@@ -197,6 +229,7 @@ object EffectLibrary {
                 },
                 alpha = o.bool("alpha", false),
                 companion = companion,
+                audio = o.bool("audio", false),
             ).takeIf { it.frames > 0 }
         }
     }

@@ -93,9 +93,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import com.cuscus.ffmpeggui.core.model.TV_BREAK_CARD_IN_MS
 import com.cuscus.ffmpeggui.core.model.Transition
 import com.cuscus.ffmpeggui.effects.EffectInfo
 import com.cuscus.ffmpeggui.effects.EffectLibrary
+import com.cuscus.ffmpeggui.effects.TV_CARD
+import com.cuscus.ffmpeggui.effects.TV_INTRO
+import com.cuscus.ffmpeggui.effects.TV_OUTRO
 import com.cuscus.ffmpeggui.core.model.TransitionKind
 import com.cuscus.ffmpeggui.core.preview.MaskShape
 import com.cuscus.ffmpeggui.core.preview.PartLook
@@ -389,7 +393,10 @@ enum class TransitionFamily(@StringRes val labelRes: Int, val kinds: List<Transi
     ),
     GLITCH(
         R.string.transition_family_glitch,
-        listOf(TransitionKind.GLITCH, TransitionKind.RGB_SPLIT, TransitionKind.WAVE, TransitionKind.TV_NOISE, TransitionKind.PIXELATE),
+        listOf(
+            TransitionKind.TECHNICAL_DIFFICULTIES,
+            TransitionKind.GLITCH, TransitionKind.RGB_SPLIT, TransitionKind.WAVE, TransitionKind.TV_NOISE, TransitionKind.PIXELATE,
+        ),
     ),
     BLUR(
         R.string.transition_family_blur,
@@ -535,6 +542,7 @@ fun transitionLabel(kind: TransitionKind): Int = when (kind) {
     TransitionKind.IMPACT_SHAKE -> R.string.transition_impact_shake
     TransitionKind.PUNCH -> R.string.transition_punch
     TransitionKind.PUNCH_BACK -> R.string.transition_punch_back
+    TransitionKind.TECHNICAL_DIFFICULTIES -> R.string.transition_technical_difficulties
 }
 
 // ---------------------------------------------------------------------------
@@ -565,7 +573,7 @@ internal fun TransitionContent(
     val durationMs = transition?.durationMs ?: Transition.DEFAULT_MS
     val motion = MaterialTheme.motionScheme
     // Every tile plays its transition at the length chosen, so that the slider is seen at once.
-    val loop = rememberTransitionLoop(durationMs)
+    val loop = rememberTransitionLoop(durationMs.coerceAtMost(Transition.MAX_MS))
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         PanelHint(stringResource(if (hasNext) R.string.transition_hint else R.string.transition_last_clip))
         ConnectedChoiceGroup(
@@ -624,9 +632,15 @@ internal fun TransitionContent(
                                     enabled = hasNext,
                                     loop = loop,
                                     onClick = {
-                                        // A fist is made ready for the preview and the export.
-                                        choice.kind.companionEffect?.let { name -> effectScope.launch(Dispatchers.IO) { EffectLibrary.ensure(name) } }
-                                        onTransition(Transition(choice.kind, durationMs, size = transition?.size ?: Transition.MAX_SIZE))
+                                        val kind = choice.kind
+                                        // A fist, a TV break's parts are made ready for the preview and the export.
+                                        val parts = listOfNotNull(kind.companionEffect) + (if (kind.tvBreak) listOf(TV_INTRO, TV_CARD, TV_OUTRO) else emptyList())
+                                        if (parts.isNotEmpty()) effectScope.launch(Dispatchers.IO) { parts.forEach { EffectLibrary.ensure(it) } }
+                                        // A TV break starts at its own length; going from one to another kind, the length
+                                        // keeps within the new kind's bounds.
+                                        val sameBounds = transition?.isEffect == false && transition.kind.tvBreak == kind.tvBreak
+                                        val ms = if (sameBounds) durationMs else kind.defaultMs
+                                        onTransition(Transition(kind, ms.coerceIn(kind.minMs, kind.maxMs), size = transition?.size ?: Transition.MAX_SIZE))
                                     },
                                 )
                                 is TransitionChoice.Effect -> EffectTransitionTile(
@@ -683,22 +697,27 @@ internal fun TransitionContent(
                 }
             }
         } else PanelCard {
+            // A TV break has bounds of its own (long enough for its card, and as long as its tune).
+            val kind = transition?.takeIf { !it.isEffect }?.kind
+            val leastMs = if (kind?.tvBreak == true) kind.minMs else Transition.MIN_MS
+            val mostMs = kind?.maxMs ?: Transition.MAX_MS
+            if (kind?.tvBreak == true && hasNext) PanelHint(stringResource(R.string.transition_tv_hint))
             // The slider reaches as far as these two clips allow (half of the shorter one).
-            val roomMs = limitMs.coerceAtMost(Transition.MAX_MS)
-            val room = roomMs >= Transition.MIN_MS
-            val endMs = if (room) roomMs.coerceAtLeast(Transition.MIN_MS + 100L) else Transition.MAX_MS
+            val roomMs = limitMs.coerceAtMost(mostMs)
+            val room = roomMs >= leastMs
+            val endMs = if (room) roomMs.coerceAtLeast(leastMs + 100L) else mostMs
             ValueSlider(
                 label = stringResource(R.string.transition_duration),
-                valueText = stringResource(R.string.value_seconds_decimal, decimal((if (transition != null && room) effectiveMs.coerceAtLeast(Transition.MIN_MS) else durationMs) / 1000f)),
-                value = (durationMs.coerceIn(Transition.MIN_MS, endMs)) / 1000f,
+                valueText = stringResource(R.string.value_seconds_decimal, decimal((if (transition != null && room) effectiveMs.coerceAtLeast(leastMs) else durationMs) / 1000f)),
+                value = (durationMs.coerceIn(leastMs, endMs)) / 1000f,
                 onValueChange = { seconds ->
-                    val ms = (Math.round(seconds * 10f) * 100L).coerceIn(Transition.MIN_MS, endMs)
+                    val ms = (Math.round(seconds * 10f) * 100L).coerceIn(leastMs, endMs)
                     transition?.let { onTransition(it.copy(durationMs = ms)) }
                 },
-                valueRange = Transition.MIN_MS / 1000f..endMs / 1000f,
+                valueRange = leastMs / 1000f..endMs / 1000f,
                 icon = Icons.Rounded.Timer,
-                defaultValue = Transition.DEFAULT_MS.coerceAtMost(endMs) / 1000f,
-                startLabel = stringResource(R.string.value_seconds_decimal, decimal(Transition.MIN_MS / 1000f)),
+                defaultValue = (kind?.defaultMs ?: Transition.DEFAULT_MS).coerceIn(leastMs, endMs) / 1000f,
+                startLabel = stringResource(R.string.value_seconds_decimal, decimal(leastMs / 1000f)),
                 endLabel = stringResource(R.string.value_seconds_decimal, decimal(endMs / 1000f)),
                 enabled = transition != null && hasNext && room,
             )
@@ -823,8 +842,8 @@ private fun TransitionTile(
                         Icon(Icons.Rounded.Block, contentDescription = null, tint = scheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
                     }
                 } else {
-                    // A punch plays at the length of its blow, whatever the slider says.
-                    val fixed = kind.fixedMs
+                    // A punch plays at the length of its blow, a TV break at its own, whatever the slider says.
+                    val fixed = kind.fixedMs ?: if (kind.tvBreak) kind.defaultMs else null
                     val progress = if (fixed != null) rememberTransitionLoop(fixed) else loop
                     TransitionLayers(
                         kind = kind,
@@ -833,6 +852,7 @@ private fun TransitionTile(
                         incoming = { TileScene(first = false) },
                     )
                     kind.companionEffect?.let { name -> TileCompanion(kind, name, progress, fixed ?: Transition.DEFAULT_MS) }
+                    if (kind.tvBreak) TileTvBreak(progress, fixed ?: kind.defaultMs)
                 }
             }
             // The check pops in and out with a spring.
@@ -980,6 +1000,37 @@ private fun BoxScope.TileCompanion(kind: TransitionKind, name: String, progress:
         val fileMs = cutMs + ((p - kind.companionSwitch) * lengthMs).toLong()
         if (fileMs < 0L || fileMs >= loaded.lengthMs) return@Canvas
         drawSheetFrame(loaded, bitmap, (fileMs * loaded.about.fps / 1000L).toInt(), null)
+    }
+}
+
+/**
+ * A TV break on a tile, from its parts' small frames, in step with the tile's
+ * [progress] through [lengthMs]: the channel changing, the card, the channel
+ * changing again, laid as the video lays them (see transitionEffects).
+ */
+@Composable
+private fun BoxScope.TileTvBreak(progress: () -> Float, lengthMs: Long) {
+    val intro = rememberSheet(TV_INTRO)
+    val card = rememberSheet(TV_CARD)
+    val outro = rememberSheet(TV_OUTRO)
+    val introImage = remember(intro) { intro?.bitmap?.asImageBitmap() }
+    val cardImage = remember(card) { card?.bitmap?.asImageBitmap() }
+    val outroImage = remember(outro) { outro?.bitmap?.asImageBitmap() }
+    Canvas(modifier = Modifier.matchParentSize().zIndex(3f).clipToBounds()) {
+        val p = progress()
+        if (p <= 0f || p >= 1f) return@Canvas
+        val ms = (p * lengthMs).toLong()
+        if (card != null && cardImage != null && ms >= TV_BREAK_CARD_IN_MS && ms < lengthMs - TV_BREAK_CARD_IN_MS) {
+            val frame = ((ms - TV_BREAK_CARD_IN_MS) * card.about.fps / 1000L % card.about.frames).toInt()
+            drawSheetFrame(card, cardImage, frame, null)
+        }
+        if (intro != null && introImage != null && ms < intro.lengthMs) {
+            drawSheetFrame(intro, introImage, (ms * intro.about.fps / 1000L).toInt(), null)
+        }
+        val outroFrom = lengthMs - (outro?.lengthMs ?: 0L)
+        if (outro != null && outroImage != null && ms >= outroFrom) {
+            drawSheetFrame(outro, outroImage, ((ms - outroFrom) * outro.about.fps / 1000L).toInt(), null)
+        }
     }
 }
 

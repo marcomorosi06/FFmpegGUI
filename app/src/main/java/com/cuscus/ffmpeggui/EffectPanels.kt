@@ -82,6 +82,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.cuscus.ffmpeggui.core.model.PictureLook
 import com.cuscus.ffmpeggui.core.preview.hueColorMatrix
 import com.cuscus.ffmpeggui.effects.EffectInfo
 import com.cuscus.ffmpeggui.effects.EffectLibrary
@@ -116,6 +117,20 @@ fun effectLabelRes(name: String): Int? = when (name) {
     "bokeh" -> R.string.effect_bokeh
     "hearts" -> R.string.effect_hearts
     "math" -> R.string.effect_math
+    "bw" -> R.string.look_bw
+    "old_film" -> R.string.look_old_film
+    "vhs" -> R.string.look_vhs
+    "glitch" -> R.string.look_glitch
+    "tv_static" -> R.string.look_tv_static
+    "prism" -> R.string.look_prism
+    "shake" -> R.string.look_shake
+    "pulse" -> R.string.look_pulse
+    "rainbow" -> R.string.look_rainbow
+    "strobe" -> R.string.look_strobe
+    "pixelate" -> R.string.look_pixelate
+    "invert" -> R.string.look_invert
+    "mirror" -> R.string.look_mirror
+    "glow" -> R.string.look_glow
     "fairy" -> R.string.effect_fairy
     "explosion" -> R.string.effect_explosion
     "flash" -> R.string.effect_flash
@@ -172,6 +187,12 @@ private const val SHARP_SHEET_WIDTH = 400
  */
 @Composable
 fun EffectFrames(name: String, hue: Float, modifier: Modifier = Modifier, running: Boolean = true) {
+    // A picture look shows on a little picture of its own.
+    val look = PictureLook.of(name)
+    if (look != null) {
+        LookFrames(look, hue, modifier, running)
+        return
+    }
     val sheet = rememberSheet(name)
     val filter = remember(hue) { hueColorMatrix(hue)?.let { ColorFilter.colorMatrix(ColorMatrix(it)) } }
     val image = remember(sheet) { sheet?.bitmap?.asImageBitmap() }
@@ -341,7 +362,32 @@ internal fun EffectPickerSheet(onPick: (String) -> Unit, onDismiss: () -> Unit) 
                     }
                 }
             }
-            items(EffectLibrary.loops, key = { it.name }) { effect ->
+            items(EffectLibrary.loops.filter { it.look == null }, key = { it.name }) { effect ->
+                EffectTile(
+                    effect = effect,
+                    label = labels[effect.name] ?: effect.name,
+                    selected = false,
+                    width = 200.dp,
+                    onClick = { onPick(effect.name) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            // The picture looks: they change the picture itself, under their own heading.
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 2.dp)) {
+                    Text(
+                        stringResource(R.string.effect_looks_title),
+                        style = MaterialTheme.typography.titleLargeEmphasized,
+                        color = scheme.onSurface,
+                    )
+                    Text(
+                        stringResource(R.string.effect_looks_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+            }
+            items(EffectLibrary.looks, key = { it.name }) { effect ->
                 EffectTile(
                     effect = effect,
                     label = labels[effect.name] ?: effect.name,
@@ -410,7 +456,13 @@ internal fun EffectLookContent(
                 .clip(RoundedCornerShape(32.dp))
                 .background(Color.Black),
         ) {
-            EffectFrames(name, hue, modifier = Modifier.fillMaxSize().graphicsLayer { alpha = opacity.coerceIn(0.05f, 1f) })
+            val look = PictureLook.of(name)
+            if (look != null) {
+                // A look at its strength, over its picture as it is.
+                LookFrames(look, hue, modifier = Modifier.fillMaxSize(), strength = opacity.coerceIn(0f, 1f))
+            } else {
+                EffectFrames(name, hue, modifier = Modifier.fillMaxSize().graphicsLayer { alpha = opacity.coerceIn(0.05f, 1f) })
+            }
         }
         PanelCard {
             ValueSlider(

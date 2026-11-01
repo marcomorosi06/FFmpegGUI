@@ -350,7 +350,10 @@ fun PreviewContainer(
         value = subtitleFonts?.let { fonts -> withContext(Dispatchers.IO) { fonts.of(subtitleStyle.font, subtitleStyle.bold) } }
     }
     val styledSubtitles = spoken || (subtitleFileStyled && timelineCues.isNotEmpty())
-    val sounds = remember(audioClips, imageOverlays, stemSounds) { previewSounds(audioClips, imageOverlays) + stemSounds }
+    // With the effects laid over the cuts of the effect transitions, as the export lays them (a TV
+    // break's parts have their own sound).
+    val cutEffects = remember(shownClips, whole) { transitionEffects(shownClips, whole) }
+    val sounds = remember(audioClips, imageOverlays, cutEffects, stemSounds) { previewSounds(audioClips, imageOverlays + cutEffects) + stemSounds }
 
     // -- Player -----------------------------------------------------------------------
     val player = remember { EditorPreviewPlayer(context) }
@@ -549,9 +552,9 @@ fun PreviewContainer(
             overlays = true,
         )
     }
-    // With the effects laid over the cuts of the effect transitions, as the export lays them.
-    val cutEffects = remember(shownClips, whole) { transitionEffects(shownClips, whole) }
     val wholeImages = if (filtersApply) imageOverlays.filter { it.clipId == null } + cutEffects else emptyList()
+    // The picture looks (black and white, a glitch...): over the picture with its captions and pictures.
+    val wholeLooks = remember(wholeImages) { wholeImages.filter { it.pictureLook != null } }
 
     // -- Layout -----------------------------------------------------------------------
     run {
@@ -651,6 +654,14 @@ fun PreviewContainer(
                     onDispose { wholeScene.unregister(VIDEO_SNAP_ID) }
                 }
 
+                // The picture and what lies on it, through the picture looks on screen now (none
+                // while cropping: the crop's handles are in there).
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pictureLooks(if (cropOverlayShown) emptyList() else wholeLooks, outputNow),
+                    contentAlignment = Alignment.Center,
+                ) {
                 // The whole video's picture, as cropped, where it lies on its canvas.
                 Box(
                     modifier = Modifier
@@ -793,6 +804,7 @@ fun PreviewContainer(
                             scene = wholeScene,
                         )
                     }
+                }
                 }
 
                 // Styled subtitles: on the whole output frame (the canvas included), as libass draws them.

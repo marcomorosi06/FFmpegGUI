@@ -1159,13 +1159,15 @@ class ConversionViewModel(
             val ready = withContext(Dispatchers.IO) { EffectLibrary.ensure(name) }
             val uri = EffectLibrary.uri(name)
             if (!ready || uri == null || _inputUri.value != project) return@launch
+            val info = EffectLibrary.info(name)
             val overlay = ImageOverlay(
                 uri = uri,
-                fileName = "$name.mp4",
+                fileName = info?.file ?: "$name.mp4",
                 x = 0f,
                 y = 0f,
                 scaleW = 1f,
-                blend = LayerBlend.SCREEN,
+                // Light on black is screened; a picture look changes the picture itself.
+                blend = if (info?.look != null) LayerBlend.NORMAL else LayerBlend.SCREEN,
                 effect = name,
             ).withSpan(TimeSpan(0L, EFFECT_LENGTH_MS).movedTo(atOutputMs))
             mutate { it.copy(imageOverlays = it.imageOverlays + overlay.copy(layer = it.effectLayer())) }
@@ -1179,7 +1181,9 @@ class ConversionViewModel(
             val ready = withContext(Dispatchers.IO) { EffectLibrary.ensure(name) }
             val uri = EffectLibrary.uri(name)
             if (!ready || uri == null) return@launch
-            updateImage(id, null) { if (it.isEffect) it.copy(uri = uri, fileName = "$name.mp4", effect = name) else it }
+            val info = EffectLibrary.info(name)
+            val blend = if (info?.look != null) LayerBlend.NORMAL else LayerBlend.SCREEN
+            updateImage(id, null) { if (it.isEffect) it.copy(uri = uri, fileName = info?.file ?: "$name.mp4", effect = name, blend = blend) else it }
         }
     }
 

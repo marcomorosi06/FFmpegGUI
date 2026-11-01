@@ -47,6 +47,12 @@ data class ConversionRequest(
     /** One entry per picture overlay, in stacking order; bound like [textOverlays]. */
     val imageOverlays: List<ImagePlacement> = emptyList(),
     /**
+     * The picture looks laid over the whole video (black and white, a glitch...,
+     * see PictureLook), on the exported video's clock: each changes everything
+     * under it, after the captions and pictures, in this order.
+     */
+    val looks: List<LookSpan> = emptyList(),
+    /**
      * Index of the source the subtitle file is timed against, or null when no
      * subtitles are burnt in. The lines follow that footage through every cut.
      */

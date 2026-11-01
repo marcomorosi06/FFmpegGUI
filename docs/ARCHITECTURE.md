@@ -1079,6 +1079,87 @@ its sheet, the frame of the file at the output clock (`AlphaEffectFrames`),
 so it never drifts from the clips; the tiles draw it over their two pictures
 (`TileCompanion`). Below Android 13 the clips cross-fade under the fist.
 
+## The TV break
+
+`TransitionKind.TECHNICAL_DIFFICULTIES` is an old TV losing its signal: the
+channel changes (a click, the picture tears, snow and "CH 03"), a test card
+("TECHNICAL DIFFICULTIES / PLEASE STAND BY") plays a little lounge tune, then
+the channel changes again (snow, "CH 04", the screen coming on from a bright
+line onto the next clip). It lasts as long as asked, within bounds of its own
+(`minMs` 1.6 s, `maxMs` 15 s, `defaultMs` 3 s; `Transition.effectiveMs` takes
+the kind), and the transitions panel's slider follows them.
+
+**Its parts.** `scripts/tv_break.py` draws and composes everything: the card
+(a test-card field, a plate with the title in its own stroke-font capitals, a
+little TV set, an old screen's hum bar, flicker, grain, scan lines and curved
+glass), the channel changes (with opacity, packed as the fists are) and the
+sound. The tune is composed there (eight bars at 120 beats a minute in F:
+vibraphone melody, electric piano, walking upright bass, brushes) and played
+by small synthesizers; every note ringing past the loop's end, and the room's
+echo, is wrapped round to its beginning, so it loops seamlessly. The library
+has three companion effects with their own sound (`"audio": true`):
+`tv_intro`, `tv_card` (16 s, the card's loop and the tune) and `tv_outro`.
+
+**On the video.** The recipe is a plain cut halfway, always under the card.
+`transitionEffects` lays the three parts over the stretch the clips overlap
+(`tvBreak`): the card from `TV_BREAK_CARD_IN_MS` in to as far before the end
+(its tune fading in and out under the snow), the channel changes over the two
+ends (`TV_BREAK_PART_MS`, shorter on a sped-up video). Each is a video laid
+over the whole video with `hasAudio`, so its sound is mixed in the export
+(`overlaySounds`) and played in the preview (`previewSounds`, which now
+takes the cut effects too). The clips' own sound gives way
+(`TransitionKind.mutesClips`): in the export the joined sound fades out over
+`CLIP_SOUND_FADE_MS` at the break's start, the next clip's fades in over its
+end, and `acrossfade` adds them with `nofade` curves; the preview's player
+follows `clipSoundShares`. In the preview the opaque card plays through its
+own player with the normal blend (`EffectSurface` screens only light on
+black), the channel changes from their frames (`AlphaEffectFrames`).
+
+## Picture looks
+
+Black and white, old film, VHS, glitch, TV static, prism, shake, pulse,
+rainbow, strobe, pixelate, invert, mirror and glow (`PictureLook`,
+`core/model/PictureLook.kt`) are effects of the library too, offered under
+their own heading in the gallery: an `ImageOverlay` whose `effect` is the
+look's name, on the effects lane, with its strength (opacity), fades and hue.
+They have no file (`EffectLibrary.looks`; `ensure` has nothing to copy, the
+`uri` is only a name the library owns): instead of being laid over the video
+they change the picture itself, with its captions and pictures, while they
+last.
+
+**One description, two drawings.** `core/look/Looks.kt` tells each look as
+FFmpeg filters (`lookSpanGraph`) and as an AGSL shader (`lookShader`), from
+the same numbers. Whatever moves is a function of the time since the look
+started, modulo its period (`PictureLook.periodSeconds`), so a look loops
+seamlessly for as long as it lasts; noise is new on every frame. Random
+choices (a glitch's bands and bursts, an old film's scratches) come from one
+hash, `fract(sin(0.37 x + 0.3) * 43.758)`, whose numbers stay small enough
+for a phone's single-precision floats to agree with FFmpeg's doubles. A time
+that falls right on a step of the loop gets 0.1 ms added, so that every turn
+of the loop counts it in the same step.
+
+**Export.** `ConversionRequest.looks` (from `lookSpans` in `RequestMapping`)
+are drawn after the captions and pictures and before the whole video's frame
+rate and fades (`videoGraph`). Every filter runs on the whole video and is
+switched on only while the look lasts (timeline `enable`): nothing is cut out
+and put back, so no frame waits in a queue for the moment a look starts. The
+moving parts use expressions of `t` (`eq`, `hue`, `overlay`, `crop`); shake
+and pulse use `perspective`, which only counts frames, on a branch made
+steady with `fps` and laid back with `overlay`. Bands and scratches are small
+`color` sources laid with `shortest=1` (they never end). A look below full
+strength, fading or turned is drawn on a copy, given an alpha (`lut`, `fade`)
+and laid back over the picture.
+
+**Preview.** `pictureLooks` (`app/.../PictureLooks.kt`) puts the looks on screen
+now on the box that holds the picture and what lies on it, as one
+`RenderEffect`: each look's shader from Android 13 (uniforms `uSize`, `uTime`,
+`uStrength`, `uHue`), chained in order; on Android 12 the looks that only
+change colours (black and white, old film's sepia, invert, rainbow, strobe)
+as colour matrices; before, nothing. The gallery's tiles and the look panel
+draw a look on a little sunset of their own (`LookFrames`). Tests:
+`LookGraphTest` (labels, windows, loops, the hash in single precision),
+`LookExportTest`.
+
 ## Transitions told as layers
 
 The first 25 `TransitionKind`s are FFmpeg's `xfade` transitions, drawn in the
@@ -1279,6 +1360,8 @@ later ask for the notification permission at the first export.
 | shape layers                                | `app/.../ShapeLayers.kt`, `app/.../ShapePanels.kt`, `updateShape` in the view model |
 | transitions between clips                   | `core/model/Transition.kt`, `core/transition/` (recipes, shaders, export graph), `transitionJoin` in `CommandBuilder.kt`, `app/.../TransitionPanels.kt` |
 | the video effects and effect transitions    | `scripts/generate-effects.py`, `scripts/punch3d.py` (the punches' 3D fist), `scripts/math_effect.py` (the math formulas), `app/.../effects/`, `app/.../EffectPanels.kt`, `app/.../EffectOverlays.kt` |
+| the TV break (technical difficulties) | `scripts/tv_break.py`, `app/.../effects/TransitionEffects.kt` (`tvBreak`), `core/model/Transition.kt` |
+| the picture looks (black and white, glitch...) | `core/model/PictureLook.kt`, `core/look/Looks.kt`, `app/.../PictureLooks.kt` |
 | the SVG editor                              | `core/vector/svg/`, `app/.../svgedit/`               |
 | subtitle translation (models, text, UI)     | `core/translate/`, `app/.../translate/`              |
 | dubbing in the subtitles' language          | `core/dub/`, `app/.../dub/`                          |
