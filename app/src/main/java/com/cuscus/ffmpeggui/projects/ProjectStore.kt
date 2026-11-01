@@ -367,7 +367,9 @@ class ProjectStore(
             thumbnailStamp = thumb?.lastModified() ?: 0L,
             clips = s.timeline.clips.size,
             durationMs = durationMs.toLong(),
-            missingFiles = ProjectJson.uris(s).count { !readable(it) },
+            // The app's own effects are always there (copied again when the app starts; a picture
+            // look has no file at all): never missing.
+            missingFiles = ProjectJson.uris(s).count { !EffectLibrary.owns(it) && !readable(it) },
             copiedFiles = File(dir, MEDIA).listFiles()?.count { !it.name.startsWith(".") } ?: 0,
             bytes = sizeOf(dir),
             lastExport = project.lastExport?.takeIf { File(it).isFile },
