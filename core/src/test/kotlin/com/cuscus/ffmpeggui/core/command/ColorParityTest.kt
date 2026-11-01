@@ -45,7 +45,7 @@ class ColorParityTest {
     }
 
     @Test
-    fun `the preview at contrast zero is flat: every channel ignores the picture`() {
+    fun `the preview at contrast zero is flat, every channel ignores the picture`() {
         val m = eqColorMatrix(0f, 0f, 1f)
         // With saturation 1 the luma gain is -1 and the channel's own weight 1: what is left is chroma, no luma.
         val grey = floatArrayOf(128f, 128f, 128f)

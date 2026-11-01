@@ -187,9 +187,9 @@ object ModelJson {
                     effect = t.stringOrNull("effect"),
                     size = t.float("size", 1f),
                     sound = t.bool("sound", true),
-                    soundVolume = t.float("soundVolume", 1f).coerceIn(0f, Transition.MAX_VOLUME),
+                    soundVolume = t.float("soundVolume", 1f),
                     music = t.bool("music", true),
-                    musicVolume = t.float("musicVolume", 1f).coerceIn(0f, Transition.MAX_VOLUME),
+                    musicVolume = t.float("musicVolume", 1f),
                 )
             },
             hdrLook = o.doubleOrNull("hdrLook", d.hdrLook?.toDouble())?.toFloat(),

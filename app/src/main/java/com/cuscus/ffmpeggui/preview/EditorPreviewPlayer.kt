@@ -550,7 +550,13 @@ class EditorPreviewPlayer(context: Context) {
         // boundary into the next clip, which it plays on its own); otherwise seek.
         val playerMs = playerMediaMs()
         val playerOutputMs = timeline.outputMs(playerMs).toDouble()
-        return if (abs(playerOutputMs - outputClockMs) <= DRIFT_MS) {
+        // A player that falls behind (a heavy file, a decoder starting after a seek) is
+        // waited for: the clock goes back to it. Seeking it to the clock instead would
+        // make it start decoding again from a key frame, fall behind again, and be sought
+        // again: the picture would never move and the sound would start over and over.
+        val drift = playerOutputMs - outputClockMs
+        val behind = drift < 0 && -drift <= MAX_LAG_MS && videoPlayer.playbackState == Player.STATE_READY
+        return if (abs(drift) <= DRIFT_MS || behind) {
             outputClockMs = playerOutputMs
             playerMs
         } else {
@@ -613,8 +619,10 @@ class EditorPreviewPlayer(context: Context) {
             }
             incomingPlayer.playWhenReady = true
             // Output time between where it is and where the clock wants it.
-            val driftMs = abs(incomingPlayer.currentPosition - offset) / rate.coerceAtLeast(MIN_RATE)
-            if (driftMs > DRIFT_MS && now - lastIncomingSeekNanos >= RESEEK_NANOS) {
+            // Behind but playing, it is let catch up, as the main player (see drive).
+            val driftMs = (incomingPlayer.currentPosition - offset) / rate.coerceAtLeast(MIN_RATE).toDouble()
+            val lagging = driftMs < 0 && -driftMs <= MAX_LAG_MS && incomingPlayer.playbackState == Player.STATE_READY
+            if (abs(driftMs) > DRIFT_MS && !lagging && now - lastIncomingSeekNanos >= RESEEK_NANOS) {
                 lastIncomingSeekNanos = now
                 incomingPlayer.seekTo(offset)
             }
@@ -805,6 +813,9 @@ class EditorPreviewPlayer(context: Context) {
 
         /** Minimum time between two corrective seeks while playing forwards. */
         const val RESEEK_NANOS = 500_000_000L
+
+        /** How far behind the clock the player may fall and be waited for, rather than sought, ms. */
+        const val MAX_LAG_MS = 2_000.0
 
         /** How far ahead of a transition (output time) the clip coming in is loaded. */
         const val PRELOAD_MS = 1_500L

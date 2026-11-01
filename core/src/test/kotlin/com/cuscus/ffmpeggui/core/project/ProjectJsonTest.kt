@@ -185,16 +185,23 @@ private fun Random.randomValue(type: Type, depth: Int): Any = when {
     type == java.lang.Boolean.TYPE || type == java.lang.Boolean::class.java -> nextBoolean()
     type == String::class.java -> "s${nextInt(1000)} \u00E8 \"\\ \u2603"
     type.isEnum -> type.enumConstants.let { it[nextInt(it.size)] }
+    // A caption's look is read back within its bounds (TextLook.sane), and one that draws
+    // nothing is not written at all (it comes back as the default): it is made so.
+    type == com.cuscus.ffmpeggui.core.model.TextLook::class.java ->
+        (randomFields(type, depth) as com.cuscus.ffmpeggui.core.model.TextLook).sane().let { if (it.isPlain) com.cuscus.ffmpeggui.core.model.TextLook() else it }
     type == MediaInfo::class.java -> MediaInfo.of(
         nextLong(0L, 10_000_000L), nextBoolean(), nextInt(0, 4000), nextInt(0, 4000),
         nextLong(0L, 1L shl 40), nextBoolean(), nextBoolean(),
         frameRate = nextInt(0, 480) / 4f,
         hasAlpha = nextBoolean(),
     )
-    else -> {
-        val components = type.methods.count { it.name.matches(Regex("component\\d+")) && it.parameterCount == 0 }
-        val constructor = type.constructors.first { c -> c.parameterCount == components && !c.isSynthetic }
-        val args = constructor.genericParameterTypes.map { randomValue(it, depth + 1) }
-        constructor.newInstance(*args.toTypedArray())
-    }
+    else -> randomFields(type, depth)
+}
+
+/** An instance of the data class [type] with every field random. */
+private fun Random.randomFields(type: Class<*>, depth: Int): Any {
+    val components = type.methods.count { it.name.matches(Regex("component\\d+")) && it.parameterCount == 0 }
+    val constructor = type.constructors.first { c -> c.parameterCount == components && !c.isSynthetic }
+    val args = constructor.genericParameterTypes.map { randomValue(it, depth + 1) }
+    return constructor.newInstance(*args.toTypedArray())
 }
