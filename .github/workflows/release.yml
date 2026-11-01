@@ -83,6 +83,21 @@ jobs:
           ref: refs/tags/${{ env.TAG }}
           persist-credentials: false
 
+      - name: Check the tag names the app's version
+        run: |
+          # v<versionName>, as F-Droid style stores and Obtainium read it: a tag that does
+          # not match the version in the app would publish an update nobody is offered.
+          name="$(sed -n 's/^ *versionName = "\(.*\)"$/\1/p' app/build.gradle.kts)"
+          code="$(sed -n 's/^ *versionCode = \([0-9]*\)$/\1/p' app/build.gradle.kts)"
+          if [ "$TAG" != "v$name" ]; then
+            echo "::error::Tag $TAG does not match versionName $name (expected v$name)"
+            exit 1
+          fi
+          if [ ! -f "fastlane/metadata/android/en-US/changelogs/$code.txt" ]; then
+            echo "::error::No changelog for versionCode $code (fastlane/metadata/android/en-US/changelogs/$code.txt)"
+            exit 1
+          fi
+
       - name: Check the pinned FFmpeg runtime is current
         run: |
           # A tag whose pinned AAR was built from other sources cannot be released:

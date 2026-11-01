@@ -50,6 +50,25 @@ CODE BASED ON OTHER PROJECTS
   through sherpa-onnx's own text-to-speech, already in the APK; the model
   and its eSpeak NG data are downloaded by the user.
 
+MODIFIED THIRD-PARTY FILES
+sherpa-onnx v1.13.8 (Apache-2.0, ../sherpa-onnx/LICENSE.txt), whose
+libsherpa-onnx-jni.so also contains eSpeak NG (GPL-3.0-or-later,
+../sherpa-onnx/espeak-ng/), is not packed as its release AAR
+(sherpa-onnx-1.13.8.aar, pinned by its SHA-256) was published. The app
+packs a copy of that AAR, made by app/build.gradle.kts when the project is
+built, changed by Marco Morosi in 2026 as follows:
+- modified: lib/<abi>/libsherpa-onnx-jni.so, the only change being the
+  version indexes (in its .gnu.version section) of the symbols it takes
+  from libonnxruntime.so, set to "global", so that it runs on the ONNX
+  Runtime 1.28.0 the app ships (two builds of libonnxruntime.so cannot be
+  loaded in one process); no code and no other byte is changed;
+- removed: lib/<abi>/libonnxruntime.so (ONNX Runtime 1.28.2, replaced by
+  ONNX Runtime 1.28.0 from Maven Central), lib/<abi>/libsherpa-onnx-c-api.so
+  and lib/<abi>/libsherpa-onnx-cxx-api.so (not used by the app).
+The unmodified sources of these files are those of sherpa-onnx v1.13.8 and
+of the sources its build pins (see CORRESPONDING SOURCE); the program that
+makes the change is unversionImportsFrom in app/build.gradle.kts.
+
 NO WARRANTY
 FFmpeg GUI is provided "as is", without any warranty, to the extent
 permitted by applicable law. See Articles 7 and 8 of the EUPL and

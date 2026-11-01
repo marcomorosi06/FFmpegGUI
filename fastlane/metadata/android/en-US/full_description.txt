@@ -1,7 +1,7 @@
 FFmpeg GUI puts the power of FFmpeg in a Material 3 Expressive app. Open a video, a song or a picture, edit it with a live preview, and export it in the format you need. Everything happens on your phone.
 
 <b>Private by design</b>
-FFmpeg GUI has no internet permission at all: no ads, no trackers, no account. Nothing you open ever leaves your device. Even the smart features run on the phone, with models you download once with your browser and that the app checks before using them.
+FFmpeg GUI has no internet permission at all: no ads, no trackers, no account. Nothing you open ever leaves your device. Even the smart features run on the phone, with models you download once with your browser that the app checks before use.
 
 <b>What you see is what you get</b>
 Every change shows in the editor before anything is rendered, and the export makes exactly that: the preview runs the same filters FFmpeg will.
@@ -41,7 +41,7 @@ Every change shows in the editor before anything is rendered, and the export mak
 <b>And more</b>
 * GIFs with their own size, frame rate, colours and dithering
 * Recent projects, kept only on your phone, to continue editing later
-* Split a video into parts, delivered as one zip, or save its frames
+* Split a video into parts, as one zip, or save its frames
 
 <b>For FFmpeg users</b>
 The command is always in view; the command studio suggests what FFmpeg knows, shows its docs and checks it.
@@ -49,7 +49,7 @@ The command is always in view; the command studio suggests what FFmpeg knows, sh
 <b>Formats</b>
 MP4, MKV, AVI, GIF, MP3, M4A, OGG, OPUS, FLAC, WAV, JPG, PNG, WEBP, BMP, TIFF, or any FFmpeg command you write.
 
-Videos are encoded by your phone's own video chip, many times faster, with the processor taking over when it cannot. Exports keep running in the background, with a Live Update on Android 16, and a copy of every finished file can go straight to your gallery or music folders. The colours follow your wallpaper, or the app's own teal.
+Videos are encoded by your phone's video chip, many times faster, or by the processor when it cannot. Exports keep running in the background, with a Live Update on Android 16, and a copy of every finished file can go straight to your gallery or music folders. The colours follow your wallpaper, or the app's own teal.
 
 <b>Support the project</b>
 FFmpeg GUI is made by one person, in spare time, and will stay free. If it is useful to you, you can buy me a coffee on Ko-fi: https://ko-fi.com/marcomorosi

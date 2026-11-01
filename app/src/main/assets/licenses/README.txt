@@ -7,6 +7,8 @@ notices of every third-party component inside this app (the APK).
 FFmpeg GUI
   Copyright (c) 2026 Marco Morosi.
   Source code: EUPL-1.2. The APK as a whole: GPL-3.0 (EUPL Article 5).
+  Provided "as is", without any warranty, to the extent permitted by law
+  (EUPL Articles 7 and 8, GPL-3.0 sections 15 and 16).
   Files: ffmpeg-gui/NOTICE.txt, ffmpeg-gui/EUPL-1.2.txt
   The video effects (assets/effects/) are part of FFmpeg GUI: every frame
   is drawn by its own scripts/generate-effects.py (the 3D fists of the
@@ -74,6 +76,15 @@ piper-phonemize (f3ff95a) ...... MIT               sherpa-onnx/piper-phonemize/L
 hclust-cpp 2026-02-25 .......... BSD-2-Clause      sherpa-onnx/hclust-cpp/LICENSE.txt
 Eigen (header-only) ............ MPL-2.0, with parts under BSD, LGPL and
                                  MINPACK licences  sherpa-onnx/eigen/COPYING*.txt
+
+Modified by FFmpeg GUI: the app packs a copy of the sherpa-onnx 1.13.8
+release AAR in which libsherpa-onnx-jni.so has only the version indexes
+(.gnu.version) of the symbols it takes from libonnxruntime.so set to
+"global", so that it runs on ONNX Runtime 1.28.0 (section 3), and from
+which libonnxruntime.so (1.28.2), libsherpa-onnx-c-api.so and
+libsherpa-onnx-cxx-api.so are removed. Changed by Marco Morosi, 2026, as
+Apache-2.0 section 4(b) and GPL-3.0 section 5(a) ask: details in
+ffmpeg-gui/NOTICE.txt ("MODIFIED THIRD-PARTY FILES").
 
 
 3. ONNX Runtime (libonnxruntime, libonnxruntime4j_jni, ai.onnxruntime)

@@ -1,13 +1,12 @@
 * Command studio for your own commands
 * One-tap dub, magic eraser, stem split
-* Video effects, magic transitions
-* 100 transitions, 3D punches, slanted joins
+* Effects, looks (glitch, VHS, B&W...)
+* 101 transitions: 3D punches, TV break
 * On-device subtitle translation
 * Texts: outline, soft shadow, box, your own fonts
 * SVG editor: gradients, symmetry, booleans, layers, snapping
 * Blank pages, compressor
 * Picture editor: canvas, corners, layers
-* Effects, looks (glitch, VHS, B&W...)
-* 101 transitions: 3D punches, TV break
+* Live scrubbing, frame steps, mono theme
 * New format picker, settings
-* Fixes
+* Fixes: low contrast, toolbar outline

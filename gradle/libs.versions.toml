@@ -41,7 +41,7 @@ material = "1.12.0"
 # that script makes. 6.1.x = FFmpeg n6.1.6, the line the filter graphs were verified
 # against, 16 KB page aligned, arm64-v8a + x86_64 only.
 ffmpegKitNext = "6.1.1"
-# Its only dependency (Apache 2.0, by FFmpegKit's author), from Maven Central.
+# Its only dependency (BSD-3-Clause, by FFmpegKit's author), from Maven Central.
 smartException = "0.2.1"
 # SVG pictures opened in the app are drawn into a PNG with it (Apache 2.0, pure Java, from Maven Central).
 androidsvg = "1.4"

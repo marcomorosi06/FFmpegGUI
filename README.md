@@ -276,17 +276,6 @@ Releases are reproducible: [IzzyOnDroid](https://izzyondroid.org/docs/reproducib
 
 **IzzyOnDroid.** To have the app verified there, send them `.github/izzyondroid/com.cuscus.ffmpeggui.yml`, once: their server follows new releases by itself.
 
-| Library | Version | Purpose |
-|---|---|---|
-| FFmpegKitNext (built from source) | 6.1.1 | FFmpeg engine (FFmpeg 6.1.6) |
-| Jetpack Compose + Material 3 | BOM 2026.09.00 (Compose 1.12.1), Material 3 1.5.0-beta01 | UI |
-| Navigation Compose | 2.9.8 | Screen navigation |
-| Media3 ExoPlayer | 1.10.1 | Media preview |
-| AndroidX Core Splashscreen | 1.2.0 | Splash screen |
-| sherpa-onnx (with ONNX Runtime) | 1.13.8 | Speech recognition (release AAR in `app/libs`) |
-| ONNX Runtime (Java API) | 1.28.0 | Subject cut-out |
-| AndroidSVG | 1.4 | Opening SVG files, drawing parts of SVGs in the SVG editor |
-
 ## Architecture
 
 Three Gradle modules, with dependencies pointing one way (`app -> media -> core`):
@@ -299,6 +288,19 @@ Details, data flow and a "where do I change X" table are in [`docs/ARCHITECTURE.
 
 > Video stabilisation and denoising are implemented in the backend but have no editor controls yet.
 
+### Libraries
+
+| Library | Version | Purpose |
+|---|---|---|
+| FFmpegKitNext (built from source) | 6.1.1 | FFmpeg engine (FFmpeg 6.1.6) |
+| Jetpack Compose + Material 3 | BOM 2026.09.00 (Compose 1.12.1), Material 3 1.5.0-beta01 | UI |
+| Navigation Compose | 2.9.8 | Screen navigation |
+| Media3 ExoPlayer | 1.10.1 | Media preview |
+| AndroidX Core Splashscreen | 1.2.0 | Splash screen |
+| sherpa-onnx (with ONNX Runtime) | 1.13.8 | Speech recognition (release AAR in `app/libs`) |
+| ONNX Runtime (Java API) | 1.28.0 | Subject cut-out |
+| AndroidSVG | 1.4 | Opening SVG files, drawing parts of SVGs in the SVG editor |
+
 ## Support the project
 
 FFmpeg GUI is made by one person, in spare time, and will stay free and open source. If it is useful to you, you can buy me a coffee on [Ko-fi](https://ko-fi.com/marcomorosi): it keeps the project going.
@@ -309,7 +311,7 @@ FFmpeg GUI is made by one person, in spare time, and will stay free and open sou
   - [x264](https://www.videolan.org/developers/x264.html), [x265](https://www.x265.org), [Xvid](https://www.xvid.com) and [vid.stab](https://github.com/georgmartius/vid.stab) (GPL 2+)
   - [LAME](https://lame.sourceforge.io), [FriBidi](https://github.com/fribidi/fribidi) and libiconv (LGPL)
   - libass, dav1d, FreeType, HarfBuzz, Fontconfig, Opus, Vorbis, Ogg, zimg, Expat, libpng and cpu_features (permissive licences)
-- [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache 2.0) and [ONNX Runtime](https://onnxruntime.ai) (MIT)
+- [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache 2.0, with [eSpeak NG](https://github.com/espeak-ng/espeak-ng), GPL 3.0 or later, inside it; repacked as described in `app/src/main/assets/licenses/ffmpeg-gui/NOTICE.txt`) and [ONNX Runtime](https://onnxruntime.ai) (MIT)
 - [Jetpack Compose](https://developer.android.com/compose), [AndroidX](https://developer.android.com/jetpack/androidx) and [Media3](https://developer.android.com/media/media3) (Apache 2.0)
 - [AndroidSVG](https://github.com/BigBadaboom/androidsvg) by Cave Rock Software (Apache 2.0)
 - [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) by NVIDIA (CC BY 4.0), downloaded by the user; its token list ships with the app
@@ -334,6 +336,6 @@ Copyright (c) 2026 Marco Morosi.
 
 The source code of FFmpeg GUI is licensed under the [EUPL v1.2](LICENSE), which is available in all the official languages of the EU, each version equally valid.
 
-The APK also contains FFmpeg built with GPL libraries (x264, x265, Xvid, vid.stab) and other third-party components (see Credits). As allowed by Article 5 of the EUPL (compatibility clause), the APK as a whole is distributed under the [GNU GPL v3](https://www.gnu.org/licenses/gpl-3.0.html). Each third-party component stays under its own licence.
+The APK also contains FFmpeg built with GPL libraries (x264, x265, Xvid, vid.stab), eSpeak NG (GPL 3.0 or later, inside sherpa-onnx's `libsherpa-onnx-jni.so`) and other third-party components (see Credits). As allowed by Article 5 of the EUPL (compatibility clause), the APK as a whole is distributed under the [GNU GPL v3](https://www.gnu.org/licenses/gpl-3.0.html). Each third-party component stays under its own licence.
 
 FFmpeg GUI is provided "as is", without any warranty, to the extent permitted by law.

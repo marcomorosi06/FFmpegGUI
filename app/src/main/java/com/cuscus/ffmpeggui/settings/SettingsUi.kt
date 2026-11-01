@@ -310,13 +310,9 @@ internal fun openLink(context: Context, url: String) {
 internal object ProjectLinks {
     const val GITHUB = "https://github.com/marcomorosi06/FFmpegGUI"
     const val KOFI = "https://ko-fi.com/marcomorosi"
-    const val FFMPEG_LEGAL = "https://ffmpeg.org/legal.html"
-    const val APACHE = "https://www.apache.org/licenses/LICENSE-2.0"
-    const val MIT = "https://opensource.org/license/mit"
     const val CC_BY = "https://creativecommons.org/licenses/by/4.0/"
     const val ANTI_VOCALE = "https://github.com/RisorseArtificiali/anti-vocale"
     const val SHERPA_ONNX = "https://github.com/k2-fsa/sherpa-onnx"
-    const val ANDROIDSVG = "https://github.com/BigBadaboom/androidsvg"
     /** The script that draws the video effects, in the repository. */
-    const val EFFECTS_SCRIPT = "https://github.com/marcomorosi06/FFmpegGUI/blob/main/scripts/generate-effects.py"
+    const val EFFECTS_SCRIPT = "https://github.com/marcomorosi06/FFmpegGUI/blob/master/scripts/generate-effects.py"
 }

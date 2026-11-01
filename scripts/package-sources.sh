@@ -246,8 +246,9 @@ HOW THE APK IS BUILT
   sheets and index.json): drawn by ffmpeg-gui/scripts/generate-effects.py
   (Python 3, numpy, scipy and FFmpeg with libx264), which is their source:
   python3 scripts/generate-effects.py makes them all again.
-- The AI models (speech, cut-out, translation, voice separation, dubbing) are not in
-  the APK: the user downloads them. The code that runs them is in
+- The AI models (speech, cut-out and its correction, translation, voice
+  separation, dubbing, magic eraser: MI-GAN and LaMa) are not in the APK: the
+  user downloads them. The code that runs them is in
   ffmpeg-gui/ (the voice separation's spectrogram and masks in core/voice/;
   the Piper voices' token list and ONNX metadata in core/dub/PiperVoice.kt).
   Piper voices, which the user may import, each come under their own licence.

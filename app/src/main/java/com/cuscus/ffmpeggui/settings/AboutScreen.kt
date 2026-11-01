@@ -39,6 +39,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -135,7 +137,7 @@ private const val LOGO_TURN_MS = 36_000
 @Composable
 fun AboutScreen(versionName: String, onBack: () -> Unit) {
     val context = LocalContext.current
-    var showFontLicence by remember { mutableStateOf(false) }
+    var licenceFile by remember { mutableStateOf<LicenceFile?>(null) }
     val ffmpeg by produceState<Pair<String?, String?>>(null to null) {
         value = withContext(Dispatchers.IO) { FfmpegInfo.ffmpegVersion() to FfmpegInfo.kitVersion() }
     }
@@ -254,68 +256,67 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
         )
 
         SectionTitle(stringResource(R.string.about_licences))
-        LicenceSection(
-            title = stringResource(R.string.about_licences_in_app),
-            count = 9,
-            icon = Icons.Rounded.Gavel,
-            shape = MaterialShapes.Cookie9Sided,
+        // Always in sight: no warranty, which licence covers what, and every licence text.
+        SettingsGroup(
+            title = null,
             rows = listOf<@Composable (Shape) -> Unit>(
                 { shape ->
-                    LicenceRow(shape, stringResource(R.string.about_licence_app), stringResource(R.string.about_licence_eupl)) {
-                        openLink(context, ProjectLinks.GITHUB)
-                    }
+                    SettingsRow(
+                        shape = shape,
+                        icon = Icons.Rounded.Info,
+                        title = stringResource(R.string.about_licence_as_is),
+                        summary = stringResource(R.string.about_licence_as_is_summary),
+                        badge = MaterialShapes.Cookie12Sided,
+                        colors = ToneColors(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer),
+                        onClick = { licenceFile = LicenceFile.NOTICE },
+                    )
                 },
                 { shape ->
-                    LicenceRow(shape, stringResource(R.string.about_licence_ffmpeg), stringResource(R.string.about_licence_gpl)) {
-                        openLink(context, ProjectLinks.FFMPEG_LEGAL)
-                    }
+                    SettingsRow(
+                        shape = shape,
+                        icon = Icons.Rounded.Description,
+                        title = stringResource(R.string.about_licence_all),
+                        summary = stringResource(R.string.about_licence_all_summary),
+                        badge = MaterialShapes.Cookie9Sided,
+                        colors = ToneColors(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer),
+                        onClick = { licenceFile = LicenceFile.INDEX },
+                    )
                 },
-                { shape ->
-                    LicenceRow(shape, stringResource(R.string.about_licence_font), stringResource(R.string.about_licence_ofl), icon = Icons.Rounded.TextFields, local = true) {
-                        showFontLicence = true
+            ),
+        )
+        // Each licence opens its own text, kept in the app.
+        val inApp = listOf(
+            Triple(R.string.about_licence_app, R.string.about_licence_app_summary, "ffmpeg-gui/EUPL-1.2.txt"),
+            Triple(R.string.about_licence_ffmpeg, R.string.about_licence_gpl, "ffmpeg-libraries/ffmpeg-kit-next-GPL-3.0.txt"),
+            Triple(R.string.about_licence_font, R.string.about_licence_ofl, "GoogleSansFlex-OFL.txt"),
+            Triple(R.string.about_licence_androidx, R.string.about_licence_apache, "androidx/LICENSE.txt"),
+            Triple(R.string.about_licence_androidsvg, R.string.about_licence_apache, "androidsvg/LICENSE.txt"),
+            Triple(R.string.about_licence_sherpa, R.string.about_licence_sherpa_summary, "sherpa-onnx/LICENSE.txt"),
+            Triple(R.string.about_licence_onnxruntime, R.string.about_licence_mit, "onnxruntime/LICENSE.txt"),
+            Triple(R.string.about_licence_anti_vocale, R.string.about_licence_anti_vocale_summary, "anti-vocale/LICENSE.txt"),
+        )
+        LicenceSection(
+            title = stringResource(R.string.about_licences_in_app),
+            icon = Icons.Rounded.Gavel,
+            shape = MaterialShapes.Cookie9Sided,
+            rows = inApp.map { (title, licence, file) ->
+                @Composable { shape: Shape ->
+                    val name = stringResource(title)
+                    LicenceRow(shape, name, stringResource(licence), icon = if (file.startsWith("GoogleSans")) Icons.Rounded.TextFields else Icons.Rounded.Gavel, local = true) {
+                        licenceFile = LicenceFile(name, file)
                     }
-                },
-                { shape ->
-                    LicenceRow(shape, stringResource(R.string.about_licence_androidx), stringResource(R.string.about_licence_apache)) {
-                        openLink(context, ProjectLinks.APACHE)
-                    }
-                },
-                { shape ->
-                    LicenceRow(shape, stringResource(R.string.about_licence_androidsvg), stringResource(R.string.about_licence_apache)) {
-                        openLink(context, ProjectLinks.ANDROIDSVG)
-                    }
-                },
-                { shape ->
-                    LicenceRow(shape, stringResource(R.string.about_licence_sherpa), stringResource(R.string.about_licence_apache)) {
-                        openLink(context, ProjectLinks.SHERPA_ONNX)
-                    }
-                },
-                { shape ->
-                    LicenceRow(shape, stringResource(R.string.about_licence_onnxruntime), stringResource(R.string.about_licence_mit)) {
-                        openLink(context, ProjectLinks.MIT)
-                    }
-                },
+                }
+            } + listOf<@Composable (Shape) -> Unit>(
                 { shape ->
                     // The effects in the app are the project's own, drawn by its script.
                     LicenceRow(shape, stringResource(R.string.about_licence_effects), stringResource(R.string.about_licence_effects_summary), icon = Icons.Rounded.AutoAwesome) {
                         openLink(context, ProjectLinks.EFFECTS_SCRIPT)
                     }
                 },
-                { shape ->
-                    LicenceRow(
-                        shape,
-                        stringResource(R.string.about_licence_anti_vocale),
-                        stringResource(R.string.about_licence_anti_vocale_summary),
-                        icon = Icons.Rounded.AutoAwesome,
-                    ) {
-                        openLink(context, ProjectLinks.ANTI_VOCALE)
-                    }
-                },
             ),
         )
         LicenceSection(
             title = stringResource(R.string.about_licences_models),
-            count = 8,
             icon = Icons.Rounded.CloudDownload,
             shape = MaterialShapes.Flower,
             rows = listOf<@Composable (Shape) -> Unit>(
@@ -359,9 +360,26 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
                     }
                 },
                 { shape ->
+                    // Voices the user imports: each under the licence of its own model card.
+                    LicenceRow(shape, stringResource(R.string.about_licence_piper), stringResource(R.string.about_licence_piper_summary)) {
+                        openLink(context, com.cuscus.ffmpeggui.dub.PiperVoiceStore.VOICES_PAGE_URL)
+                    }
+                },
+                { shape ->
                     // The voice model: downloaded by the user, credited as its licence asks.
                     LicenceRow(shape, stringResource(R.string.about_licence_spleeter), stringResource(R.string.about_licence_mit)) {
                         openLink(context, com.cuscus.ffmpeggui.voice.VoiceModel.MODEL_PAGE_URL)
+                    }
+                },
+                { shape ->
+                    // The magic eraser's two models, downloaded by the user.
+                    LicenceRow(shape, stringResource(R.string.about_licence_migan), stringResource(R.string.about_licence_mit)) {
+                        openLink(context, com.cuscus.ffmpeggui.erase.EraseModel.MIGAN_PAGE_URL)
+                    }
+                },
+                { shape ->
+                    LicenceRow(shape, stringResource(R.string.about_licence_lama), stringResource(R.string.about_licence_apache)) {
+                        openLink(context, com.cuscus.ffmpeggui.erase.EraseModel.LAMA_PAGE_URL)
                     }
                 },
             ),
@@ -369,35 +387,102 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
         Spacer(modifier = Modifier.height(8.dp))
     }
 
-    if (showFontLicence) {
-        val text by produceState("") {
-            value = withContext(Dispatchers.IO) {
-                runCatching { context.assets.open(FONT_LICENCE).bufferedReader().use { it.readText() } }.getOrDefault("")
-            }
-        }
-        AlertDialog(
-            onDismissRequest = { showFontLicence = false },
-            icon = { Icon(Icons.Rounded.Gavel, contentDescription = null) },
-            title = { Text(stringResource(R.string.about_licence_font), style = MaterialTheme.typography.headlineSmallEmphasized) },
-            text = {
-                Box(modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-                    Text(
-                        text = text,
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
-                    )
-                }
-            },
-            confirmButton = {
-                Button(onClick = { showFontLicence = false }, shapes = ButtonDefaults.shapes()) {
-                    Text(stringResource(R.string.about_close))
-                }
-            },
-        )
+    licenceFile?.let { file ->
+        LicenceDialog(file = file, onOpen = { licenceFile = it }, onDismiss = { licenceFile = null })
     }
 }
 
-/** The licence file of the bundled typeface, in the app's assets. */
-private const val FONT_LICENCE = "licenses/GoogleSansFlex-OFL.txt"
+/** A licence text in the app's assets, under [LICENCES_DIR]: its [title] and its [path] there. */
+private data class LicenceFile(val title: String?, val path: String) {
+    companion object {
+        /** The index of every licence and notice in the app. */
+        val INDEX = LicenceFile(null, "README.txt")
+
+        /** FFmpeg GUI's own notice: its licences, its sources, what it changed, no warranty. */
+        val NOTICE = LicenceFile(null, "ffmpeg-gui/NOTICE.txt")
+    }
+}
+
+/** Where the licences are kept in the app's assets. */
+private const val LICENCES_DIR = "licenses"
+
+/** Every file under [dir] of the assets, its path relative to [LICENCES_DIR], sorted. */
+private fun licenceFiles(context: android.content.Context, dir: String = ""): List<String> {
+    val names = runCatching { context.assets.list(if (dir.isEmpty()) LICENCES_DIR else "$LICENCES_DIR/$dir") }.getOrNull().orEmpty()
+    return names.flatMap { name ->
+        val path = if (dir.isEmpty()) name else "$dir/$name"
+        val inside = licenceFiles(context, path)
+        // A folder lists what it holds; a file lists nothing.
+        if (inside.isEmpty()) listOf(path) else inside
+    }.sorted()
+}
+
+/**
+ * A licence text, as it is kept in the app. The index ([LicenceFile.INDEX])
+ * lists every other file under it, each opening in its place; from any other
+ * file, a button goes back to the index.
+ */
+@Composable
+private fun LicenceDialog(file: LicenceFile, onOpen: (LicenceFile) -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val isIndex = file == LicenceFile.INDEX
+    val text by produceState("", file) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { context.assets.open("$LICENCES_DIR/${file.path}").bufferedReader().use { it.readText() } }.getOrDefault("")
+        }
+    }
+    val files by produceState(emptyList<String>(), isIndex) {
+        value = if (isIndex) withContext(Dispatchers.IO) { licenceFiles(context).filter { it != LicenceFile.INDEX.path } } else emptyList()
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Rounded.Gavel, contentDescription = null) },
+        title = { Text(file.title ?: file.path, style = MaterialTheme.typography.headlineSmallEmphasized) },
+        text = {
+            val scroll = rememberScrollState()
+            LaunchedEffect(file) { scroll.scrollTo(0) }
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.heightIn(max = 420.dp).verticalScroll(scroll),
+            ) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                )
+                if (files.isNotEmpty()) {
+                    Text(
+                        stringResource(R.string.about_licence_files),
+                        style = MaterialTheme.typography.titleSmallEmphasized,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        files.forEach { path ->
+                            androidx.compose.material3.AssistChip(
+                                onClick = { onOpen(LicenceFile(null, path)) },
+                                label = { Text(path, style = MaterialTheme.typography.labelMedium) },
+                                shape = CircleShape,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        dismissButton = if (isIndex) {
+            null
+        } else {
+            {
+                androidx.compose.material3.TextButton(onClick = { onOpen(LicenceFile.INDEX) }) {
+                    Text(stringResource(R.string.about_licence_all))
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss, shapes = ButtonDefaults.shapes()) {
+                Text(stringResource(R.string.about_close))
+            }
+        },
+    )
+}
 
 /** The motto, large, and what it means: no internet permission, every file stays on the phone. */
 @Composable
@@ -633,7 +718,6 @@ private fun ProjectButtons(onGithub: () -> Unit, onKofi: () -> Unit) {
 @Composable
 private fun LicenceSection(
     title: String,
-    count: Int,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     shape: androidx.graphics.shapes.RoundedPolygon,
     rows: List<@Composable (Shape) -> Unit>,
@@ -676,7 +760,7 @@ private fun LicenceSection(
             Spacer(modifier = Modifier.width(14.dp))
             Text(title, style = SettingsRowTitle, color = scheme.onSurface, modifier = Modifier.weight(1f))
             Text(
-                text = count.toString(),
+                text = rows.size.toString(),
                 style = MaterialTheme.typography.labelLargeEmphasized,
                 color = scheme.onSecondaryContainer,
                 modifier = Modifier.clip(CircleShape).background(scheme.secondaryContainer).padding(horizontal = 12.dp, vertical = 4.dp),
