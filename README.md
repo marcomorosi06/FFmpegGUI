@@ -135,7 +135,7 @@ Every model runs on the phone's processor, with ONNX Runtime's XNNPACK kernels w
 |---|---|
 | Video | MP4, MKV, AVI, GIF |
 | Audio | MP3, M4A (AAC), OGG (Vorbis), OPUS, FLAC, WAV |
-| Pictures | JPG, PNG, WEBP, BMP, TIFF |
+| Pictures | JPG, PNG, WEBP, BMP, TIFF, SVG |
 | Anything else | Stream copy, or any FFmpeg command you write |
 
 ## Requirements
