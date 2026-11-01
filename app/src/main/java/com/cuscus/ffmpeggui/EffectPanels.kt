@@ -2,6 +2,17 @@
 
 package com.cuscus.ffmpeggui
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.platform.LocalDensity
+import com.cuscus.ffmpeggui.ui.expressive.ConnectedChoiceGroup
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Speed
 import androidx.annotation.StringRes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
@@ -19,8 +30,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -317,6 +326,7 @@ internal fun EffectPickerSheet(onPick: (String) -> Unit, onDismiss: () -> Unit) 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scheme = MaterialTheme.colorScheme
     val labels = effectLabels()
+    var family by rememberSaveable { mutableStateOf(EffectFamily.LIGHTS) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = scheme.surfaceContainerLow) {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(128.dp),
@@ -362,39 +372,30 @@ internal fun EffectPickerSheet(onPick: (String) -> Unit, onDismiss: () -> Unit) 
                     }
                 }
             }
-            items(EffectLibrary.loops.filter { it.look == null }, key = { it.name }) { effect ->
-                EffectTile(
-                    effect = effect,
-                    label = labels[effect.name] ?: effect.name,
-                    selected = false,
-                    width = 200.dp,
-                    onClick = { onPick(effect.name) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            // The picture looks: they change the picture itself, under their own heading.
+            // Light laid over the video, or looks that change the picture itself.
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 2.dp)) {
-                    Text(
-                        stringResource(R.string.effect_looks_title),
-                        style = MaterialTheme.typography.titleLargeEmphasized,
-                        color = scheme.onSurface,
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                    ConnectedChoiceGroup(
+                        options = EffectFamily.entries,
+                        selected = family,
+                        label = { stringResource(it.labelRes) },
+                        onSelect = { family = it },
                     )
                     Text(
-                        stringResource(R.string.effect_looks_hint),
+                        stringResource(if (family == EffectFamily.LOOKS) R.string.effect_looks_hint else R.string.effect_lights_hint),
                         style = MaterialTheme.typography.bodyMedium,
                         color = scheme.onSurfaceVariant,
                     )
                 }
             }
-            items(EffectLibrary.looks, key = { it.name }) { effect ->
+            items(family.effects, key = { it.name }) { effect ->
                 EffectTile(
                     effect = effect,
                     label = labels[effect.name] ?: effect.name,
                     selected = false,
                     width = 200.dp,
                     onClick = { onPick(effect.name) },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().animateItem(),
                 )
             }
             item(span = { GridItemSpan(maxLineSpan) }) { Spacer(modifier = Modifier.height(24.dp)) }
@@ -402,32 +403,75 @@ internal fun EffectPickerSheet(onPick: (String) -> Unit, onDismiss: () -> Unit) 
     }
 }
 
-/** Which effect the selected one is: the gallery, the current one chosen. */
-@OptIn(ExperimentalLayoutApi::class)
+/** The two kinds of effects: light laid over the video, and looks that change the picture itself. */
+internal enum class EffectFamily(val labelRes: Int) {
+    LIGHTS(R.string.effect_family_lights),
+    LOOKS(R.string.effect_looks_title),
+    ;
+
+    val effects: List<EffectInfo>
+        get() = if (this == LOOKS) EffectLibrary.looks else EffectLibrary.loops.filter { it.look == null }
+
+    companion object {
+        fun of(name: String?): EffectFamily = if (PictureLook.of(name) != null) LOOKS else LIGHTS
+    }
+}
+
+/**
+ * Which effect the selected one is: its family (light or look) in a connected
+ * button group, then that family's tiles in two rows that scroll sideways, the
+ * current one chosen and in sight.
+ */
 @Composable
 internal fun EffectChoiceContent(current: String?, hue: Float, onPick: (String) -> Unit) {
     val labels = effectLabels()
+    val motion = MaterialTheme.motionScheme
+    var family by rememberSaveable { mutableStateOf(EffectFamily.of(current)) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         PanelHint(stringResource(R.string.effect_choice_hint))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            maxItemsInEachRow = 4,
-            modifier = Modifier.fillMaxWidth().selectableGroup(),
-        ) {
-            EffectLibrary.loops.forEach { effect ->
-                EffectTile(
-                    effect = effect,
-                    label = labels[effect.name] ?: effect.name,
-                    selected = effect.name == current,
-                    hue = hue,
-                    onClick = { onPick(effect.name) },
-                    width = 104.dp,
-                )
+        ConnectedChoiceGroup(
+            options = EffectFamily.entries,
+            selected = family,
+            label = { stringResource(it.labelRes) },
+            onSelect = { family = it },
+        )
+        Crossfade(targetState = family, animationSpec = motion.defaultEffectsSpec(), label = "effectFamily") { shown ->
+            val effects = shown.effects
+            val scroll = rememberScrollState()
+            val density = LocalDensity.current
+            // The chosen one in sight when the family opens.
+            LaunchedEffect(shown) {
+                val index = effects.indexOfFirst { it.name == current }
+                val column = if (index < 0) 0 else index / CHOICE_ROWS
+                scroll.animateScrollTo(with(density) { ((CHOICE_TILE + CHOICE_GAP) * column).roundToPx() }, motion.defaultSpatialSpec())
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(CHOICE_GAP),
+                modifier = Modifier.fillMaxWidth().selectableGroup().horizontalScroll(scroll),
+            ) {
+                effects.chunked(CHOICE_ROWS).forEach { column ->
+                    Column(verticalArrangement = Arrangement.spacedBy(CHOICE_GAP)) {
+                        column.forEach { effect ->
+                            EffectTile(
+                                effect = effect,
+                                label = labels[effect.name] ?: effect.name,
+                                selected = effect.name == current,
+                                hue = hue,
+                                onClick = { onPick(effect.name) },
+                                width = CHOICE_TILE,
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
+
+/** The choice's rows of tiles, their width and the space between them. */
+private const val CHOICE_ROWS = 2
+private val CHOICE_TILE = 112.dp
+private val CHOICE_GAP = 8.dp
 
 /** Hue turns offered as ready-made colours, in degrees. */
 private val HUE_PRESETS = listOf(0f, 60f, 120f, 180f, 240f, 300f)
@@ -444,10 +488,15 @@ internal fun EffectLookContent(
     hue: Float,
     onOpacity: (Float) -> Unit,
     onHue: (Float) -> Unit,
+    amount: Float = 1f,
+    speed: Float = 1f,
+    onAmount: (Float) -> Unit = {},
+    onSpeed: (Float) -> Unit = {},
 ) {
     val scheme = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val haptic = LocalHapticFeedback.current
+    val look = PictureLook.of(name)
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         Box(
             modifier = Modifier
@@ -456,12 +505,42 @@ internal fun EffectLookContent(
                 .clip(RoundedCornerShape(32.dp))
                 .background(Color.Black),
         ) {
-            val look = PictureLook.of(name)
             if (look != null) {
-                // A look at its strength, over its picture as it is.
-                LookFrames(look, hue, modifier = Modifier.fillMaxSize(), strength = opacity.coerceIn(0f, 1f))
+                // A look as it is set, over its picture as it is.
+                LookFrames(look, hue, modifier = Modifier.fillMaxSize(), strength = opacity.coerceIn(0f, 1f), speed = speed, amount = amount)
             } else {
                 EffectFrames(name, hue, modifier = Modifier.fillMaxSize().graphicsLayer { alpha = opacity.coerceIn(0.05f, 1f) })
+            }
+            // Its name on a pill, its family's shape beside it.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(12.dp)
+                    .clip(CircleShape)
+                    .background(scheme.surfaceContainerHighest.copy(alpha = 0.92f))
+                    .padding(start = 4.dp, end = 14.dp, top = 4.dp, bottom = 4.dp),
+            ) {
+                MorphingContainer(
+                    from = if (look != null) MaterialShapes.Cookie9Sided else MaterialShapes.SoftBurst,
+                    to = MaterialShapes.Circle,
+                    morphed = false,
+                    color = if (look != null) scheme.tertiary else scheme.primary,
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        if (look != null) Icons.Rounded.Tune else Icons.Rounded.AutoAwesome,
+                        contentDescription = null,
+                        tint = if (look != null) scheme.onTertiary else scheme.onPrimary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    effectLabelRes(name)?.let { stringResource(it) } ?: name,
+                    style = MaterialTheme.typography.labelLargeEmphasized,
+                    color = scheme.onSurface,
+                )
             }
         }
         PanelCard {
@@ -474,6 +553,33 @@ internal fun EffectLookContent(
                 icon = Icons.Rounded.Opacity,
                 defaultValue = 1f,
             )
+            // A look's own settings: how much it does, how fast it moves.
+            if (look != null && look.hasAmount) {
+                ValueSlider(
+                    label = stringResource(R.string.look_amount),
+                    valueText = stringResource(R.string.value_percent, (amount * 100).roundToInt()),
+                    value = amount.coerceIn(PictureLook.MIN_AMOUNT, PictureLook.MAX_AMOUNT),
+                    onValueChange = { onAmount((Math.round(it * 20f) / 20f).coerceIn(PictureLook.MIN_AMOUNT, PictureLook.MAX_AMOUNT)) },
+                    valueRange = PictureLook.MIN_AMOUNT..PictureLook.MAX_AMOUNT,
+                    icon = Icons.Rounded.Tune,
+                    defaultValue = 1f,
+                    startLabel = stringResource(R.string.value_percent, (PictureLook.MIN_AMOUNT * 100).roundToInt()),
+                    endLabel = stringResource(R.string.value_percent, (PictureLook.MAX_AMOUNT * 100).roundToInt()),
+                )
+            }
+            if (look != null && look.moves) {
+                ValueSlider(
+                    label = stringResource(R.string.look_speed),
+                    valueText = stringResource(R.string.look_speed_value, decimal(speed)),
+                    value = speed.coerceIn(PictureLook.MIN_SPEED, PictureLook.MAX_SPEED),
+                    onValueChange = { onSpeed((Math.round(it * 20f) / 20f).coerceIn(PictureLook.MIN_SPEED, PictureLook.MAX_SPEED)) },
+                    valueRange = PictureLook.MIN_SPEED..PictureLook.MAX_SPEED,
+                    icon = Icons.Rounded.Speed,
+                    defaultValue = 1f,
+                    startLabel = stringResource(R.string.look_speed_value, decimal(PictureLook.MIN_SPEED)),
+                    endLabel = stringResource(R.string.look_speed_value, decimal(PictureLook.MAX_SPEED)),
+                )
+            }
         }
         PanelCard {
             ValueSlider(
@@ -523,6 +629,6 @@ internal fun EffectLookContent(
                 }
             }
         }
-        PanelHint(stringResource(R.string.effect_look_hint))
+        PanelHint(stringResource(if (look != null) R.string.look_hint else R.string.effect_look_hint))
     }
 }

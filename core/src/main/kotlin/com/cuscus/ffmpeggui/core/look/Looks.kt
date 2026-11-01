@@ -4,6 +4,7 @@ import com.cuscus.ffmpeggui.core.command.fmt
 import com.cuscus.ffmpeggui.core.model.LookSpan
 import com.cuscus.ffmpeggui.core.model.PictureLook
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 /*
@@ -29,6 +30,7 @@ object LookShaderNames {
     const val TIME = "uTime"
     const val STRENGTH = "uStrength"
     const val HUE = "uHue"
+    const val AMOUNT = "uAmount"
 }
 
 /** True when the look's filters need frames at a steady rate (its time is counted in frames). */
@@ -53,14 +55,16 @@ fun lookSpanGraph(span: LookSpan, input: String, output: String, prefix: String,
     val turns = turn > 0.5f && turn < 359.5f
     val fades = span.fadeInSeconds > 0f || span.fadeOutSeconds > 0f
     val whole = strength >= 0.999f && !fades && !turns
-    if (whole) return lookGraph(span.look, input, output, prefix, width, height, fps, start, window)
+    val speed = span.speed.coerceIn(PictureLook.MIN_SPEED, PictureLook.MAX_SPEED).toDouble()
+    val amount = span.amount.coerceIn(PictureLook.MIN_AMOUNT, PictureLook.MAX_AMOUNT).toDouble()
+    if (whole) return lookGraph(span.look, input, output, prefix, width, height, fps, start, window, speed, amount)
 
     val keep = "${prefix}keep"
     val source = "${prefix}src"
     val looked = "${prefix}raw"
     val mixed = "${prefix}mix"
     val segments = mutableListOf("[$input]split=2[$keep][$source]")
-    segments += lookGraph(span.look, source, looked, prefix, width, height, fps, start, window)
+    segments += lookGraph(span.look, source, looked, prefix, width, height, fps, start, window, speed, amount)
     val finish = mutableListOf<String>()
     if (turns) finish += fmt("hue=h=%.1f:enable='%s'", turn, window)
     finish += "format=yuva420p"
@@ -75,7 +79,11 @@ fun lookSpanGraph(span: LookSpan, input: String, output: String, prefix: String,
     return segments
 }
 
-/** The look's own filters, from [input] to [output], on only within [window] (an expression of t). */
+/**
+ * The look's own filters, from [input] to [output], on only within [window]
+ * (an expression of t); its loop runs [speed] times as fast, what it does
+ * [amount] times as much (see LookSpan).
+ */
 internal fun lookGraph(
     look: PictureLook,
     input: String,
@@ -86,6 +94,8 @@ internal fun lookGraph(
     fps: Int,
     startSeconds: Double,
     window: String,
+    speed: Double = 1.0,
+    amount: Double = 1.0,
 ): List<String> {
     val w = width.coerceAtLeast(2)
     val h = (if (height > 0) height else w * 9 / 16).coerceAtLeast(2)
@@ -96,9 +106,12 @@ internal fun lookGraph(
     // A frame that falls right on a step of the loop (its time a hair off, in binary) is
     // counted in the step it starts, in every turn of the loop alike.
     /** Where in its loop the look is, 0..1. */
-    val phase = "(mod(t-$s+$EPSILON,$period)/$period)"
+    val v = fmt("%.4f", speed)
+    val a = amount
+    val phase = "(mod((t-$s)*$v+$EPSILON,$period)/$period)"
     /** The step of the loop it is at, of [k] a loop. */
-    fun step(k: Int) = "floor(mod(t-$s+$EPSILON,$period)/$period*$k)"
+    fun step(k: Int) = "floor(mod((t-$s)*$v+$EPSILON,$period)/$period*$k)"
+    fun f(x: Double) = fmt("%.4f", x)
     fun on(condition: String) = "enable='$window*$condition'"
     val onWindow = "enable='$window'"
     val rate = fps.coerceIn(1, 120)
@@ -106,15 +119,15 @@ internal fun lookGraph(
     fun chain(vararg filters: String) = listOf("[$input]${filters.joinToString(",")}[$output]")
 
     return when (look) {
-        PictureLook.BLACK_WHITE -> chain("hue=s=0:$onWindow", "eq=contrast=1.12:$onWindow")
+        PictureLook.BLACK_WHITE -> chain("hue=s=0:$onWindow", "eq=contrast=${f(1 + 0.12 * a)}:$onWindow")
 
         PictureLook.OLD_FILM -> {
             val n = step(12)
             val scratch = max(2, (2 * scale / 2).roundToInt() * 2)
             val segments = mutableListOf(
                 "[$input]colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131:$onWindow," +
-                    "eq=brightness='0.025*sin(2*PI*12*$phase)+0.015*sin(2*PI*7*$phase+1)':eval=frame:$onWindow," +
-                    "noise=c0s=16:c0f=t+u:$onWindow,vignette=angle=0.75:$onWindow[${prefix}o0]",
+                    "eq=brightness='${f(0.025 * a)}*sin(2*PI*12*$phase)+${f(0.015 * a)}*sin(2*PI*7*$phase+1)':eval=frame:$onWindow," +
+                    "noise=c0s=${noise(16 * a)}:c0f=t+u:$onWindow,vignette=angle=${f(min(1.4, 0.75 * a))}:$onWindow[${prefix}o0]",
             )
             var previous = "${prefix}o0"
             for (k in 0 until 3) {
@@ -123,21 +136,21 @@ internal fun lookGraph(
                 val next = if (k == 2) output else "${prefix}o${k + 1}"
                 // shortest: the line's source never ends; the video does.
                 segments += "[$previous][$line]overlay=x='W*${hashExpr("$n*3+${k + 1}")}':y=0:format=auto:shortest=1:" +
-                    on("lt(${hashExpr("$n*3+${k + 50}")},0.3)") + "[$next]"
+                    on("lt(${hashExpr("$n*3+${k + 50}")},${f(min(0.9, 0.3 * a))})") + "[$next]"
                 previous = next
             }
             segments
         }
 
         PictureLook.VHS -> {
-            val shift = max(1, (3 * scale).roundToInt())
+            val shift = max(1, (3 * scale * a).roundToInt())
             val lines = max(2, (h / 360.0).roundToInt())
             val band = evenAtLeast2(0.07 * h)
             listOf(
                 "[$input]rgbashift=rh=-$shift:bh=$shift:$onWindow," +
                     fmt("gblur=sigma=%.3f:sigmaV=0.01:%s,", 1.2 * scale, onWindow) +
-                    "eq=saturation=1.35:contrast=1.06:brightness=0.02:$onWindow," +
-                    "noise=c0s=10:c0f=t+u:$onWindow," +
+                    "eq=saturation=${f(1 + 0.35 * a)}:contrast=1.06:brightness=0.02:$onWindow," +
+                    "noise=c0s=${noise(10 * a)}:c0f=t+u:$onWindow," +
                     "drawgrid=w=iw:h=$lines:t=1:c=black@0.22:$onWindow[${prefix}v0]",
                 "color=c=white@0.10:s=${w}x$band:r=$rate,format=yuva420p[${prefix}v1]",
                 "[${prefix}v0][${prefix}v1]overlay=x=0:y='$phase*(H+h)-h':format=auto:shortest=1:$onWindow[$output]",
@@ -146,8 +159,8 @@ internal fun lookGraph(
 
         PictureLook.GLITCH -> {
             val n = step(20)
-            val burst = "lt(${hashExpr("$n+1")},0.35)"
-            val shift = max(1, (12 * scale).roundToInt())
+            val burst = "lt(${hashExpr("$n+1")},${f(min(0.9, 0.35 * a))})"
+            val shift = max(1, (12 * scale * a).roundToInt())
             val segments = mutableListOf(
                 "[$input]rgbashift=rh=-$shift:bh=$shift:${on(burst)}[${prefix}g0]",
                 "[${prefix}g0]split=4[${prefix}g1][${prefix}c0][${prefix}c1][${prefix}c2]",
@@ -157,7 +170,7 @@ internal fun lookGraph(
                 val y = hashExpr("$n*3+${k + 10}")
                 segments += fmt("[${prefix}c$k]crop=w=iw:h=floor(ih*%.2f/2)*2:x=0:y='(ih-oh)*$y'[${prefix}b$k]", size)
                 val next = "${prefix}g${k + 2}"
-                segments += "[$previous][${prefix}b$k]overlay=x='(${hashExpr("$n*5+${k + 30}")}-0.5)*0.24*W':y='(H-h)*$y':format=auto:" +
+                segments += "[$previous][${prefix}b$k]overlay=x='(${hashExpr("$n*5+${k + 30}")}-0.5)*${f(0.24 * a)}*W':y='(H-h)*$y':format=auto:" +
                     on("$burst*lt(${hashExpr("$n*7+${k + 20}")},0.7)") + "[$next]"
                 previous = next
             }
@@ -171,8 +184,8 @@ internal fun lookGraph(
             val band = evenAtLeast2(0.12 * h)
             listOf(
                 "[$input]eq=saturation=0.5:contrast=0.95:$onWindow," +
-                    "eq=contrast=0.35:brightness=0.08:${on("lt(${hashExpr("$n+3")},0.15)")}," +
-                    "noise=c0s=55:c0f=t+u:$onWindow," +
+                    "eq=contrast=0.35:brightness=0.08:${on("lt(${hashExpr("$n+3")},${f(min(0.9, 0.15 * a))})")}," +
+                    "noise=c0s=${noise(55 * a)}:c0f=t+u:$onWindow," +
                     "drawgrid=w=iw:h=$lines:t=1:c=black@0.18:$onWindow[${prefix}s0]",
                 "color=c=white@0.08:s=${w}x$band:r=$rate,format=yuva420p[${prefix}s1]",
                 "[${prefix}s0][${prefix}s1]overlay=x=0:y='$phase*(H+h)-h':format=auto:shortest=1:$onWindow[$output]",
@@ -180,19 +193,19 @@ internal fun lookGraph(
         }
 
         PictureLook.PRISM -> {
-            val shift = max(1, (6 * scale).roundToInt())
-            chain("rgbashift=rh=-$shift:bh=$shift:$onWindow", "eq=saturation=1.15:$onWindow")
+            val shift = max(1, (6 * scale * a).roundToInt())
+            chain("rgbashift=rh=-$shift:bh=$shift:$onWindow", "eq=saturation=${f(1 + 0.15 * a)}:$onWindow")
         }
 
         PictureLook.SHAKE, PictureLook.PULSE -> {
             // Time in frames of a steady rate (perspective knows no other clock): the frame
             // counted from 1, as perspective counts it.
-            val tau = "((in-1)/$rate-$s+$EPSILON)"
+            val tau = "(((in-1)/$rate-$s)*$v+$EPSILON)"
             val loop = "(mod($tau,$period)/$period)"
             val corners = if (look == PictureLook.SHAKE) {
-                shakeCorners(loop)
+                shakeCorners(loop, a)
             } else {
-                zoomCorners("(1+0.08*exp(-7*$loop))")
+                zoomCorners("(1+${f(0.08 * a)}*exp(-7*$loop))")
             }
             val moved = "${prefix}m"
             val keep = "${prefix}k"
@@ -204,12 +217,12 @@ internal fun lookGraph(
             )
         }
 
-        PictureLook.RAINBOW -> chain("hue=H='2*PI*$phase':s=1.25:$onWindow")
+        PictureLook.RAINBOW -> chain("hue=H='2*PI*$phase':s=${f(1 + 0.25 * a)}:$onWindow")
 
-        PictureLook.STROBE -> chain("eq=brightness='0.45*pow(max(0,cos(2*PI*$phase)),8)':contrast=1.08:eval=frame:$onWindow")
+        PictureLook.STROBE -> chain("eq=brightness='${f(min(1.0, 0.45 * a))}*pow(max(0,cos(2*PI*$phase)),8)':contrast=1.08:eval=frame:$onWindow")
 
         PictureLook.PIXELATE -> {
-            val block = max(4, (w / 90.0).roundToInt())
+            val block = max(2, (w / 90.0 * a).roundToInt())
             chain("pixelize=w=$block:h=$block:$onWindow")
         }
 
@@ -225,8 +238,8 @@ internal fun lookGraph(
 
         PictureLook.GLOW -> listOf(
             "[$input]split=2[${prefix}a][${prefix}b]",
-            fmt("[${prefix}b]gblur=sigma=%.3f:%s[${prefix}g]", 0.012 * w, onWindow),
-            "[${prefix}a][${prefix}g]blend=all_mode=screen:c0_opacity=0.55:c1_opacity=0:c2_opacity=0:$onWindow[$output]",
+            fmt("[${prefix}b]gblur=sigma=%.3f:%s[${prefix}g]", 0.012 * w * a, onWindow),
+            "[${prefix}a][${prefix}g]blend=all_mode=screen:c0_opacity=${f(min(1.0, 0.55 * a))}:c1_opacity=0:c2_opacity=0:$onWindow[$output]",
         )
     }
 }
@@ -239,16 +252,21 @@ internal val GLITCH_BANDS = listOf(0.06, 0.10, 0.04)
 
 private fun evenAtLeast2(x: Double): Int = max(2, (x / 2).roundToInt() * 2)
 
+/** The noise filter's strength (a whole number, 0..100). */
+private fun noise(x: Double): Int = x.roundToInt().coerceIn(0, 100)
+
 /**
  * perspective's corners (sense=source: the part of the picture that fills the
  * frame) for a shake at [loop] (0..1): a little larger than the frame, moved and
  * turned, never past the picture's edges.
  */
-private fun shakeCorners(loop: String): String {
-    val dx = "(0.028*W*(0.6*sin(2*PI*3*$loop)+0.4*sin(2*PI*7*$loop+1.3)))"
-    val dy = "(0.016*H*(0.6*sin(2*PI*4*$loop+0.7)+0.4*sin(2*PI*9*$loop+2.1)))"
-    val a = "(0.01*sin(2*PI*5*$loop+0.4))"
-    return corners("(W/2+$dx)", "(H/2+$dy)", "(W/2.14)", "(H/2.14)", a)
+private fun shakeCorners(loop: String, amount: Double): String {
+    val dx = "(${fmt("%.4f", 0.028 * amount)}*W*(0.6*sin(2*PI*3*$loop)+0.4*sin(2*PI*7*$loop+1.3)))"
+    val dy = "(${fmt("%.4f", 0.016 * amount)}*H*(0.6*sin(2*PI*4*$loop+0.7)+0.4*sin(2*PI*9*$loop+2.1)))"
+    val a = "(${fmt("%.4f", 0.01 * amount)}*sin(2*PI*5*$loop+0.4))"
+    // A little larger than the frame, as far as the shake reaches: never past the picture's edges.
+    val zoom = fmt("%.4f", 2 * (1 + 0.07 * amount))
+    return corners("(W/2+$dx)", "(H/2+$dy)", "(W/$zoom)", "(H/$zoom)", a)
 }
 
 /** perspective's corners of the frame seen [zoom] times closer, in the middle. */
@@ -282,6 +300,7 @@ uniform float2 uSize;
 uniform float uTime;
 uniform float uStrength;
 uniform float uHue;
+uniform float uAmount;
 
 const float3 Y601 = float3(0.299, 0.587, 0.114);
 
@@ -323,7 +342,7 @@ half4 main(float2 p) {
     half4 base = content.eval(p);
     float3 c = clamp(look(p), 0.0, 1.0);
     c = clamp(turnHue(c, uHue, 1.0), 0.0, 1.0);
-    float k = clamp(uStrength, 0.0, 1.0) * step(-1.0, uTime) * step(-1.0, uSize.x);
+    float k = clamp(uStrength, 0.0, 1.0) * step(-1.0, uTime) * step(-1.0, uSize.x) * step(-1.0, uAmount);
     return half4(half3(mix(float3(base.rgb), c, k)), base.a);
 }
 """.trimIndent()
@@ -332,7 +351,8 @@ half4 main(float2 p) {
  * The preview's shader of [look]: run on the frame's picture, it gives the
  * picture as the look shows it (the same numbers as [lookGraph]), mixed with
  * the picture as it is by uStrength and turned by uHue (radians); uTime is the
- * time since the look started, seconds.
+ * time since the look started, seconds, times its speed; uAmount how much it
+ * does (1 as made, see LookSpan.amount).
  */
 fun lookShader(look: PictureLook): String = SHADER_HEAD + "\n\n" + lookBody(look) + "\n\n" + SHADER_MAIN
 
@@ -340,14 +360,14 @@ private fun lookBody(look: PictureLook): String = when (look) {
     PictureLook.BLACK_WHITE -> """
         float3 look(float2 p) {
             float y = dot(px(p), Y601);
-            return float3((y - 0.5) * 1.12 + 0.5);
+            return float3((y - 0.5) * (1.0 + 0.12 * uAmount) + 0.5);
         }
     """
 
     PictureLook.OLD_FILM -> """
         float3 scratch(float3 c, float2 p, float n, float k, float w) {
             float x = floor(uSize.x * h1(n * 3.0 + k + 1.0));
-            if (h1(n * 3.0 + k + 50.0) < 0.3 && p.x >= x && p.x < x + w) return mix(c, float3(0.949, 0.918, 0.827), 0.45);
+            if (h1(n * 3.0 + k + 50.0) < min(0.9, 0.3 * uAmount) && p.x >= x && p.x < x + w) return mix(c, float3(0.949, 0.918, 0.827), 0.45);
             return c;
         }
 
@@ -355,10 +375,10 @@ private fun lookBody(look: PictureLook): String = when (look) {
             float3 c = px(p);
             float3 s = float3(dot(c, float3(0.393, 0.769, 0.189)), dot(c, float3(0.349, 0.686, 0.168)), dot(c, float3(0.272, 0.534, 0.131)));
             float m = fract(uTime / 2.0);
-            s += 0.025 * sin(6.2831853 * 12.0 * m) + 0.015 * sin(6.2831853 * 7.0 * m + 1.0);
-            s += (grain(p, floor(uTime * 30.0)) - 0.5) * 16.0 / 255.0;
+            s += uAmount * (0.025 * sin(6.2831853 * 12.0 * m) + 0.015 * sin(6.2831853 * 7.0 * m + 1.0));
+            s += (grain(p, floor(uTime * 30.0)) - 0.5) * min(100.0, 16.0 * uAmount) / 255.0;
             float d = min(length(p - uSize * 0.5) / length(uSize * 0.5), 1.0);
-            float v = cos(0.75 * d);
+            float v = cos(min(1.4, 0.75 * uAmount) * d);
             s *= v * v * v * v;
             float n = floor(m * 12.0);
             float w = max(2.0, floor(uSize.x / 1280.0 + 0.5) * 2.0);
@@ -379,12 +399,12 @@ private fun lookBody(look: PictureLook): String = when (look) {
 
         float3 look(float2 p) {
             float sc = uSize.x / 1280.0;
-            float r = max(1.0, 3.0 * sc);
+            float r = max(1.0, 3.0 * sc * uAmount);
             float g = max(0.5, 1.2 * sc);
             float3 c = float3(blurred(p + float2(r, 0.0), g).r, blurred(p, g).g, blurred(p - float2(r, 0.0), g).b);
-            c = colourful(c, 1.35);
+            c = colourful(c, 1.0 + 0.35 * uAmount);
             c = (c - 0.5) * 1.06 + 0.5 + 0.02;
-            c += (grain(p, floor(uTime * 30.0)) - 0.5) * 10.0 / 255.0;
+            c += (grain(p, floor(uTime * 30.0)) - 0.5) * min(100.0, 10.0 * uAmount) / 255.0;
             float lines = max(2.0, floor(uSize.y / 360.0 + 0.5));
             if (mod(floor(p.y), lines) < 1.0) c *= 0.78;
             float bh = 0.07 * uSize.y;
@@ -399,7 +419,7 @@ private fun lookBody(look: PictureLook): String = when (look) {
             float on = burst * step(h1(n * 7.0 + k + 20.0), 0.7);
             float bh = floor(uSize.y * size / 2.0) * 2.0;
             float y0 = (uSize.y - bh) * h1(n * 3.0 + k + 10.0);
-            float dx = (h1(n * 5.0 + k + 30.0) - 0.5) * 0.24 * uSize.x;
+            float dx = (h1(n * 5.0 + k + 30.0) - 0.5) * 0.24 * uAmount * uSize.x;
             float2 q = float2(p.x - dx, p.y);
             if (on > 0.5 && p.y >= y0 && p.y < y0 + bh && q.x >= 0.0 && q.x < uSize.x) return shifted(q, r * burst);
             return c;
@@ -407,8 +427,8 @@ private fun lookBody(look: PictureLook): String = when (look) {
 
         float3 look(float2 p) {
             float n = floor(fract(uTime / 2.0) * 20.0);
-            float burst = step(h1(n + 1.0), 0.35);
-            float r = max(1.0, floor(12.0 * uSize.x / 1280.0 + 0.5));
+            float burst = step(h1(n + 1.0), min(0.9, 0.35 * uAmount));
+            float r = max(1.0, floor(12.0 * uAmount * uSize.x / 1280.0 + 0.5));
             float3 c = shifted(p, r * burst);
             c = band(c, p, n, 0.0, 0.06, burst, r);
             c = band(c, p, n, 1.0, 0.10, burst, r);
@@ -424,8 +444,8 @@ private fun lookBody(look: PictureLook): String = when (look) {
             c = (c - 0.5) * 0.95 + 0.5;
             float m = fract(uTime / 2.0);
             float n = floor(m * 16.0);
-            if (h1(n + 3.0) < 0.15) c = (c - 0.5) * 0.35 + 0.5 + 0.08;
-            c += (grain(p, floor(uTime * 30.0)) - 0.5) * 55.0 / 255.0;
+            if (h1(n + 3.0) < min(0.9, 0.15 * uAmount)) c = (c - 0.5) * 0.35 + 0.5 + 0.08;
+            c += (grain(p, floor(uTime * 30.0)) - 0.5) * min(100.0, 55.0 * uAmount) / 255.0;
             float lines = max(2.0, floor(uSize.y / 240.0 + 0.5));
             if (mod(floor(p.y), lines) < 1.0) c *= 0.82;
             float bh = 0.12 * uSize.y;
@@ -437,18 +457,18 @@ private fun lookBody(look: PictureLook): String = when (look) {
 
     PictureLook.PRISM -> """
         float3 look(float2 p) {
-            float r = max(1.0, floor(6.0 * uSize.x / 1280.0 + 0.5));
-            return colourful(shifted(p, r), 1.15);
+            float r = max(1.0, floor(6.0 * uAmount * uSize.x / 1280.0 + 0.5));
+            return colourful(shifted(p, r), 1.0 + 0.15 * uAmount);
         }
     """
 
     PictureLook.SHAKE -> """
         float3 look(float2 p) {
             float t = fract(uTime);
-            float dx = 0.028 * uSize.x * (0.6 * sin(6.2831853 * 3.0 * t) + 0.4 * sin(6.2831853 * 7.0 * t + 1.3));
-            float dy = 0.016 * uSize.y * (0.6 * sin(6.2831853 * 4.0 * t + 0.7) + 0.4 * sin(6.2831853 * 9.0 * t + 2.1));
-            float a = 0.01 * sin(6.2831853 * 5.0 * t + 0.4);
-            float2 l = (p / uSize - 0.5) * uSize / 1.07;
+            float dx = 0.028 * uAmount * uSize.x * (0.6 * sin(6.2831853 * 3.0 * t) + 0.4 * sin(6.2831853 * 7.0 * t + 1.3));
+            float dy = 0.016 * uAmount * uSize.y * (0.6 * sin(6.2831853 * 4.0 * t + 0.7) + 0.4 * sin(6.2831853 * 9.0 * t + 2.1));
+            float a = 0.01 * uAmount * sin(6.2831853 * 5.0 * t + 0.4);
+            float2 l = (p / uSize - 0.5) * uSize / (1.0 + 0.07 * uAmount);
             float2 q = uSize * 0.5 + float2(dx, dy) + float2(cos(a) * l.x - sin(a) * l.y, sin(a) * l.x + cos(a) * l.y);
             return px(q);
         }
@@ -456,27 +476,27 @@ private fun lookBody(look: PictureLook): String = when (look) {
 
     PictureLook.PULSE -> """
         float3 look(float2 p) {
-            float z = 1.0 + 0.08 * exp(-7.0 * fract(uTime / 0.5));
+            float z = 1.0 + 0.08 * uAmount * exp(-7.0 * fract(uTime / 0.5));
             return px(uSize * 0.5 + (p - uSize * 0.5) / z);
         }
     """
 
     PictureLook.RAINBOW -> """
         float3 look(float2 p) {
-            return turnHue(px(p), 6.2831853 * fract(uTime / 3.0), 1.25);
+            return turnHue(px(p), 6.2831853 * fract(uTime / 3.0), 1.0 + 0.25 * uAmount);
         }
     """
 
     PictureLook.STROBE -> """
         float3 look(float2 p) {
-            float b = 0.45 * pow(max(0.0, cos(6.2831853 * fract(uTime / 0.5))), 8.0);
+            float b = min(1.0, 0.45 * uAmount) * pow(max(0.0, cos(6.2831853 * fract(uTime / 0.5))), 8.0);
             return (px(p) - 0.5) * 1.08 + 0.5 + b;
         }
     """
 
     PictureLook.PIXELATE -> """
         float3 look(float2 p) {
-            float b = max(2.0, floor(uSize.x / 90.0 + 0.5));
+            float b = max(2.0, floor(uSize.x / 90.0 * uAmount + 0.5));
             return px((floor(p / b) + 0.5) * b);
         }
     """
@@ -496,7 +516,7 @@ private fun lookBody(look: PictureLook): String = when (look) {
     PictureLook.GLOW -> """
         float3 look(float2 p) {
             float3 c = px(p);
-            float g = 0.012 * uSize.x * 0.9;
+            float g = 0.012 * uAmount * uSize.x * 0.9;
             float total = 0.0;
             float blur = 0.0;
             for (int i = -2; i <= 2; i++) {
@@ -508,7 +528,7 @@ private fun lookBody(look: PictureLook): String = when (look) {
             }
             blur /= total;
             float y = dot(c, Y601);
-            return c + 0.55 * (blur - y * blur);
+            return c + min(1.0, 0.55 * uAmount) * (blur - y * blur);
         }
     """
 }.trimIndent()

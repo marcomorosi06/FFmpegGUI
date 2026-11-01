@@ -88,7 +88,9 @@ private fun looksEffect(looks: List<ImageOverlay>, now: Long, width: Float, heig
         if (now < overlay.startMs || now >= end) continue
         val strength = overlay.opacity * overlayFade(overlay.startMs, overlay.endMs, overlay.fadeInSeconds, overlay.fadeOutSeconds, now)
         if (strength <= 0.001f) continue
-        val seconds = (now - overlay.startMs) / 1000f
+        // Its loop at its own speed; what it does as much as asked.
+        val speed = overlay.lookSpeed.coerceIn(PictureLook.MIN_SPEED, PictureLook.MAX_SPEED)
+        val seconds = (now - overlay.startMs) / 1000f * speed
         val next = oneLook(overlay, look, seconds, strength, width, height, shaders) ?: continue
         effect = if (effect == null) next else RenderEffect.createChainEffect(next, effect)
     }
@@ -98,32 +100,36 @@ private fun looksEffect(looks: List<ImageOverlay>, now: Long, width: Float, heig
 /** One look laid: through its shader from Android 13, else as a colour matrix (or nothing). */
 @RequiresApi(Build.VERSION_CODES.S)
 private fun oneLook(overlay: ImageOverlay, look: PictureLook, seconds: Float, strength: Float, width: Float, height: Float, shaders: LookShaders): RenderEffect? {
+    val amount = overlay.lookAmount.coerceIn(PictureLook.MIN_AMOUNT, PictureLook.MAX_AMOUNT)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        var shader = shaders.byId[overlay.id] as? RuntimeShader
-        if (shader == null && overlay.id !in shaders.refused) {
+        // Kept by the overlay and its look: a look swapped for another gets the other's shader.
+        val key = overlay.id + "/" + look.id
+        var shader = shaders.byId[key] as? RuntimeShader
+        if (shader == null && key !in shaders.refused) {
             shader = newLookShader(look)
-            if (shader == null) shaders.refused += overlay.id else shaders.byId[overlay.id] = shader
+            if (shader == null) shaders.refused += key else shaders.byId[key] = shader
         }
-        if (shader != null) return shaderEffect(shader, seconds, strength, overlay.hue, width, height)
+        if (shader != null) return shaderEffect(shader, seconds, strength, overlay.hue, amount, width, height)
     }
-    return matrixEffect(look, seconds, strength, overlay.hue)
+    return matrixEffect(look, seconds, strength, overlay.hue, amount)
 }
 
 /** The look as a colour matrix (Android 12, or a refused shader): null for a look that is not only colours. */
 @RequiresApi(Build.VERSION_CODES.S)
-private fun matrixEffect(look: PictureLook, seconds: Float, strength: Float, hueDegrees: Float): RenderEffect? {
-    val matrix = lookColorMatrix(look, seconds) ?: return null
+private fun matrixEffect(look: PictureLook, seconds: Float, strength: Float, hueDegrees: Float, amount: Float): RenderEffect? {
+    val matrix = lookColorMatrix(look, seconds, amount) ?: return null
     val turned = combineColorMatrices(hueColorMatrix(hueDegrees), matrix) ?: matrix
     return RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(towards(turned, strength)))
 }
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-private fun shaderEffect(shader: RuntimeShader, seconds: Float, strength: Float, hueDegrees: Float, width: Float, height: Float): RenderEffect {
+private fun shaderEffect(shader: RuntimeShader, seconds: Float, strength: Float, hueDegrees: Float, amount: Float, width: Float, height: Float): RenderEffect {
     // Every name is one the shaders are written with: a name a shader lacks throws.
     shader.setFloatUniform(LookShaderNames.SIZE, width, height)
     shader.setFloatUniform(LookShaderNames.TIME, seconds.coerceAtLeast(0f))
     shader.setFloatUniform(LookShaderNames.STRENGTH, strength.coerceIn(0f, 1f))
     shader.setFloatUniform(LookShaderNames.HUE, Math.toRadians(hueDegrees.toDouble()).toFloat())
+    shader.setFloatUniform(LookShaderNames.AMOUNT, amount)
     return RenderEffect.createRuntimeShaderEffect(shader, LookShaderNames.CONTENT)
 }
 
@@ -159,9 +165,9 @@ private fun newLookShader(look: PictureLook): RuntimeShader? {
  * for the looks that only change colours (what Android 12 can draw); null for
  * the others.
  */
-private fun lookColorMatrix(look: PictureLook, seconds: Float): FloatArray? = when (look) {
+private fun lookColorMatrix(look: PictureLook, seconds: Float, amount: Float): FloatArray? = when (look) {
     PictureLook.BLACK_WHITE -> {
-        val c = 1.12f
+        val c = 1f + 0.12f * amount
         val off = (1f - c) * 0.5f * 255f
         floatArrayOf(
             0.299f * c, 0.587f * c, 0.114f * c, 0f, off,
@@ -188,7 +194,7 @@ private fun lookColorMatrix(look: PictureLook, seconds: Float): FloatArray? = wh
     }
     PictureLook.STROBE -> {
         val phase = (seconds / look.periodSeconds.toFloat()).let { it - kotlin.math.floor(it) }
-        val flash = 0.45f * Math.pow(maxOf(0.0, Math.cos(2 * Math.PI * phase)), 8.0).toFloat()
+        val flash = minOf(1f, 0.45f * amount) * Math.pow(maxOf(0.0, Math.cos(2 * Math.PI * phase)), 8.0).toFloat()
         val c = 1.08f
         val off = ((1f - c) * 0.5f + flash) * 255f
         floatArrayOf(
@@ -221,23 +227,42 @@ private fun towards(matrix: FloatArray, strength: Float): FloatArray {
  * effect gallery's tile and the look panel's preview.
  */
 @Composable
-fun LookFrames(look: PictureLook, hue: Float, modifier: Modifier = Modifier, running: Boolean = true, strength: Float = 1f) {
+fun LookFrames(
+    look: PictureLook,
+    hue: Float,
+    modifier: Modifier = Modifier,
+    running: Boolean = true,
+    strength: Float = 1f,
+    speed: Float = 1f,
+    amount: Float = 1f,
+) {
     val periodMs = (look.periodSeconds * 1000).toInt().coerceAtLeast(1)
     // Two turns of its loop, so that the shortest looks do not race round.
     val loopMs = periodMs * maxOf(1, 2_000 / periodMs)
+    val pace = speed.coerceIn(PictureLook.MIN_SPEED, PictureLook.MAX_SPEED)
     val time: State<Float>? = if (running) {
         val loop = rememberInfiniteTransition(label = "lookFrames")
         loop.animateFloat(
             initialValue = 0f,
-            targetValue = loopMs / 1000f,
-            animationSpec = infiniteRepeatable(tween(loopMs, easing = LinearEasing), RepeatMode.Restart),
+            // Unhurried time: the look's own speed runs it on, the loop still closing on a whole turn.
+            targetValue = loopMs / 1000f / pace,
+            animationSpec = infiniteRepeatable(tween((loopMs / pace).toInt().coerceAtLeast(1), easing = LinearEasing), RepeatMode.Restart),
             label = "lookTime",
         )
     } else {
         null
     }
-    val overlay = remember(look, hue, strength) {
-        ImageOverlay(id = "look-tile", effect = look.id, hue = hue, opacity = strength, startMs = 0L, endMs = Long.MAX_VALUE / 2)
+    val overlay = remember(look, hue, strength, speed, amount) {
+        ImageOverlay(
+            id = "look-tile",
+            effect = look.id,
+            hue = hue,
+            opacity = strength,
+            lookSpeed = speed,
+            lookAmount = amount,
+            startMs = 0L,
+            endMs = Long.MAX_VALUE / 2,
+        )
     }
     val shown = remember(overlay) { listOf(overlay) }
     Box(

@@ -275,6 +275,8 @@ object ProjectJson {
         put("shape", i.shape, ::writeShape)
         put("effect", i.effect)
         put("hue", i.hue)
+        put("lookSpeed", i.lookSpeed)
+        put("lookAmount", i.lookAmount)
     }
 
     fun writeShape(s: ShapeLayer): Json.Obj = jsonObject {
@@ -339,6 +341,8 @@ object ProjectJson {
             shape = o.objOrNull("shape", d.shape, ::shapeLayer),
             effect = o.stringOrNull("effect", d.effect),
             hue = o.float("hue", d.hue),
+            lookSpeed = o.float("lookSpeed", d.lookSpeed),
+            lookAmount = o.float("lookAmount", d.lookAmount),
         )
     }
 

@@ -299,6 +299,8 @@ internal fun ConversionSettings.lookSpans(): List<LookSpan> = imageOverlays.mapN
         fadeInSeconds = overlay.fadeInSeconds,
         fadeOutSeconds = overlay.fadeOutSeconds,
         hueDegrees = overlay.hue,
+        speed = overlay.lookSpeed,
+        amount = overlay.lookAmount,
     )
 }
 

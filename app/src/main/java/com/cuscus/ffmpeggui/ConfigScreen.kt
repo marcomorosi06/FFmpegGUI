@@ -1909,6 +1909,10 @@ fun ConfigScreen(
                         hue = image.hue,
                         onOpacity = { opacity -> updateImage(image.id, "opacity") { it.copy(opacity = opacity) } },
                         onHue = { hue -> updateImage(image.id, "hue") { it.copy(hue = hue) } },
+                        amount = image.lookAmount,
+                        speed = image.lookSpeed,
+                        onAmount = { amount -> updateImage(image.id, "lookAmount") { it.copy(lookAmount = amount) } },
+                        onSpeed = { speed -> updateImage(image.id, "lookSpeed") { it.copy(lookSpeed = speed) } },
                     )
                 }
                 EditorTool.IMAGE_OPACITY -> selectedImage?.let { image ->

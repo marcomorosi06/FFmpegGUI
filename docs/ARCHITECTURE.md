@@ -1121,7 +1121,11 @@ Black and white, old film, VHS, glitch, TV static, prism, shake, pulse,
 rainbow, strobe, pixelate, invert, mirror and glow (`PictureLook`,
 `core/model/PictureLook.kt`) are effects of the library too, offered under
 their own heading in the gallery: an `ImageOverlay` whose `effect` is the
-look's name, on the effects lane, with its strength (opacity), fades and hue.
+look's name, on the effects lane, with its strength (opacity), fades and hue,
+and two settings of its own: its intensity (`lookAmount`, 25 to 200 percent:
+how far a glitch tears, how hard a strobe flashes, how big the pixels...) and
+its speed (`lookSpeed`, 0.25x to 4x, for the looks that move: the time it
+reads runs that much faster, so its loop still closes on a whole turn).
 They have no file (`EffectLibrary.looks`; `ensure` has nothing to copy, the
 `uri` is only a name the library owns): instead of being laid over the video
 they change the picture itself, with its captions and pictures, while they
@@ -1153,7 +1157,9 @@ and laid back over the picture.
 **Preview.** `pictureLooks` (`app/.../PictureLooks.kt`) puts the looks on screen
 now on the box that holds the picture and what lies on it, as one
 `RenderEffect`: each look's shader from Android 13 (uniforms `uSize`, `uTime`,
-`uStrength`, `uHue`), chained in order; on Android 12 the looks that only
+`uStrength`, `uHue`, `uAmount`; `uTime` already times the speed), chained in
+order, each shader kept by its overlay and its look (a look swapped for another
+gets the other's shader); on Android 12 the looks that only
 change colours (black and white, old film's sepia, invert, rainbow, strobe)
 as colour matrices; before, nothing. The gallery's tiles and the look panel
 draw a look on a little sunset of their own (`LookFrames`). Tests:

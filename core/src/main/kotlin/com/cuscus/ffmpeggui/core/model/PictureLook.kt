@@ -30,7 +30,19 @@ enum class PictureLook(
     GLOW("glow", 2.0),
     ;
 
+    /** True when something in it moves (its speed can be set). */
+    val moves: Boolean get() = this != BLACK_WHITE && this != INVERT && this != MIRROR && this != PRISM && this != PIXELATE && this != GLOW
+
+    /** True when how much it does can be set. */
+    val hasAmount: Boolean get() = this != INVERT && this != MIRROR
+
     companion object {
+        /** The slowest and fastest a look's loop runs, and the least and most it does. */
+        const val MIN_SPEED = 0.25f
+        const val MAX_SPEED = 4f
+        const val MIN_AMOUNT = 0.25f
+        const val MAX_AMOUNT = 2f
+
         /** The look called [id], or null when it is not one. */
         fun of(id: String?): PictureLook? = id?.let { name -> entries.firstOrNull { it.id == name } }
     }
@@ -39,7 +51,9 @@ enum class PictureLook(
 /**
  * A [look] over the whole video from [startMs] to [endMs] (on the exported
  * video's clock), at [strength] (0..1, mixed with the picture as it is),
- * faded in and out, its colours turned by [hueDegrees].
+ * faded in and out, its colours turned by [hueDegrees]; its loop runs [speed]
+ * times as fast as made, and what it does (its shift, shake, noise, blocks,
+ * flashes...) is [amount] times as much.
  */
 data class LookSpan(
     val look: PictureLook,
@@ -49,4 +63,6 @@ data class LookSpan(
     val fadeInSeconds: Float = 0f,
     val fadeOutSeconds: Float = 0f,
     val hueDegrees: Float = 0f,
+    val speed: Float = 1f,
+    val amount: Float = 1f,
 )

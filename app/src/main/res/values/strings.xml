@@ -2176,6 +2176,12 @@
     <string name="look_mirror">Mirror</string>
     <string name="look_glow">Glow</string>
     <string name="effect_looks_title">Looks</string>
+    <string name="effect_family_lights">Effects</string>
+    <string name="effect_lights_hint">Light laid over everything, looping for as long as it lasts.</string>
+    <string name="look_amount">Intensity</string>
+    <string name="look_speed">Speed</string>
+    <string name="look_speed_value">%1$sx</string>
+    <string name="look_hint">A look changes the picture itself, captions and stickers included. Intensity sets how much it does, speed how fast it moves.</string>
     <string name="effect_looks_hint">They change the picture itself while they last, captions and stickers included, in a seamless loop.</string>
     <string name="effect_fairy">Fairy wand</string>
     <string name="effect_explosion">Explosion</string>

@@ -74,13 +74,25 @@ class LookGraphTest {
     @Test
     fun `what moves loops on the look's own period`() {
         val glitch = graph(PictureLook.GLITCH).joinToString(";")
-        assertTrue(glitch, glitch.contains("floor(mod(t-2.0000+0.0001,2.0000)/2.0000*20)"))
+        assertTrue(glitch, glitch.contains("floor(mod((t-2.0000)*1.0000+0.0001,2.0000)/2.0000*20)"))
         val vhs = graph(PictureLook.VHS).joinToString(";")
-        assertTrue(vhs, vhs.contains("y='(mod(t-2.0000+0.0001,4.0000)/4.0000)*(H+h)-h'"))
+        assertTrue(vhs, vhs.contains("y='(mod((t-2.0000)*1.0000+0.0001,4.0000)/4.0000)*(H+h)-h'"))
         val shake = graph(PictureLook.SHAKE).joinToString(";")
         assertTrue(shake, shake.contains("fps=30,perspective="))
-        assertTrue(shake, shake.contains("mod(((in-1)/30-2.0000+0.0001),1.0000)"))
+        assertTrue(shake, shake.contains("mod((((in-1)/30-2.0000)*1.0000+0.0001),1.0000)"))
         assertTrue(shake, shake.contains("sense=source:eval=frame"))
+    }
+
+    @Test
+    fun `speed runs the loop faster, amount does more`() {
+        val fast = lookSpanGraph(LookSpan(PictureLook.GLITCH, 2_000, 5_500, speed = 2f, amount = 1.5f), "in", "out", "q", 1280, 720, 30).joinToString(";")
+        assertTrue(fast, fast.contains("floor(mod((t-2.0000)*2.0000+0.0001,2.0000)/2.0000*20)"))
+        assertTrue(fast, fast.contains("rgbashift=rh=-18:bh=18"))
+        val pixels = lookSpanGraph(LookSpan(PictureLook.PIXELATE, 0, 1_000, amount = 2f), "in", "out", "q", 1280, 720, 30).joinToString(";")
+        assertTrue(pixels, pixels.contains("pixelize=w=28:h=28"))
+        // Out of bounds, kept within them.
+        val wild = lookSpanGraph(LookSpan(PictureLook.STROBE, 0, 1_000, speed = 50f, amount = 9f), "in", "out", "q", 1280, 720, 30).joinToString(";")
+        assertTrue(wild, wild.contains("*4.0000+0.0001") && wild.contains("brightness='0.9000*"))
     }
 
     @Test
@@ -97,7 +109,7 @@ class LookGraphTest {
     fun `every shader reads its uniforms and has a look`() {
         for (look in PictureLook.entries) {
             val code = lookShader(look)
-            for (name in listOf(LookShaderNames.CONTENT, LookShaderNames.SIZE, LookShaderNames.TIME, LookShaderNames.STRENGTH, LookShaderNames.HUE)) {
+            for (name in listOf(LookShaderNames.CONTENT, LookShaderNames.SIZE, LookShaderNames.TIME, LookShaderNames.STRENGTH, LookShaderNames.HUE, LookShaderNames.AMOUNT)) {
                 assertTrue("$look: $name", code.contains("uniform") && code.contains(name))
             }
             assertTrue("$look", code.contains("float3 look(float2 p)"))

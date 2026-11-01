@@ -125,6 +125,10 @@ data class ImageOverlay(
     val effect: String? = null,
     /** An effect's colours turned round the colour wheel, in degrees (0 = as made). */
     val hue: Float = 0f,
+    /** A picture look's speed: its loop runs this many times as fast as made (see LookSpan.speed). */
+    val lookSpeed: Float = 1f,
+    /** How much a picture look does, 1 as made (see LookSpan.amount). */
+    val lookAmount: Float = 1f,
 ) {
     val isVideo: Boolean get() = video != null
 
