@@ -25,6 +25,12 @@ class TvBreakTest {
     }
 
     @Test
+    fun `its sounds, each on or off and as loud as set, are kept with the project`() {
+        val e = Effects(transition = Transition(tv, 4_000, sound = false, soundVolume = 0.4f, music = true, musicVolume = 1.5f))
+        assertEquals(e.transition, com.cuscus.ffmpeggui.core.project.ModelJson.effects(com.cuscus.ffmpeggui.core.project.ModelJson.write(e)).transition)
+    }
+
+    @Test
     fun `too short for its card, the clips simply cut`() {
         assertEquals(listOf(0L), transitionLengths(listOf(Transition(tv, 3_000)), listOf(2_400L, 10_000L)))
         assertEquals(listOf(TV_BREAK_MIN_MS), transitionLengths(listOf(Transition(tv, 3_000)), listOf(3_200L, 10_000L)))

@@ -53,7 +53,7 @@ fun transitionEffects(clips: List<Clip>, whole: Effects): List<ImageOverlay> {
     val clock = outputClock(clips, whole, 0L)
     val tvBreaks = clips.dropLast(1).flatMapIndexed { gap, clip ->
         val breaks = clip.effects.transition?.let { !it.isEffect && it.kind.tvBreak } == true
-        if (breaks) tvBreak(clip.id, clock.transitionOutputRange(gap)) else emptyList()
+        if (breaks) tvBreak(clip.id, clock.transitionOutputRange(gap), clip.effects.transition!!) else emptyList()
     }
     return tvBreaks + clips.dropLast(1).mapIndexedNotNull { gap, clip ->
         val transition = clip.effects.transition ?: return@mapIndexedNotNull null
@@ -92,6 +92,9 @@ fun transitionEffects(clips: List<Clip>, whole: Effects): List<ImageOverlay> {
             // Light on black is screened; what carries its own opacity is laid as it is.
             blend = if (effect.alpha) LayerBlend.NORMAL else LayerBlend.SCREEN,
             effect = name,
+            // A punch's blow, when it is wanted, as loud as asked.
+            hasAudio = effect.audio && companion != null && transition.sound,
+            volume = transition.soundVolume.coerceIn(0f, Transition.MAX_VOLUME),
         ).withVideo(span)
     }
 }
@@ -103,7 +106,7 @@ fun transitionEffects(clips: List<Clip>, whole: Effects): List<ImageOverlay> {
  * coming on). Each carries its own sound. On a stretch shorter than the
  * break's own shortest (a video sped up), the channel changes faster.
  */
-private fun tvBreak(clipId: String, range: LongRange): List<ImageOverlay> {
+private fun tvBreak(clipId: String, range: LongRange, transition: Transition): List<ImageOverlay> {
     if (range.isEmpty()) return emptyList()
     val card = EffectLibrary.info(TV_CARD) ?: return emptyList()
     val intro = EffectLibrary.info(TV_INTRO) ?: return emptyList()
@@ -113,7 +116,11 @@ private fun tvBreak(clipId: String, range: LongRange): List<ImageOverlay> {
     val part = Math.round(TV_BREAK_PART_MS * shrink)
     val cardIn = Math.round(TV_BREAK_CARD_IN_MS * shrink)
     val cardMs = (length - 2 * cardIn).coerceIn(1L, card.lengthMs)
+    // The tune is the card's sound; the channel changing, the intro's and the outro's.
     fun overlay(info: EffectInfo, part: String, span: SoundSpan, fadeIn: Float = 0f, fadeOut: Float = 0f): ImageOverlay? {
+        val tune = info.name == TV_CARD
+        val heard = if (tune) transition.music else transition.sound
+        val volume = if (tune) transition.musicVolume else transition.soundVolume
         val uri = EffectLibrary.uri(info.name) ?: return null
         return ImageOverlay(
             id = ID_PREFIX + clipId + ":" + part,
@@ -125,7 +132,8 @@ private fun tvBreak(clipId: String, range: LongRange): List<ImageOverlay> {
             layer = TRANSITION_EFFECT_LAYER,
             blend = LayerBlend.NORMAL,
             effect = info.name,
-            hasAudio = info.audio,
+            hasAudio = info.audio && heard,
+            volume = volume.coerceIn(0f, Transition.MAX_VOLUME),
             fadeInSeconds = fadeIn,
             fadeOutSeconds = fadeOut,
         ).withVideo(span)

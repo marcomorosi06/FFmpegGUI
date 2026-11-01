@@ -26,7 +26,8 @@ The complete source code of this APK is:
   scripts/generate-effects.py of that tag, which draws every frame and
   encodes them with FFmpeg (python3 scripts/generate-effects.py), with
   scripts/punch3d.py, which renders the 3D fist of the punch transitions
-  (punch.mp4, punch_back.mp4 and their WebP frame sheets), and
+  and makes the sound of its blow (punch.mp4, punch_back.mp4 and their
+  WebP frame sheets: pictures and sounds alike), and
   scripts/math_effect.py, which draws the formulas of the math effect
   with its own stroke font (math.mp4, math.jpg), and scripts/tv_break.py,
   which draws the TV break's test card and channel changes and composes

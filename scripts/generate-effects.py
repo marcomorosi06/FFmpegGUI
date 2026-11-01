@@ -869,8 +869,12 @@ EFFECTS = {
 # Drawn with their opacity (see encode_alpha), not as light on black.
 ALPHA = {"punch", "punch_back", "tv_intro", "tv_outro"}
 
-# With a sound of their own (mono, tv_break.SR): the TV break's parts.
-AUDIO = {"tv_intro": tv_break.intro_audio, "tv_card": tv_break.card_audio, "tv_outro": tv_break.outro_audio}
+# With a sound of their own (mono, tv_break.SR = punch3d.SR): the TV break's parts and the punches.
+AUDIO = {
+    "tv_intro": tv_break.intro_audio, "tv_card": tv_break.card_audio, "tv_outro": tv_break.outro_audio,
+    # The blow of each punch, made by punch3d.audio (at the same rate).
+    "punch": lambda: punch3d.audio("punch"), "punch_back": lambda: punch3d.audio("punch_back"),
+}
 
 # Snow is noise: it is kept smaller, at a lower quality nobody can see.
 CRF = {"tv_intro": 34, "tv_outro": 34}

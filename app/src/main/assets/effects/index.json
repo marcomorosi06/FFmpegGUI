@@ -219,6 +219,7 @@
   "frames": 30,
   "fps": 30,
   "cut": 0.43,
+  "audio": true,
   "alpha": true,
   "sheet": {
    "file": "punch.webp",
@@ -236,6 +237,7 @@
   "frames": 30,
   "fps": 30,
   "cut": 0.55,
+  "audio": true,
   "alpha": true,
   "sheet": {
    "file": "punch_back.webp",

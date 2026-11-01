@@ -259,6 +259,14 @@ data class Transition(
     val durationMs: Long = DEFAULT_MS,
     val effect: String? = null,
     val size: Float = 1f,
+    /** The sound of its companion effect (a punch's blow, a TV break's channel changing) is heard. */
+    val sound: Boolean = true,
+    /** How loud that sound is (linear, 1 = as made). */
+    val soundVolume: Float = 1f,
+    /** A TV break's tune is heard. */
+    val music: Boolean = true,
+    /** How loud the tune is (linear, 1 = as made). */
+    val musicVolume: Float = 1f,
 ) {
     /** True when the clips meet with a cut under an effect (see [effect]). */
     val isEffect: Boolean get() = effect != null
@@ -274,6 +282,9 @@ data class Transition(
         /** The smallest and largest [size] of a companion effect. */
         const val MIN_SIZE = 0.3f
         const val MAX_SIZE = 1f
+
+        /** The loudest the sounds of a transition can be set (linear). */
+        const val MAX_VOLUME = 2f
 
         /**
          * How long a transition of [requestedMs] really lasts between clips that

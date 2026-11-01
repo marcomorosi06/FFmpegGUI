@@ -1993,6 +1993,10 @@
     <string name="transition_technical_difficulties">Technical difficulties</string>
     <string name="transition_tv_hint">The channel changes, a test card plays its own little tune for as long as you set, then the channel changes again. The clips\' sound gives way to it.</string>
     <string name="transition_punch_hint">A 3D fist lands on the clip and the next one takes its place. It always takes %1$s s.</string>
+    <string name="transition_sound_blow">Sound of the blow</string>
+    <string name="transition_sound_channel">Sound of the channel changing</string>
+    <string name="transition_sound_tune">The tune</string>
+    <string name="transition_sound_volume">Volume</string>
     <string name="transition_fist_size">Fist size</string>
     <string name="transition_duration">Duration</string>
     <string name="transition_shortened">Shortened to %1$s s: a transition takes at most half of each clip.</string>

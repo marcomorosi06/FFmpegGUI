@@ -86,7 +86,8 @@ object ModelJson {
         putKeyframes(e.keyframes)
         put("speedCurve", e.speedCurve, ::write)
         put("keepPitch", e.keepPitch)
-        put("transition", e.transition) { t -> jsonObject { put("kind", t.kind); put("durationMs", t.durationMs); put("effect", t.effect); put("size", t.size) } }
+        put("transition", e.transition) { t -> jsonObject { put("kind", t.kind); put("durationMs", t.durationMs); put("effect", t.effect); put("size", t.size)
+            put("sound", t.sound); put("soundVolume", t.soundVolume); put("music", t.music); put("musicVolume", t.musicVolume) } }
         put("hdrLook", e.hdrLook)
         put("placement", e.placement) { p ->
             jsonObject {
@@ -185,6 +186,10 @@ object ModelJson {
                     durationMs = t.long("durationMs", Transition.DEFAULT_MS),
                     effect = t.stringOrNull("effect"),
                     size = t.float("size", 1f),
+                    sound = t.bool("sound", true),
+                    soundVolume = t.float("soundVolume", 1f).coerceIn(0f, Transition.MAX_VOLUME),
+                    music = t.bool("music", true),
+                    musicVolume = t.float("musicVolume", 1f).coerceIn(0f, Transition.MAX_VOLUME),
                 )
             },
             hdrLook = o.doubleOrNull("hdrLook", d.hdrLook?.toDouble())?.toFloat(),

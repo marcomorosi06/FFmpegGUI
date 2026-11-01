@@ -47,6 +47,9 @@ import androidx.compose.material.icons.rounded.LocalFlorist
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.SportsMma
+import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -640,7 +643,14 @@ internal fun TransitionContent(
                                         // keeps within the new kind's bounds.
                                         val sameBounds = transition?.isEffect == false && transition.kind.tvBreak == kind.tvBreak
                                         val ms = if (sameBounds) durationMs else kind.defaultMs
-                                        onTransition(Transition(kind, ms.coerceIn(kind.minMs, kind.maxMs), size = transition?.size ?: Transition.MAX_SIZE))
+                                        // The size and the sounds chosen stay as they were.
+                                        val kept = transition ?: Transition()
+                                        onTransition(
+                                            Transition(
+                                                kind, ms.coerceIn(kind.minMs, kind.maxMs), size = transition?.size ?: Transition.MAX_SIZE,
+                                                sound = kept.sound, soundVolume = kept.soundVolume, music = kept.music, musicVolume = kept.musicVolume,
+                                            ),
+                                        )
                                     },
                                 )
                                 is TransitionChoice.Effect -> EffectTransitionTile(
@@ -659,6 +669,10 @@ internal fun TransitionContent(
                     }
                 }
             }
+        }
+        // A punch's blow, a TV break's channel changing and its tune: each on or off, as loud as wanted.
+        if (transition != null && !transition.isEffect && hasNext && (transition.kind.companionEffect != null || transition.kind.tvBreak)) {
+            TransitionSounds(transition, onTransition)
         }
         val effect = EffectLibrary.info(transition?.effect)
         val fixedMs = transition?.takeIf { !it.isEffect }?.kind?.fixedMs
@@ -1057,3 +1071,62 @@ private fun BoxScope.TileScene(first: Boolean) {
 
 private val TILE_WIDTH = 80.dp
 private val TILE_HEIGHT = 58.dp
+
+/**
+ * The sounds a transition brings: a punch's blow, or a TV break's channel
+ * changing and its tune apart. Each can be switched off, and its volume set
+ * (heard in the preview as in the export).
+ */
+@Composable
+private fun TransitionSounds(transition: Transition, onTransition: (Transition) -> Unit) {
+    val tv = transition.kind.tvBreak
+    TransitionSound(
+        icon = if (tv) Icons.Rounded.Tv else Icons.Rounded.SportsMma,
+        title = stringResource(if (tv) R.string.transition_sound_channel else R.string.transition_sound_blow),
+        on = transition.sound,
+        volume = transition.soundVolume,
+        onOn = { onTransition(transition.copy(sound = it)) },
+        onVolume = { onTransition(transition.copy(soundVolume = it)) },
+    )
+    if (tv) {
+        TransitionSound(
+            icon = Icons.Rounded.MusicNote,
+            title = stringResource(R.string.transition_sound_tune),
+            on = transition.music,
+            volume = transition.musicVolume,
+            onOn = { onTransition(transition.copy(music = it)) },
+            onVolume = { onTransition(transition.copy(musicVolume = it)) },
+        )
+    }
+}
+
+@Composable
+private fun TransitionSound(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    on: Boolean,
+    volume: Float,
+    onOn: (Boolean) -> Unit,
+    onVolume: (Float) -> Unit,
+) {
+    com.cuscus.ffmpeggui.ui.expressive.SwitchCard(icon = icon, title = title, checked = on, onCheckedChange = onOn)
+    AnimatedVisibility(visible = on) {
+        PanelCard {
+            ValueSlider(
+                label = stringResource(R.string.transition_sound_volume),
+                valueText = stringResource(R.string.value_percent, Math.round(volume * 100f)),
+                value = volume.coerceIn(0f, Transition.MAX_VOLUME),
+                onValueChange = { v ->
+                    val stepped = (Math.round(v * 20f) / 20f).coerceIn(0f, Transition.MAX_VOLUME)
+                    if (stepped != volume) onVolume(stepped)
+                },
+                valueRange = 0f..Transition.MAX_VOLUME,
+                icon = icon,
+                defaultValue = 1f,
+                startLabel = stringResource(R.string.value_percent, 0),
+                endLabel = stringResource(R.string.value_percent, Math.round(Transition.MAX_VOLUME * 100f)),
+                enabled = true,
+            )
+        }
+    }
+}

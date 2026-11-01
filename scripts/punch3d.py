@@ -17,7 +17,13 @@ Each frame is colour plus opacity (RGBA, not premultiplied), the fist's soft
 shadow on the picture under it included. The moment of each cut (CUT) is the
 one the app's recipes switch clips at (TransitionKind.PUNCH, PUNCH_BACK).
 
-Everything is deterministic: running it again draws the same frames.
+The sound of each blow (audio) is made here too, from noise and damped
+resonances (no recording): the sleeve and the air swishing as the fist
+comes, then a dull knock of flesh, a wet slap and a low thud where it lands
+(HIT, BACK_HIT), in a small room.
+
+Everything is deterministic: running it again draws the same frames and
+makes the same sound.
 Needs: Python 3 and numpy.
 """
 
@@ -448,3 +454,91 @@ def frame(width, height, i, variant="punch"):
 
 def frame_count():
     return int(round(DURATION * FPS))
+
+
+# ---------------------------------------------------------------------------
+# Sound
+# ---------------------------------------------------------------------------
+
+# Sample rate of the blow's sound (the same as the TV break's, see tv_break.SR).
+SR = 44100
+# When the fist lands, seconds from the start: its sound is a whoosh coming in, then the blow.
+HITS = {"punch": HIT, "punch_back": BACK_HIT}
+
+
+def _band(x, low, high, order=2):
+    """[x] through a band-pass of [low]..[high] Hz."""
+    from scipy.signal import butter, sosfilt
+    return sosfilt(butter(order, [low, high], btype="band", fs=SR, output="sos"), x)
+
+
+def _lowpass(x, cutoff, order=2):
+    """[x] through a low-pass at [cutoff] Hz."""
+    from scipy.signal import butter, sosfilt
+    return sosfilt(butter(order, cutoff, btype="low", fs=SR, output="sos"), x)
+
+
+def _resonance(excitation, freq, decay):
+    """A body ringing at [freq] Hz (dying in [decay] s), struck by [excitation]: a damped two-pole filter."""
+    from scipy.signal import lfilter
+    r = math.exp(-1.0 / (decay * SR))
+    w = 2 * math.pi * freq / SR
+    return lfilter([1 - r], [1, -2 * r * math.cos(w), r * r], excitation)
+
+
+def audio(variant="punch"):
+    """
+    The blow, made here and owed to no recording, as a foley artist would: the
+    sleeve and the air swishing as the arm comes, then the knuckles landing on
+    something soft (a dull, damped knock of flesh, a few bodies ringing very
+    briefly at slightly random pitches, a wet slap on top), heard in a small room.
+    """
+    rng = np.random.default_rng(7 if variant == "punch" else 8)
+    n = int(round(DURATION * SR))
+    t = np.arange(n) / SR
+    hit = HITS[variant]
+    out = np.zeros(n)
+
+    # The swish: cloth and air, a band of noise that sweeps up and swells as the fist comes.
+    swish_len = 0.18
+    start = hit - swish_len
+    noise = rng.standard_normal(n)
+    grow = np.clip((t - start) / swish_len, 0, 1)
+    swell = np.where((t >= start) & (t < hit + 0.01), np.sin(np.pi * np.clip(grow, 0, 1) * 0.92) ** 2, 0.0)
+    low_band = _band(noise, 250.0, 1200.0)
+    high_band = _band(noise, 1200.0, 5000.0)
+    out += (low_band * (1 - grow) + high_band * grow * 0.6) * swell * 0.22
+
+    # The knock: a short burst of noise (the skin meeting skin) exciting a few soft, damped bodies.
+    i = int(round(hit * SR))
+    burst_len = int(0.012 * SR)
+    burst = np.zeros(n)
+    burst[i:i + burst_len] = rng.standard_normal(burst_len) * np.exp(-np.arange(burst_len) / (0.003 * SR))
+    body = np.zeros(n)
+    for freq, decay, level in ((78, 0.09, 1.0), (135, 0.06, 0.8), (240, 0.035, 0.55), (410, 0.02, 0.35), (720, 0.012, 0.2)):
+        detuned = freq * (1 + rng.uniform(-0.06, 0.06))
+        body += _resonance(burst, detuned, decay) * level
+    body /= max(1e-9, np.abs(body).max())
+    # The flesh gives: the pitch of the knock sags a little as it dies (a slow wobble of its loudness).
+    after = np.clip(t - hit, 0, None)
+    body *= (t >= hit) * (1 + 0.25 * np.sin(2 * np.pi * 22 * after) * np.exp(-after / 0.05))
+    out += body * 0.8
+
+    # The slap: wet, bright and very short, on the blow.
+    slap = _band(rng.standard_normal(n), 900.0, 4500.0) * np.exp(-after / 0.008) * (t >= hit)
+    out += slap * 0.45
+    # Weight: a low thud under it all, soft rather than a pure tone.
+    thud = _lowpass(rng.standard_normal(n), 140.0, order=4) * np.exp(-after / 0.07) * (t >= hit)
+    out += thud / max(1e-9, np.abs(thud).max()) * 0.55
+
+    # A small room: a few early reflections, darker and later each time.
+    room = out.copy()
+    for delay, gain in ((0.011, 0.32), (0.019, 0.22), (0.031, 0.15), (0.047, 0.09)):
+        d = int(delay * SR)
+        room[d:] += _lowpass(out, 3500.0)[:-d] * gain
+    out = room
+
+    # A touch of grit (soft saturation), a soft start and end, nothing clipped.
+    out = np.tanh(out * 1.6) / np.tanh(1.6)
+    out *= np.clip(t / 0.01, 0, 1) * np.clip((DURATION - t) / 0.08, 0, 1)
+    return np.clip(out / max(1e-9, np.abs(out).max()) * 0.9, -1, 1)
