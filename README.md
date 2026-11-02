@@ -47,6 +47,11 @@
   </tr>
 </table>
 
+## Development transparency
+AI tools were extensively used during development. System architecture, technical decisions, code review, and verification were handled by a human.
+
+Don't trust AI-generated code? Verify it yourself or don't install it at all.
+
 ## Why FFmpeg GUI
 
 - **Private by design.** The app has no internet permission, and no storage, media, camera or microphone permission either: files come only through the system's picker or a share, one at a time. The build fails if a dependency ever tries to add one of them. No ads, no trackers, no account: nothing you open leaves the phone.
