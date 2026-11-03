@@ -226,7 +226,7 @@ Every component keeps its own licence: see
 ffmpeg-gui/app/src/main/assets/licenses/README.txt.
 
 HOW THE APK IS BUILT
-- The app: ffmpeg-gui/README.md, "Building" and "Releasing". The release APK
+- The app: ffmpeg-gui/docs/BUILDING.md. The release APK
   is built with: ./gradlew clean assembleRelease --no-build-cache
   --no-configuration-cache --no-daemon
 - The FFmpeg runtime (media/libs/ffmpeg-kit-next-*.aar): built from

@@ -15,7 +15,7 @@ name: Reproducible APK
 # The release key never leaves your machine: download the APK from the draft,
 # sign it there without re-aligning it (apksigner --alignment-preserved true),
 # attach it as ffmpeg-gui-<tag>.apk in place of the unsigned one and publish the
-# release (README.md, "Releasing"). verify-release.yml then rebuilds the published
+# release (docs/BUILDING.md, "Releasing"). verify-release.yml then rebuilds the published
 # release once more, exactly as IzzyOnDroid will.
 
 on:
