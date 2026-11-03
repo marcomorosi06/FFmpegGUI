@@ -307,6 +307,15 @@ Details, data flow and a "where do I change X" table are in [`docs/ARCHITECTURE.
 | ONNX Runtime (Java API) | 1.28.0 | Subject cut-out |
 | AndroidSVG | 1.4 | Opening SVG files, drawing parts of SVGs in the SVG editor |
 
+## Star history
+
+<a href="https://www.star-history.com/#marcomorosi06/FFmpegGUI&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=marcomorosi06/FFmpegGUI&type=Date&theme=dark&transparent=true">
+    <img src="https://api.star-history.com/svg?repos=marcomorosi06/FFmpegGUI&type=Date&transparent=true" alt="Star history of FFmpeg GUI" width="100%">
+  </picture>
+</a>
+
 ## Support the project
 
 FFmpeg GUI is made by one person, in spare time, and will stay free and open source. If it is useful to you, you can buy me a coffee on [Ko-fi](https://ko-fi.com/marcomorosi): it keeps the project going.
