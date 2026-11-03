@@ -118,7 +118,7 @@ Once the AAR is in `media/libs`, the work folder can be deleted to free space (i
 
 Releases are reproducible: [IzzyOnDroid](https://izzyondroid.org/docs/reproducibleBuilds/)'s builder rebuilds the APK from the tag and compares it with the published one, byte for byte. The release key never leaves your machine.
 
-1. **Tag.** `git tag v1.0 && git push origin v1.0`. The *Reproducible APK* workflow builds the unsigned APK in IzzyOnDroid's environment (Debian bookworm, OpenJDK 17, the pinned FFmpeg runtime), has IzzyOnDroid's own builder ([rbtlog](https://codeberg.org/IzzyOnDroid/rbtlog)) rebuild it from `.github/izzyondroid/`, and only if both are byte-identical leaves the APK in a **draft** release of `v1.0` (a pre-release for tags such as `v1.0-beta1`). Otherwise there is a diffoscope report and no draft.
+1. **Tag.** `git tag v1.0 && git push origin v1.0`. The *Reproducible APK* workflow first runs the unit tests of `:core` (if one fails, nothing else runs), then builds the unsigned APK in IzzyOnDroid's environment (Debian bookworm, OpenJDK 17, the pinned FFmpeg runtime), has IzzyOnDroid's own builder ([rbtlog](https://codeberg.org/IzzyOnDroid/rbtlog)) rebuild it from `.github/izzyondroid/`, and only if both are byte-identical leaves the APK in a **draft** release of `v1.0` (a pre-release for tags such as `v1.0-beta1`). Otherwise there is a diffoscope report and no draft.
 2. **Sign and publish, on your machine.** Download `ffmpeg-gui-v1.0-unsigned.apk` from the draft (its SHA-256 is in the draft's notes) and sign it without re-aligning it, so the signed APK is that exact file plus the signature:
 
    ```bash

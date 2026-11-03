@@ -1,6 +1,7 @@
 name: Reproducible APK
 
 # For every v* tag:
+#   0. test: the unit tests of :core must pass, or nothing else runs;
 #   1. build: the unsigned release APK, in the environment IzzyOnDroid's recipes
 #      provision;
 #   2. izzyondroid: IzzyOnDroid's own builder (rbtlog) rebuilds the tag from the
@@ -52,8 +53,53 @@ env:
   CMDLINE_TOOLS_SHA256: 2d2d50857e4eb553af5a6dc3ad507a17adf43d115264b1afc116f95c92e5e258
 
 jobs:
+  test:
+    name: Run the unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # The same image and JDK as the build. A job of its own, so the build
+    # below runs in exactly the environment IzzyOnDroid reproduces.
+    container:
+      image: debian:bookworm-slim
+    env:
+      ANDROID_HOME: /opt/sdk
+      ANDROID_SDK_ROOT: /opt/sdk
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+    steps:
+      - name: Install build tools
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          mkdir -p /usr/share/man/man1
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git wget unzip openjdk-17-jdk-headless
+
+      - name: Check out the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+
+      - name: Validate the Gradle wrapper
+        uses: gradle/actions/wrapper-validation@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      # Gradle configures :app and :media too, and the Android plugin wants an SDK.
+      - name: Install the Android command line tools
+        run: |
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          wget -q -O /tmp/tools.zip -- "$CMDLINE_TOOLS_URL"
+          sha256sum -c <<< "$CMDLINE_TOOLS_SHA256  /tmp/tools.zip"
+          unzip -q -d "$ANDROID_HOME/cmdline-tools" /tmp/tools.zip
+          mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/$CMDLINE_TOOLS_VERSION"
+          rm /tmp/tools.zip
+          ( yes || true ) | "$ANDROID_HOME/cmdline-tools/$CMDLINE_TOOLS_VERSION/bin/sdkmanager" --sdk_root="$ANDROID_HOME" --licenses > /dev/null
+
+      - name: Run the tests of :core
+        run: ./gradlew :core:test --no-build-cache --no-configuration-cache --no-daemon
+
   build:
     name: Build unsigned release APK
+    needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     # The image and JDK of IzzyOnDroid's recipe (provisioning in the recipe).
@@ -159,6 +205,7 @@ jobs:
 
   izzyondroid:
     name: Rebuild with IzzyOnDroid's builder
+    needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     outputs:
@@ -214,6 +261,7 @@ jobs:
 
   sources:
     name: Pack the complete source
+    needs: test
     # Independent of the APK build: it only reads the tag and the sources it pins.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
