@@ -304,23 +304,38 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             echo "Release $TAG exists: only what it lacks is uploaded."
           else
+            repo="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+            at="$repo/blob/$GITHUB_SHA"
+            dl="$repo/releases/download/$TAG"
+            RUN_URL="$repo/actions/runs/$GITHUB_RUN_ID"
             {
-              echo "The invisible AI marks of FFmpeg GUI: AudioSeal by Meta (MIT License), converted to ONNX here,"
-              echo "and TrustMark Q by Adobe (MIT License), Adobe's own ONNX files unchanged. The app imports them"
-              echo "before any other model and marks with them what its models make (EU AI Act, Article 50(2))."
-              echo "The marks carry nothing but \"made with AI\": the same for everyone, no identifier of any kind."
-              echo
-              echo "Made from what \`scripts/ai-markers.lock\` pins at ${GITHUB_SHA}, twice (ubuntu-24.04;"
-              echo "ubuntu-26.04 on two cores), with byte-identical results. See NOTICE for what was converted and"
-              echo "what is unchanged, PROVENANCE for everything the files were made from, check.json for how the"
-              echo "marks held up (compression, resizing) and that nothing unmarked was found marked."
-              echo
-              echo '```'
-              cat "$dir/SHA256SUMS"
-              echo '```'
-              echo
-              echo "TrustMark: T. Bui, S. Agarwal, J. Collomosse, ICCV 2025. The record of every model the app can"
-              echo "use: docs/MODELS.md. This is not legal advice."
+              cat <<EOF
+          The invisible AI marks of [FFmpeg GUI]($repo): **AudioSeal** by Meta, converted to ONNX here, and **TrustMark Q** by Adobe, Adobe's own ONNX files unchanged, both under the MIT License. The app imports them before any other model and marks with them what its models make ([EU AI Act](https://eur-lex.europa.eu/eli/reg/2024/1689/oj), Article 50(2)).
+
+          The marks are made to carry nothing but "made with AI": the same for everyone, no identifier. That they carry none is not certain: see [the README]($repo/blob/master/README.md) before sharing what must not lead back to you.
+
+          | File | What it is |
+          |---|---|
+          | [audioseal-generator.onnx]($dl/audioseal-generator.onnx) | AudioSeal's generator, converted: writes the mark into speech |
+          | [audioseal-detector.onnx]($dl/audioseal-detector.onnx) | AudioSeal's detector, converted: finds it |
+          | [trustmark-encoder-q.onnx]($dl/trustmark-encoder-q.onnx) | TrustMark Q's encoder, Adobe's file: writes the mark into pictures |
+          | [trustmark-decoder-q.onnx]($dl/trustmark-decoder-q.onnx) | TrustMark Q's decoder, Adobe's file: finds it |
+          | [NOTICE.txt]($dl/NOTICE.txt) | What was converted and how, what is unchanged |
+          | [PROVENANCE.txt]($dl/PROVENANCE.txt), [second build]($dl/PROVENANCE-second-build.txt) | Everything the files were made from |
+          | [check.json]($dl/check.json) | How the marks held up (compression, resizing), and that nothing unmarked was found marked |
+          | [SHA256SUMS.txt]($dl/SHA256SUMS.txt) | The files' SHA-256, also below |
+          | [LICENSE-audioseal.txt]($dl/LICENSE-audioseal.txt), [LICENSE-trustmark.txt]($dl/LICENSE-trustmark.txt) | Their licences |
+
+          Made from what [\`scripts/ai-markers.lock\`]($at/scripts/ai-markers.lock) pins at [${GITHUB_SHA:0:7}]($repo/commit/$GITHUB_SHA), by [the workflow]($at/.github/workflows/ai-markers.yml)${RUN_URL:+ ([this run]($RUN_URL))}, twice (ubuntu-24.04, and ubuntu-26.04 on two cores), with byte-identical results.
+
+          \`\`\`
+          EOF
+              sed '/^$/d' "$dir/SHA256SUMS"
+              cat <<EOF
+          \`\`\`
+
+          Papers: [AudioSeal](https://arxiv.org/abs/2401.17264) (R. San Roman et al., ICML 2024), [TrustMark](https://arxiv.org/abs/2311.18297) (T. Bui, S. Agarwal, J. Collomosse, ICCV 2025). Sources: [facebookresearch/audioseal](https://github.com/facebookresearch/audioseal), [adobe/trustmark](https://github.com/adobe/trustmark). Every model the app can use: [docs/MODELS.md]($at/docs/MODELS.md). This is not legal advice.
+          EOF
             } > notes.md
             if ! gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
               --title "$TAG" --notes-file notes.md --draft --prerelease --latest=false; then
