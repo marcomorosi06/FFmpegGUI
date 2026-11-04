@@ -11,6 +11,10 @@ With --online it also reads the upstream file at the pinned commit (it must
 be the pinned one) and today (a change is reported, not fixed: read it, then
 update the copy and the lock).
 
+Texts are compared with their line endings made LF (CRLF and CR become LF):
+the same licence with Windows line endings is the same licence, and git may
+change them on the way.
+
 Exit status 0 when everything agrees, 1 otherwise. Not legal advice.
 """
 
@@ -34,6 +38,11 @@ def problem(message):
 
 def ok(message):
     print("ok    " + message)
+
+
+def text_sha256(data):
+    """SHA-256 of a text with its line endings made LF."""
+    return hashlib.sha256(data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")).hexdigest()
 
 
 def entries():
@@ -71,7 +80,7 @@ def main():
             problem("%s: %s is missing" % (e["name"], e["copy"]))
             continue
         with open(path, "rb") as f:
-            got = hashlib.sha256(f.read()).hexdigest()
+            got = text_sha256(f.read())
         if got != e["sha256"]:
             problem("%s: %s is not the upstream %s the lock pins" % (e["name"], e["copy"], e["file"]))
         else:
@@ -82,7 +91,7 @@ def main():
         if args.online:
             for ref, strict in ((e["commit"], True), ("HEAD", False)):
                 try:
-                    digest = hashlib.sha256(raw(e["repository"], ref, e["file"])).hexdigest()
+                    digest = text_sha256(raw(e["repository"], ref, e["file"]))
                 except Exception as error:  # noqa: BLE001 - any failure is reported
                     problem("%s: cannot read %s at %s: %s" % (e["name"], e["file"], ref, error))
                     continue

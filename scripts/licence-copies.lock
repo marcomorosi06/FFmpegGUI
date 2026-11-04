@@ -2,7 +2,11 @@
 # because code or artwork of theirs is in FFmpeg GUI. scripts/check-licence-copies.py
 # checks every copy against the SHA-256 here, and with --online that the file
 # upstream, at the pinned commit and today, is still the one pinned.
+#
+# The SHA-256 is of the text with its line endings made LF: an upstream file
+# with CRLF endings (WiFi Audio Streaming's LICENSE.md has them) reaches this
+# repository with LF ones (git am drops the CR), and the text is the same.
 # (The AI models' licences are pinned in their own locks: scripts/*-onnx.lock.)
 #
 # name                  repository                                                    commit                                    upstream file  sha256                                                            copy in this repository
-wifi-audio-streaming    https://github.com/marcomorosi06/WiFiAudioStreaming-Android   53eefd7c4d337b6f7b76a5df244cac35619d4edd  LICENSE.md     32947bc1881a42db1febc9bf595fe92daf7b9f685c3119e0fc1a7a875be427ab  app/src/main/assets/licenses/wifi-audio-streaming/LICENSE.txt
+wifi-audio-streaming    https://github.com/marcomorosi06/WiFiAudioStreaming-Android   53eefd7c4d337b6f7b76a5df244cac35619d4edd  LICENSE.md     12c4f0c7770e82a61ebcf83e32b05462ea3835caf00c7d0b209342105ba08ca0  app/src/main/assets/licenses/wifi-audio-streaming/LICENSE.txt
