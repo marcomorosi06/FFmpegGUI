@@ -285,15 +285,26 @@ def check_release(name, folder, lock, notice):
             problem("%s: %s does not carry the upstream licence inside it" % (folder, f))
         else:
             ok("%s: %s carries its licence and notice" % (name, f))
+    # The export scripts write LICENSE, NOTICE, ...; the releases carry them as
+    # LICENSE.txt, NOTICE.txt, ... (see models-onnx.yml): either is taken.
+    def side(name):
+        for candidate in (name, name + ".txt"):
+            path = os.path.join(folder, candidate)
+            if os.path.isfile(path):
+                return path
+        return None
+
+    found = {}
     for extra in ("LICENSE", "NOTICE", "PROVENANCE", "SHA256SUMS"):
-        if not os.path.isfile(os.path.join(folder, extra)):
-            problem("%s: %s is missing" % (folder, extra))
-    if os.path.isfile(os.path.join(folder, "LICENSE")) and sha256(os.path.join(folder, "LICENSE")) != lock["licence_sha256"]:
+        found[extra] = side(extra)
+        if found[extra] is None:
+            problem("%s: %s (or %s.txt) is missing" % (folder, extra, extra))
+    if found["LICENSE"] and sha256(found["LICENSE"]) != lock["licence_sha256"]:
         problem("%s: LICENSE is not the upstream one" % folder)
-    if os.path.isfile(os.path.join(folder, "NOTICE")) and read(os.path.join(folder, "NOTICE")) != notice:
+    if found["NOTICE"] and read(found["NOTICE"]) != notice:
         problem("%s: NOTICE is not the one the app bundles" % folder)
-    if os.path.isfile(os.path.join(folder, "SHA256SUMS")):
-        listed = dict(reversed(line.split("  ", 1)) for line in read(os.path.join(folder, "SHA256SUMS")).splitlines() if "  " in line)
+    if found["SHA256SUMS"]:
+        listed = dict(reversed(line.split("  ", 1)) for line in read(found["SHA256SUMS"]).splitlines() if "  " in line)
         for f, digest in files.items():
             if listed.get(f) != digest:
                 problem("%s: SHA256SUMS does not list %s as pinned" % (folder, f))
@@ -330,7 +341,7 @@ def fetch(url, head=False):
 def check_online(locks):
     for name, lock in locks.items():
         assets = [lock["encoder_file"], lock["decoder_file"]] if name == "edgetam" else [lock["file"]]
-        for asset in assets + ["LICENSE", "NOTICE", "PROVENANCE"]:
+        for asset in assets + ["LICENSE.txt", "NOTICE.txt", "PROVENANCE.txt"]:
             url = "https://github.com/%s/releases/download/%s/%s" % (REPOSITORY, lock["release_tag"], asset)
             try:
                 status, _ = fetch(url, head=True)

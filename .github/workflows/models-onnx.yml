@@ -15,9 +15,9 @@ name: AI model files (ONNX)
 #      the app's pins, the licence and the NOTICE inside and next to them;
 #   2. publish: only when both builds are byte-identical, the files go out with
 #      the upstream LICENSE, the NOTICE of the changes (Apache 2.0 section 4b)
-#      and their PROVENANCE, as a pre-release named by the lock's release_tag
-#      (never "latest": the app's own releases stay apart). The app downloads
-#      them from there.
+#      and their PROVENANCE (as LICENSE.txt, NOTICE.txt, PROVENANCE.txt), as a
+#      pre-release named by the lock's release_tag (never "latest": the app's
+#      own releases stay apart). The app downloads them from there.
 #
 # It runs only by hand (Actions > AI model files > Run workflow): before the
 # first app release that pins new files, or to check that they still build
@@ -202,8 +202,18 @@ jobs:
             lock="scripts/${model}-onnx.lock"
             tag=$(awk '$1 == "release_tag" { print $2 }' "$lock")
             dir="builds/${model}-ubuntu-24.04"
-            cp "builds/${model}-ubuntu-26.04/PROVENANCE" "$dir/PROVENANCE.second-build"
-            files=("$dir"/*.onnx "$dir/LICENSE" "$dir/NOTICE" "$dir/PROVENANCE" "$dir/PROVENANCE.second-build" "$dir/SHA256SUMS" "$dir/check.json")
+            # What goes out: the ONNX files as they are, the files beside them as text
+            # files (a bare "LICENSE" did not reach a release as uploaded).
+            stage="stage/${model}"
+            rm -rf "$stage"
+            mkdir -p "$stage"
+            cp "$dir"/*.onnx "$dir/check.json" "$stage/"
+            cp "$dir/LICENSE" "$stage/LICENSE.txt"
+            cp "$dir/NOTICE" "$stage/NOTICE.txt"
+            cp "$dir/PROVENANCE" "$stage/PROVENANCE.txt"
+            cp "builds/${model}-ubuntu-26.04/PROVENANCE" "$stage/PROVENANCE-second-build.txt"
+            cp "$dir/SHA256SUMS" "$stage/SHA256SUMS.txt"
+            files=("$stage"/*)
             echo "::group::${tag}"
             if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
               echo "Release $tag exists: only what it lacks is uploaded."
@@ -238,6 +248,18 @@ jobs:
                 gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "$f"
               fi
             done
+            echo "The release holds now:"
+            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets \
+              --jq '.assets[] | "  \(.name)  \(.size) bytes  \(.state)"'
+            # A draft may keep files of an earlier attempt that go out no more.
+            if [ "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true ]; then
+              gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | while read -r name; do
+                if [ ! -f "$stage/$name" ]; then
+                  echo "Removing $name from the draft: it is not one of its files."
+                  gh release delete-asset "$tag" "$name" --repo "$GITHUB_REPOSITORY" --yes
+                fi
+              done
+            fi
             # What the release holds now, checked as the app will download it.
             rm -rf "published/$model"
             mkdir -p "published/$model"
