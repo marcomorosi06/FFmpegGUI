@@ -341,13 +341,23 @@ def fetch(url, head=False):
 def check_online(locks):
     for name, lock in locks.items():
         assets = [lock["encoder_file"], lock["decoder_file"]] if name == "edgetam" else [lock["file"]]
-        for asset in assets + ["LICENSE.txt", "NOTICE.txt", "PROVENANCE.txt"]:
-            url = "https://github.com/%s/releases/download/%s/%s" % (REPOSITORY, lock["release_tag"], asset)
-            try:
-                status, _ = fetch(url, head=True)
-                ok("%s answers (%d)" % (url, status))
-            except Exception as e:  # noqa: BLE001 - any failure is reported as such
-                problem("%s does not answer: %s (publish it: .github/workflows/models-onnx.yml)" % (url, e))
+        # The side files go out as LICENSE.txt, ...; edgetam-onnx-1 was published
+        # with LICENSE, ... and keeps them: either name answers.
+        for asset in assets + ["LICENSE", "NOTICE", "PROVENANCE"]:
+            names = [asset] if asset.endswith(".onnx") else [asset + ".txt", asset]
+            answered = None
+            for candidate in names:
+                url = "https://github.com/%s/releases/download/%s/%s" % (REPOSITORY, lock["release_tag"], candidate)
+                try:
+                    status, _ = fetch(url, head=True)
+                    answered = (url, status)
+                    break
+                except Exception as e:  # noqa: BLE001 - any failure is reported as such
+                    failure = e
+            if answered:
+                ok("%s answers (%d)" % answered)
+            else:
+                problem("%s of %s does not answer: %s (publish it: .github/workflows/models-onnx.yml)" % (" or ".join(names), lock["release_tag"], failure))
         upstream = lock["repository"].replace("https://github.com/", "https://raw.githubusercontent.com/") + "/HEAD/" + lock["licence"]
         try:
             _, body = fetch(upstream)

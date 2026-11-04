@@ -198,12 +198,40 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # GitHub's API now and then answers 502 (once while it did publish a
+          # release), or takes a file and does not keep it: every call is tried
+          # again, and every file is uploaded until the release lists it whole.
+          retry() {
+            local n
+            for n in 1 2 3 4 5; do
+              "$@" && return 0
+              echo "Failed (attempt $n): $*"
+              sleep $((n * 15))
+            done
+            return 1
+          }
+          # Name and size of the files the release holds whole.
+          held() {
+            retry gh release view "$1" --repo "$GITHUB_REPOSITORY" --json assets \
+              --jq '.assets[] | select(.state == "uploaded") | "\(.name) \(.size)"'
+          }
+          # The name a side file had before it went out as .txt: edgetam-onnx-1 was
+          # published with LICENSE, NOTICE, ... and keeps them (never two copies).
+          former() {
+            case "$1" in
+              LICENSE.txt) echo LICENSE ;;
+              NOTICE.txt) echo NOTICE ;;
+              PROVENANCE.txt) echo PROVENANCE ;;
+              PROVENANCE-second-build.txt) echo PROVENANCE.second-build ;;
+              SHA256SUMS.txt) echo SHA256SUMS ;;
+              *) echo "$1" ;;
+            esac
+          }
           for model in edgetam birefnet; do
             lock="scripts/${model}-onnx.lock"
             tag=$(awk '$1 == "release_tag" { print $2 }' "$lock")
             dir="builds/${model}-ubuntu-24.04"
-            # What goes out: the ONNX files as they are, the files beside them as text
-            # files (a bare "LICENSE" did not reach a release as uploaded).
+            # What goes out: the ONNX files as they are, the files beside them as text files.
             stage="stage/${model}"
             rm -rf "$stage"
             mkdir -p "$stage"
@@ -235,37 +263,59 @@ jobs:
                 echo
                 echo "The record of every model the app can use: docs/MODELS.md. This is not legal advice."
               } > notes.md
-              gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-                --title "$tag" --notes-file notes.md --draft --prerelease --latest=false
-            fi
-            there=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[] | select(.state == "uploaded") | .name')
-            for f in "${files[@]}"; do
-              name=$(basename "$f")
-              if grep -qxF "$name" <<< "$there"; then
-                echo "Already there: $name"
-              else
-                echo "Uploading $name ($(stat -c %s "$f") bytes)"
-                gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "$f"
+              # A create that failed may still have made the release: never two.
+              if ! gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+                --title "$tag" --notes-file notes.md --draft --prerelease --latest=false; then
+                sleep 15
+                gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 ||
+                  retry gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+                    --title "$tag" --notes-file notes.md --draft --prerelease --latest=false
               fi
-            done
-            echo "The release holds now:"
-            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets \
-              --jq '.assets[] | "  \(.name)  \(.size) bytes  \(.state)"'
+            fi
             # A draft may keep files of an earlier attempt that go out no more.
-            if [ "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true ]; then
-              gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | while read -r name; do
+            if [ "$(retry gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true ]; then
+              retry gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | while read -r name; do
                 if [ ! -f "$stage/$name" ]; then
                   echo "Removing $name from the draft: it is not one of its files."
-                  gh release delete-asset "$tag" "$name" --repo "$GITHUB_REPOSITORY" --yes
+                  retry gh release delete-asset "$tag" "$name" --repo "$GITHUB_REPOSITORY" --yes
                 fi
               done
             fi
+            # Upload what the release does not hold whole, until it does. A model file
+            # counts by name and size; a file beside it by name (old or new) only: a
+            # new run writes another PROVENANCE, and the published one stays.
+            has() {
+              awk -v n="$2" -v z="$3" '$1 == n && (z == "" || $2 == z) { found = 1 } END { exit !found }' <<< "$1"
+            }
+            for round in 1 2 3; do
+              there=$(held "$tag")
+              missing=0
+              for f in "${files[@]}"; do
+                name=$(basename "$f")
+                size=$(stat -c %s "$f")
+                if [[ "$name" == *.onnx ]]; then
+                  has "$there" "$name" "$size" && present=1 || present=0
+                else
+                  { has "$there" "$name" "" || has "$there" "$(former "$name")" ""; } && present=1 || present=0
+                fi
+                if [ "$present" = 1 ]; then
+                  [ "$round" = 1 ] && echo "Already there: $name"
+                else
+                  missing=1
+                  echo "Uploading $name ($size bytes, round $round)"
+                  retry gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "$f"
+                fi
+              done
+              [ "$missing" = 0 ] && break
+            done
+            echo "The release holds:"
+            held "$tag" | sed 's/^/  /'
             # What the release holds now, checked as the app will download it.
             rm -rf "published/$model"
             mkdir -p "published/$model"
-            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "published/$model"
+            retry gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "published/$model" --clobber
             python3 -I scripts/check-model-pins.py --release-dir "$model=published/$model"
-            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+            retry gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
             echo "::endgroup::"
             echo "### Published: \`${tag}\`" >> "$GITHUB_STEP_SUMMARY"
           done
