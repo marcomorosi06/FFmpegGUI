@@ -385,8 +385,10 @@ jobs:
           # script, its licences; ffmpeg-gui/ is "git archive" of that commit) is
           # exactly what the AAR was built from. A release older than these scripts
           # gets its source too.
+          # The licence texts from today's checkout: that commit may predate them.
           cp scripts/ffmpeg-aar-release-files.sh scripts/package-sources.sh built/scripts/
-          bash built/scripts/ffmpeg-aar-release-files.sh "$VERSION" extras
+          LICENCES_FROM="$GITHUB_WORKSPACE/app/src/main/assets/licenses" \
+            bash built/scripts/ffmpeg-aar-release-files.sh "$VERSION" extras
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" extras/*
           {
             echo "### Added to \`${TAG}\`"

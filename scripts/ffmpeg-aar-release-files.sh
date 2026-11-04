@@ -14,14 +14,17 @@
 #
 # Run it on the commit the AAR was built from: .github/workflows/ffmpeg-aar.yml
 # does, both for a new release and for one published before this script (it
-# then checks out that release's tag).
+# then checks out that release's tag, after checking its inputs are the pin's).
+# The licence texts come from LICENCES_FROM (default: this checkout's
+# app/src/main/assets/licenses): an older commit may not have them yet.
 #
 # Usage: scripts/ffmpeg-aar-release-files.sh VERSION OUTDIR
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LICENCES="$ROOT/app/src/main/assets/licenses"
+LICENCES="${LICENCES_FROM:-$ROOT/app/src/main/assets/licenses}"
+export LICENCES_FROM="$LICENCES"
 
 die() {
     echo "error: $*" >&2
@@ -50,8 +53,8 @@ https://github.com/marcomorosi06/FFmpegGUI
 The AAR holds FFmpeg built with GPL libraries (x264, x265, Xvid, vid.stab):
 as a whole it is distributed under the GNU General Public License, version 3
 (COPYING-GPL-3.0.txt, next to it). Each component keeps its own licence, as
-below; their licence texts are in the source archive next to it, in
-ffmpeg-gui/app/src/main/assets/licenses/ and inside each source folder.
+below; their licence texts are in the source archive next to it (licenses/,
+and inside each source folder).
 
 Its complete Corresponding Source, the sources of every component at the
 commits it was built from with the scripts that build it, is

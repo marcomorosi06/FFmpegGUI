@@ -35,6 +35,12 @@
 # ffmpeg-kit-next/ and ffmpeg-kit-next-sources/, without sherpa-onnx. That
 # archive goes next to the AAR on its release, for the same reason: the AAR is
 # object code under the GPL-3.0 (FFmpeg with x264, x265, Xvid and vid.stab).
+# It also carries the licence texts of what the AAR holds (licenses/: the
+# folders ffmpeg, ffmpeg-kit-next, ffmpeg-libraries and smart-exception of the
+# app's assets/licenses, and COPYING-GPL-3.0.txt), taken from LICENCES_FROM
+# (default: this checkout's app/src/main/assets/licenses): an older commit may
+# not have them yet, while its sources are the same (the workflow checks the
+# AAR's inputs first).
 #
 # Usage: scripts/package-sources.sh [--ffmpeg-runtime] OUTPUT.tar.xz
 # Needs bash, git, curl, tar, xz and sha256sum. Reads nothing outside the
@@ -47,6 +53,7 @@ export GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOCK="$ROOT/scripts/ffmpeg-kit-next.lock"
+LICENCES_FROM="${LICENCES_FROM:-$ROOT/app/src/main/assets/licenses}"
 BUILD_SCRIPT="$ROOT/scripts/build-ffmpeg-kit-next.sh"
 SHERPA_SCRIPT="$ROOT/scripts/fetch-sherpa-onnx.sh"
 
@@ -184,6 +191,17 @@ for name in $(tr ' ' '\n' <<<"$SOURCES" | grep -v '^$' | sort -u); do
     entry "ffmpeg-kit-next-sources/$name/" "$url" "$tag" "$commit"
 done
 
+# --- The FFmpeg runtime's licence texts (its archive only) ----------------------
+
+if [[ "$RUNTIME_ONLY" == true ]]; then
+    for folder in ffmpeg ffmpeg-kit-next ffmpeg-libraries smart-exception; do
+        [[ -d "$LICENCES_FROM/$folder" ]] || die "no $LICENCES_FROM/$folder: set LICENCES_FROM to a folder that has the runtime's licences"
+        mkdir -p "$STAGE/licenses"
+        cp -R "$LICENCES_FROM/$folder" "$STAGE/licenses/$folder"
+    done
+    cp "$LICENCES_FROM/ffmpeg-libraries/ffmpeg-kit-next-GPL-3.0.txt" "$STAGE/COPYING-GPL-3.0.txt"
+fi
+
 # --- sherpa-onnx ------------------------------------------------------------------
 
 # Not in the FFmpeg runtime: only in the APK's archive.
@@ -239,10 +257,10 @@ This archive is the Corresponding Source of the FFmpeg runtime
 (ffmpeg-kit-next-*.aar) published next to it, built at FFmpeg GUI commit
 $APP_COMMIT. The AAR holds FFmpeg built with GPL libraries (x264, x265,
 Xvid, vid.stab): as a whole it is distributed under the GNU General Public
-License, version 3 (ffmpeg-gui/app/src/main/assets/licenses/
-ffmpeg-libraries/ffmpeg-kit-next-GPL-3.0.txt). Every component keeps its own
-licence: ffmpeg-gui/app/src/main/assets/licenses/README.txt, section 1, and
-the licence files inside each folder below.
+License, version 3 (COPYING-GPL-3.0.txt, in this archive). Every component
+keeps its own licence: licenses/ in this archive (FFmpeg, FFmpegKitNext, the
+libraries built into FFmpeg, smart-exception), and the licence files inside
+each source folder below.
 
 HOW THE AAR IS BUILT
 - ffmpeg-gui/scripts/build-ffmpeg-kit-next.sh (the scripts used to control
