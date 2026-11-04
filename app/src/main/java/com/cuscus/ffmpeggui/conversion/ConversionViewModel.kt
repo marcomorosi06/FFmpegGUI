@@ -1664,6 +1664,10 @@ class ConversionViewModel(
                 EraseStatus.Failed(EraseProblem.NOTHING)
             } catch (e: com.cuscus.ffmpeggui.erase.EraseEngine.Unreadable) {
                 EraseStatus.Failed(EraseProblem.UNREADABLE)
+            } catch (e: com.cuscus.ffmpeggui.marking.MarkEngine.Missing) {
+                EraseStatus.Failed(EraseProblem.NO_MARKS)
+            } catch (e: com.cuscus.ffmpeggui.marking.MarkEngine.NotHeld) {
+                EraseStatus.Failed(EraseProblem.MARK_NOT_HELD)
             } catch (e: OutOfMemoryError) {
                 EraseStatus.Failed(EraseProblem.NO_MEMORY)
             } catch (e: Exception) {
@@ -1840,6 +1844,11 @@ class ConversionViewModel(
     fun dubSubtitles(speaker: DubSpeaker, speed: Float, originalVoice: Float?) {
         val features = smart ?: return
         if (dubJob?.isActive == true) return
+        // The AI marks first: nothing is said that could not carry one.
+        if (!features.marker.ready) {
+            _dub.value = DubStatus.Failed(DubProblem.NO_MARKS)
+            return
+        }
         if (speaker is DubSpeaker.Kokoro && !features.dubStore.ready) {
             _dub.value = DubStatus.Failed(DubProblem.NO_MODEL)
             return
@@ -1908,6 +1917,10 @@ class ConversionViewModel(
                 _dub.value = DubStatus.Failed(DubProblem.NOTHING)
             } catch (e: VoiceSeparator.ModelMissing) {
                 _dub.value = DubStatus.Failed(DubProblem.NO_SEPARATION)
+            } catch (e: com.cuscus.ffmpeggui.marking.MarkEngine.Missing) {
+                _dub.value = DubStatus.Failed(DubProblem.NO_MARKS)
+            } catch (e: com.cuscus.ffmpeggui.marking.MarkEngine.NotHeld) {
+                _dub.value = DubStatus.Failed(DubProblem.MARK_NOT_HELD)
             } catch (e: Exception) {
                 android.util.Log.w("ConversionViewModel", "Dubbing failed", e)
                 _dub.value = DubStatus.Failed(DubProblem.FAILED)
@@ -1958,6 +1971,10 @@ class ConversionViewModel(
                 .filter { !it.isStill && it.info?.hasAudio != false && features.voiceSeparator.existing(it.uri) == null }
         }
         when {
+            !features.marker.ready -> {
+                _autoDub.value = AutoDubStatus.Failed(AutoDubStep.DUB, AutoDubProblem.NO_MARKS)
+                return
+            }
             needsWords && !features.ready -> {
                 _autoDub.value = AutoDubStatus.Failed(AutoDubStep.TRANSCRIBE, AutoDubProblem.NO_SPEECH_MODEL)
                 return
@@ -2058,7 +2075,8 @@ class ConversionViewModel(
                         DubProblem.NO_MEMORY -> failed(step, AutoDubProblem.NO_MEMORY)
                         DubProblem.NOTHING -> failed(AutoDubStep.DUB, AutoDubProblem.NOTHING_SAID)
                         DubProblem.NO_SEPARATION -> failed(AutoDubStep.SEPARATE, AutoDubProblem.NO_VOICE_MODEL)
-                        DubProblem.FAILED -> failed(step, AutoDubProblem.FAILED)
+                        DubProblem.NO_MARKS -> failed(AutoDubStep.DUB, AutoDubProblem.NO_MARKS)
+                        DubProblem.MARK_NOT_HELD, DubProblem.FAILED -> failed(step, AutoDubProblem.FAILED)
                     }
                     else -> _autoDub.value = AutoDubStatus.Idle
                 }
@@ -2533,6 +2551,39 @@ class ConversionViewModel(
         mutate { it.copy(textOverlays = it.textOverlays + texts, spokenWords = emptyMap()) }
     }
 
+    /**
+     * [settings] with every dub heard and every picture a model changed in
+     * their marked copies (see MarkGuard); null when one cannot be marked: the
+     * export then stops, saying why (nothing unmarked goes out).
+     */
+    private suspend fun withAiMarks(settings: ConversionSettings, logs: LogBuffer): ConversionSettings? {
+        val voices = settings.audioClips.filter { !it.muted && !it.aiVoice.isNullOrBlank() }.map { it.uri }.distinct()
+        val pictures = (settings.sources.map { it.uri } + settings.imageOverlays.mapNotNull { it.uri }).distinct().filter { AiEditLookup.of(it) }
+        if (voices.isEmpty() && pictures.isEmpty()) return settings
+        val failure = try {
+            val guard = smart?.markGuard ?: throw com.cuscus.ffmpeggui.marking.MarkEngine.Missing()
+            val swap = HashMap<Uri, Uri>()
+            for (uri in voices) swap[uri] = guard.speech(uri)
+            for (uri in pictures) swap[uri] = guard.picture(uri)
+            if (swap.any { (from, to) -> from != to }) publishLog(logs, messages.aiMarksAdded(), progress = null)
+            return settings.copy(
+                audioClips = settings.audioClips.map { clip -> swap[clip.uri]?.let { clip.copy(uri = it) } ?: clip },
+                sources = settings.sources.map { source -> swap[source.uri]?.let { source.copy(uri = it, originalUri = source.originalUri ?: source.uri) } ?: source },
+                imageOverlays = settings.imageOverlays.map { overlay -> overlay.uri?.let(swap::get)?.let { overlay.copy(uri = it) } ?: overlay },
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: com.cuscus.ffmpeggui.marking.MarkEngine.Missing) {
+            messages.aiMarksMissing()
+        } catch (e: Exception) {
+            android.util.Log.w("ConversionViewModel", "Could not add the AI marks", e)
+            messages.aiMarksFailed()
+        }
+        _conversionState.value = ConversionState.Error(failure, logs.snapshot())
+        exportNotifier.finished(ExportResult.Failed)
+        return null
+    }
+
     /** One export of [initial] as [format], reporting to the processing screen and to [exportNotifier]. */
     private suspend fun export(
         format: OutputFormat,
@@ -2543,10 +2594,12 @@ class ConversionViewModel(
     ) {
         if (format.isTranscript) return exportTranscript(format, initial, inputName, logs, project)
         val self = coroutineContext[Job]
+        // Nothing a model made leaves without its invisible AI mark: what was made before the marks gets it now.
+        val marked = withAiMarks(initial, logs) ?: return
         // A picture's drawing is made into a picture of its own first, laid over it by
         // FFmpeg; if that fails the picture is exported without it.
-        val drawing = if (format.isImage && initial.imageEdit.strokes.isNotEmpty()) renderDrawing(initial) else null
-        val settings = if (format.isImage && drawing == null) initial.copy(imageEdit = initial.imageEdit.copy(strokes = emptyList())) else initial
+        val drawing = if (format.isImage && marked.imageEdit.strokes.isNotEmpty()) renderDrawing(marked) else null
+        val settings = if (format.isImage && drawing == null) marked.copy(imageEdit = marked.imageEdit.copy(strokes = emptyList())) else marked
         val footage = settings.footage()
         val job = ConversionJob(
             request = settings.toRequest(format, inputName, footage).withEncoders(hardwareEncoder(), cpuSpeed()),
@@ -2956,6 +3009,8 @@ class ConversionViewModel(
             initializer {
                 val app = this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as FfmpegGuiApp
                 val container = app.container
+                // Every request made from the settings finds what models changed in its pictures.
+                AiEditLookup.of = container.aiMarks::of
                 ConversionViewModel(
                     engine = container.conversionEngine,
                     commandBuilder = container.commandBuilder,

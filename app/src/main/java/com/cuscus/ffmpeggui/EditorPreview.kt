@@ -373,7 +373,9 @@ fun PreviewContainer(
     val sounds = remember(audioClips, shownImages, cutEffects, stemSounds) { previewSounds(audioClips, shownImages + cutEffects) + stemSounds }
 
     // -- Player -----------------------------------------------------------------------
-    val player = remember { EditorPreviewPlayer(context) }
+    // Made again only when the preview itself is (the editors move it instead, see ConfigScreen):
+    // it then goes on from where the playhead was, not from the start.
+    val player = remember { EditorPreviewPlayer(context).apply { startAt(playback.snapshot.value.outputMs) } }
     val pictures = remember { PictureCache(context) }
     var isPlaying by playback.isPlaying
     val snapshot = playback.snapshot

@@ -86,6 +86,9 @@ class CacheJanitor(
             // Denoise comparisons of an editor that was closed while one was being read.
             File(appContext.cacheDir, FfmpegDenoiseSampler.DIRECTORY).listFiles()?.forEach { it.deleteRecursively() }
 
+            // The About page's hidden game, left by a run cut short.
+            File(appContext.cacheDir, FfmpegLife.DIRECTORY).listFiles()?.forEach { it.deleteRecursively() }
+
             // Older versions copied every source straight into the cache root under a
             // time-stamped name ("video_1712345678901.mp4", "concat_...txt", "camera_...mp4")
             // and did not always remove them.

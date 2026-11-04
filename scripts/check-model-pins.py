@@ -21,7 +21,12 @@ Offline (always):
   4. No retired model's folder (RetiredModels.kt, deleted at start) is the
      folder of a model in use: a slip there would delete a user's model.
 
-With --release-dir NAME=DIR (NAME edgetam or birefnet; the folder an export
+  5. The AI marks (marking/MarkerModel.kt) pin what scripts/ai-markers.lock
+     does, every value pinned (a lock of zeros is still being learned: see
+     .github/workflows/ai-markers.yml), with their licences and NOTICE
+     bundled (assets/licenses/ai-markers/).
+
+With --release-dir NAME=DIR (NAME edgetam, birefnet or markers; the folder an export
 script wrote, or a release downloaded): the files there are the pinned ones,
 and LICENSE, NOTICE, PROVENANCE and SHA256SUMS are there and agree; with the
 onnx package installed, each file carries the licence and notice inside it.
@@ -59,6 +64,7 @@ MODEL_FILES = [
     "voice/VoiceModel.kt",
     "dub/DubModel.kt",
     "speech/SpeechModel.kt",
+    "marking/MarkerModel.kt",
 ]
 
 problems = []
@@ -179,6 +185,137 @@ def check_birefnet(lock):
         problem("CutoutModel.FINEST downloads from %s, not this repository's release" % url)
     if field(block, "licence") != "MIT":
         problem("CutoutModel.FINEST does not say MIT")
+
+
+def unpinned(value):
+    return set(value) == {"0"}
+
+
+MARKER_FILES = (("generator", "generator_sha256"), ("detector", "detector_sha256"),
+                ("encoder", "trustmark_encoder_sha256"), ("decoder", "trustmark_decoder_sha256"))
+
+
+def check_markers(lock):
+    """The AI marks' files (MarkerModel.kt) against scripts/ai-markers.lock; nothing may be left unpinned."""
+    waiting = [k for k, v in lock.items() if unpinned(v)]
+    if waiting:
+        problem("scripts/ai-markers.lock is not pinned yet (%s): run .github/workflows/ai-markers.yml, "
+                "then scripts/pin-ai-markers.py with what it learned" % ", ".join(waiting))
+    source = read(os.path.join(APP, "marking", "MarkerModel.kt"))
+    tag = const(source, "RELEASE_TAG")
+    if tag != lock["release_tag"]:
+        problem("MarkerModel.RELEASE_TAG is %s, scripts/ai-markers.lock says %s" % (tag, lock["release_tag"]))
+    else:
+        ok("AI marks release tag %s" % tag)
+    if const(source, "DOWNLOAD_URL") != "https://github.com/%s/releases/download/$RELEASE_TAG" % REPOSITORY:
+        problem("MarkerModel's DOWNLOAD_URL is not this repository's release")
+    for role, sha_key in MARKER_FILES:
+        block = kotlin_file_block(source, role.upper())
+        got = (field(block, "name"), field(block, "sha256"), number(block, "bytes"))
+        want = (lock[role + "_file"], lock[sha_key], int(lock[role + "_bytes"]))
+        if got != want:
+            problem("MarkerModel.%s is %s, the lock says %s" % (role.upper(), got, want))
+        else:
+            ok("AI marks %s %s %s" % (role, got[0], got[1][:12]))
+
+
+def markers_notice(lock):
+    return load_script("export-ai-markers.py").notice_of(lock)
+
+
+def check_markers_bundled(lock, notice):
+    folder = os.path.join(ASSETS, "ai-markers")
+    for name, key in (("LICENSE-audioseal.txt", "audioseal_licence_sha256"), ("LICENSE-trustmark.txt", "trustmark_licence_sha256")):
+        path = os.path.join(folder, name)
+        if not os.path.isfile(path):
+            problem("assets/licenses/ai-markers/%s is missing" % name)
+        elif sha256(path) != lock[key]:
+            problem("assets/licenses/ai-markers/%s is not the upstream LICENSE the lock pins" % name)
+        else:
+            ok("AI marks %s bundled, as upstream" % name)
+    path = os.path.join(folder, "NOTICE.txt")
+    if not os.path.isfile(path):
+        problem("assets/licenses/ai-markers/NOTICE.txt is missing")
+    elif read(path) != notice:
+        problem("assets/licenses/ai-markers/NOTICE.txt is not the NOTICE the export writes: run scripts/pin-ai-markers.py")
+    else:
+        ok("AI marks notice bundled, as the export writes it")
+    if any(ord(c) > 127 for c in notice):
+        problem("the AI marks' NOTICE is not plain ASCII")
+
+
+def check_markers_release(folder, lock, notice):
+    files = {lock[role + "_file"]: lock[key] for role, key in MARKER_FILES}
+    for f, digest in files.items():
+        path = os.path.join(folder, f)
+        if not os.path.isfile(path):
+            problem("%s: %s is missing" % (folder, f))
+            continue
+        got = sha256(path)
+        if got != digest:
+            problem("%s: %s is %s, pinned %s" % (folder, f, got, digest))
+        else:
+            ok("AI marks: %s as pinned" % f)
+    try:
+        import onnx
+        for f in (lock["generator_file"], lock["detector_file"]):
+            path = os.path.join(folder, f)
+            if not os.path.isfile(path):
+                continue
+            model = onnx.load(path, load_external_data=False)
+            meta = {p.key: p.value for p in model.metadata_props}
+            if meta.get("notice") != notice or sha256_text(meta.get("license", "")) != lock["audioseal_licence_sha256"]:
+                problem("%s: %s does not carry its licence and notice inside it" % (folder, f))
+    except ImportError:
+        notes.append("onnx is not installed: the licence inside the AudioSeal files was not checked")
+
+    def side(name):
+        for candidate in (name, name + ".txt"):
+            path = os.path.join(folder, candidate)
+            if os.path.isfile(path):
+                return path
+        return None
+
+    for name, key in (("LICENSE-audioseal", "audioseal_licence_sha256"), ("LICENSE-trustmark", "trustmark_licence_sha256")):
+        path = side(name)
+        if path is None or sha256(path) != lock[key]:
+            problem("%s: %s is missing or not the upstream one" % (folder, name))
+    path = side("NOTICE")
+    if path is None or read(path) != notice:
+        problem("%s: NOTICE is missing or not the one the app bundles" % folder)
+    for extra in ("PROVENANCE", "SHA256SUMS"):
+        if side(extra) is None:
+            problem("%s: %s is missing" % (folder, extra))
+    path = side("SHA256SUMS")
+    if path:
+        listed = dict(reversed(line.split("  ", 1)) for line in read(path).splitlines() if "  " in line)
+        for f, digest in files.items():
+            if listed.get(f) != digest:
+                problem("%s: SHA256SUMS does not list %s as pinned" % (folder, f))
+
+
+def check_markers_online(lock):
+    for asset in [lock[role + "_file"] for role, _ in MARKER_FILES] + ["LICENSE-audioseal.txt", "LICENSE-trustmark.txt", "NOTICE.txt", "PROVENANCE.txt"]:
+        url = "https://github.com/%s/releases/download/%s/%s" % (REPOSITORY, lock["release_tag"], asset)
+        try:
+            status, _ = fetch(url, head=True)
+            ok("%s answers (%d)" % (url, status))
+        except Exception as e:  # noqa: BLE001
+            problem("%s does not answer: %s (publish it: .github/workflows/ai-markers.yml)" % (url, e))
+    checks = (
+        (lock["audioseal_licence_url"], lambda body: hashlib.sha256(body).hexdigest() == lock["audioseal_licence_sha256"], "AudioSeal's LICENSE today differs from the one pinned"),
+        ("https://raw.githubusercontent.com/adobe/trustmark/HEAD/LICENSE", lambda body: hashlib.sha256(body).hexdigest() == lock["trustmark_licence_sha256"], "TrustMark's LICENSE today differs from the one pinned"),
+        ("https://raw.githubusercontent.com/adobe/trustmark/HEAD/README.md", lambda body: b"The MIT license covers both the code in this repo and the model files" in body, "TrustMark's README no longer says the MIT licence covers the model files"),
+    )
+    for url, good, failure in checks:
+        try:
+            _, body = fetch(url)
+            if good(body):
+                ok("%s: as pinned" % url)
+            else:
+                problem(failure + ": read it, then update the lock and docs/MODELS.md")
+        except Exception as e:  # noqa: BLE001
+            problem("could not read %s: %s" % (url, e))
 
 
 # -- 2. The licences and notices bundled ------------------------------------------------
@@ -380,21 +517,29 @@ def main():
         "birefnet": read_lock(os.path.join(ROOT, "scripts", "birefnet-onnx.lock")),
     }
     notices = {"edgetam": edgetam_notice(locks["edgetam"]), "birefnet": birefnet_notice(locks["birefnet"])}
+    markers = read_lock(os.path.join(ROOT, "scripts", "ai-markers.lock"))
+    markers_text = markers_notice(markers)
 
     check_edgetam(locks["edgetam"])
     check_birefnet(locks["birefnet"])
+    check_markers(markers)
     for name in locks:
         check_bundled(name, locks[name], notices[name])
+    check_markers_bundled(markers, markers_text)
     check_record()
     check_retired()
     for item in args.release_dir:
         name, _, folder = item.partition("=")
+        if name == "markers" and folder:
+            check_markers_release(folder, markers, markers_text)
+            continue
         if name not in locks or not folder:
-            problem("--release-dir takes edgetam=DIR or birefnet=DIR, not %s" % item)
+            problem("--release-dir takes edgetam=DIR, birefnet=DIR or markers=DIR, not %s" % item)
             continue
         check_release(name, folder, locks[name], notices[name])
     if args.online:
         check_online(locks)
+        check_markers_online(markers)
 
     for note in notes:
         print("note  " + note)

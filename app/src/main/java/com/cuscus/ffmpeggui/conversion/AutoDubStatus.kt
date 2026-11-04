@@ -45,6 +45,9 @@ enum class AutoDubProblem {
     /** The dubbing voice is not on the phone. */
     NO_DUB_MODEL,
 
+    /** The AI marks are not installed: nothing is said without them. */
+    NO_MARKS,
+
     NO_MEMORY,
     FAILED,
 }

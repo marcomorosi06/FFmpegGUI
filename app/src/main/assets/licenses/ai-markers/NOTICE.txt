@@ -1,0 +1,39 @@
+The AI marks of FFmpeg GUI
+https://github.com/marcomorosi06/FFmpegGUI
+
+These files write and find the invisible marks FFmpeg GUI puts into what its
+AI models make (EU AI Act, Regulation (EU) 2024/1689, Article 50(2)). The
+marks carry nothing but "made with AI": their payloads are all zeros, the
+same in every file of every user (no identifier, no date, no random value).
+
+audioseal-generator.onnx and audioseal-detector.onnx
+  are converted from AudioSeal (https://github.com/facebookresearch/audioseal,
+  package audioseal==0.2.1), Copyright (c) Meta Platforms, Inc. and
+  affiliates, MIT License (its weights included): see LICENSE-audioseal.txt.
+  Changes made: the PyTorch models (generator_base.pth, SHA-256
+  0000000000000000000000000000000000000000000000000000000000000000;
+  detector_base.pth, SHA-256
+  0000000000000000000000000000000000000000000000000000000000000000)
+  were converted to ONNX, opset 17, for a fixed window of 80000
+  samples at 16 kHz, by scripts/export-ai-markers.py of FFmpeg GUI: the
+  generator as AudioSealWM.get_watermark with its message as an input, the
+  detector as AudioSealDetector.forward. No weight was trained, fine-tuned,
+  pruned or quantised.
+
+trustmark-encoder-q.onnx and trustmark-decoder-q.onnx
+  are Adobe's encoder_Q.onnx and decoder_Q.onnx of TrustMark
+  (https://github.com/adobe/trustmark, commit 0000000000000000000000000000000000000000),
+  Copyright 2023 Adobe, MIT License: see LICENSE-trustmark.txt. "The MIT
+  license covers both the code in this repo and the model files which are
+  downloaded upon first use" (TrustMark's README); Adobe confirmed that they
+  may be redistributed unchanged: https://github.com/adobe/trustmark/issues/48
+  They are unchanged, byte for byte (SHA-256
+  0000000000000000000000000000000000000000000000000000000000000000 and
+  0000000000000000000000000000000000000000000000000000000000000000,
+  as served at https://cai-watermark.adobe.net/watermarking/trustmark-models/); only their names differ.
+  TrustMark: T. Bui, S. Agarwal, J. Collomosse, "TrustMark: Robust
+  Watermarking and Watermark Removal for Arbitrary Resolution Images", IEEE
+  International Conference on Computer Vision (ICCV), 2025.
+
+Neither Meta nor Adobe has reviewed or endorsed these files or FFmpeg GUI.
+They come with no warranty (see the licences).

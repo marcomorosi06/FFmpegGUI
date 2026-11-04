@@ -100,6 +100,8 @@ class SpeechModelStore(context: Context, val model: SpeechModel) {
     @Synchronized
     fun import(uris: List<Uri>) {
         if (job?.isActive == true || uris.isEmpty()) return
+        // The AI marks come first (MarkingGate): without them no other model is read.
+        if (model !== com.cuscus.ffmpeggui.marking.MarkerModel.FILES && !com.cuscus.ffmpeggui.marking.MarkingGate.allowsImport()) return
         job = scope.launch {
             val wasInstalled = filesPresent()
             _state.value = State.Importing(Phase.READING, 0f, null)

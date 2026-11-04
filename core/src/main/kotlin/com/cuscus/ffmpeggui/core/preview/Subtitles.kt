@@ -201,6 +201,12 @@ data class RetimedSubtitles(val content: String, val extension: String)
  *
  * SubStation Alpha files keep their styles (only the Dialogue timings change);
  * anything else is written back as SubRip.
+ *
+ * What a script carries embedded ([Fonts], [Graphics]: uuencoded files) is
+ * dropped: libass would hand those fonts to FreeType inside the app's
+ * process, so a crafted one could reach a bug of it (CVE-2025-27363 is one).
+ * The fonts a subtitle is drawn with are picked in the app (CaptionFonts),
+ * or come from the phone.
  */
 class SubtitleRetimer(private val parser: SubtitleParser = SubtitleParser()) {
 
@@ -216,6 +222,9 @@ class SubtitleRetimer(private val parser: SubtitleParser = SubtitleParser()) {
     }
 
     companion object {
+        /** Sections of a script that carry embedded files (fonts, pictures), dropped. */
+        private val EMBEDDED_SECTIONS = listOf("[Fonts]", "[Graphics]")
+
         /** True for a SubStation Alpha script (it has its own look), false for SubRip and the like. */
         fun isAss(content: String): Boolean = content.lineSequence().any { it.trimStart().startsWith("Dialogue:") }
     }
@@ -238,12 +247,18 @@ class SubtitleRetimer(private val parser: SubtitleParser = SubtitleParser()) {
         var endIndex = 2
         var fieldCount = 10
         var inEvents = false
+        var inEmbedded = false
         var kept = 0
         val output = StringBuilder()
 
         for (line in text.split('\n')) {
             val trimmed = line.trim()
-            if (trimmed.startsWith("[")) inEvents = trimmed.equals("[Events]", ignoreCase = true)
+            if (trimmed.startsWith("[")) {
+                inEvents = trimmed.equals("[Events]", ignoreCase = true)
+                inEmbedded = EMBEDDED_SECTIONS.any { trimmed.equals(it, ignoreCase = true) }
+            }
+            // Embedded files never reach libass, their section's heading neither.
+            if (inEmbedded) continue
             if (inEvents && trimmed.startsWith("Format:")) {
                 val fields = trimmed.removePrefix("Format:").split(',').map { it.trim().lowercase() }
                 startIndex = fields.indexOf("start").takeIf { it >= 0 } ?: startIndex

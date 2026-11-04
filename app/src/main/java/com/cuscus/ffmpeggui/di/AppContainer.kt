@@ -78,6 +78,9 @@ class AppContainer(
     val loudnessMeter: LoudnessMeter by lazy { FfmpegLoudnessMeter(appContext, ffmpegExecutor) }
 
     /** The video editor's denoise comparison, drawn by FFmpeg with the export's own filter. */
+    /** The About page's hidden game: Conway's Life, played by FFmpeg's own life source. */
+    val ffmpegLife: com.cuscus.ffmpeggui.media.FfmpegLife by lazy { com.cuscus.ffmpeggui.media.FfmpegLife(appContext, ffmpegExecutor) }
+
     val denoiseSampler: com.cuscus.ffmpeggui.core.engine.DenoiseSampler by lazy {
         com.cuscus.ffmpeggui.media.FfmpegDenoiseSampler(appContext, ffmpegExecutor)
     }
@@ -151,6 +154,9 @@ class AppContainer(
     val stickerLibrary: com.cuscus.ffmpeggui.stickers.StickerLibrary by lazy {
         com.cuscus.ffmpeggui.stickers.StickerLibrary(appContext) { settingsRepository.current.stickerCopies }
     }
+
+    /** The AI marks of the pictures opened in the app (what is exported from them says so too). */
+    val aiMarks: com.cuscus.ffmpeggui.provenance.AiMarksLookup by lazy { com.cuscus.ffmpeggui.provenance.AiMarksLookup(appContext) }
 
     /** The speech model and what runs it: subtitles made from what is said (the settings' smart features). */
     val smartFeatures: SmartFeatures by lazy { SmartFeatures(appContext, ffmpegExecutor, workNotifier) }

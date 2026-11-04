@@ -1,5 +1,8 @@
 package com.cuscus.ffmpeggui.core.command
 
+import com.cuscus.ffmpeggui.core.provenance.AiDisclosure
+import com.cuscus.ffmpeggui.core.provenance.AiSeal
+import com.cuscus.ffmpeggui.core.provenance.aiDisclosure
 import com.cuscus.ffmpeggui.core.voice.VoiceStem
 
 import com.cuscus.ffmpeggui.core.audio.STEREO_UPMIX
@@ -1603,22 +1606,20 @@ class CommandBuilder(fonts: FontProvider) {
         val tags = request.metadata
         val args = mutableListOf<String>()
         if (tags.stripAll && request.coverWriting() != CoverWriting.PICTURE_TAG) args += listOf("-map_metadata", "-1")
-        val synthetic = syntheticSpeech(request)
-        if ((tags.hasOwnTags || synthetic.isNotEmpty()) && (request.format == OutputFormat.MP4 || request.format == OutputFormat.M4A)) {
+        val disclosure = request.aiDisclosure()
+        if ((tags.hasOwnTags || !disclosure.isEmpty) && (request.format == OutputFormat.MP4 || request.format == OutputFormat.M4A)) {
             args += listOf("-movflags", "+use_metadata_tags")
         }
         args += tags.asMap().flatMap { (key, value) -> listOf("-metadata", "$key=$value") }
-        // A voice made by a machine is said so, in tags a program can read (AI Act, Article 50(2)).
-        if (synthetic.isNotEmpty()) {
-            args += listOf("-metadata", "$AI_GENERATED_TAG=${AI_GENERATED_TEXT}${synthetic.joinToString(", ")}")
+        // What a machine made (a dub, a picture the eraser changed) is said so, after the user's own
+        // tags, in tags a program can read (AI Act, Article 50(2)). The engine adds the XMP to the
+        // finished file (see ConversionEngine.seal).
+        if (!disclosure.isEmpty) {
+            args += listOf("-metadata", "$AI_GENERATED_TAG=${disclosure.text}")
             args += listOf("-metadata", "$DIGITAL_SOURCE_TAG=$DIGITAL_SOURCE_COMPOSITE")
         }
         return args
     }
-
-    /** The machines that made a voice heard in [request]'s output (its dubs), each once. */
-    internal fun syntheticSpeech(request: ConversionRequest): List<String> =
-        if (!request.format.hasAudio) emptyList() else request.sounds.mapNotNull { it.aiVoice?.takeIf(String::isNotBlank) }.distinct()
 
     private fun segmenting(request: ConversionRequest, forceKeyFrames: Boolean): List<String> {
         val plan = request.segmenting() ?: return emptyList()
@@ -1648,12 +1649,12 @@ class CommandBuilder(fonts: FontProvider) {
 
     internal companion object {
         /** The tags that say a voice in the file was made by a machine. */
-        const val AI_GENERATED_TAG = "AI_GENERATED"
-        const val AI_GENERATED_TEXT = "Contains AI-generated speech: "
-        const val DIGITAL_SOURCE_TAG = "DIGITAL_SOURCE_TYPE"
+        const val AI_GENERATED_TAG = AiSeal.AI_GENERATED_TAG
+        const val AI_GENERATED_TEXT = AiDisclosure.SPEECH_TEXT
+        const val DIGITAL_SOURCE_TAG = AiSeal.DIGITAL_SOURCE_TAG
 
         /** IPTC's digital source type for media mixing what was recorded with what a trained model made. */
-        const val DIGITAL_SOURCE_COMPOSITE = "http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia"
+        const val DIGITAL_SOURCE_COMPOSITE = AiDisclosure.COMPOSITE
 
         const val VIDEO_OUT = "vout"
 

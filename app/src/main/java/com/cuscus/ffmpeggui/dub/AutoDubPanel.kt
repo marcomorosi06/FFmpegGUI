@@ -422,6 +422,7 @@ private fun Hero(status: AutoDubStatus, target: String?, voice: DubSpeaker?) {
                                 AutoDubProblem.NO_TRANSLATION_MODEL -> R.string.autodub_problem_translation
                                 AutoDubProblem.NO_VOICE_MODEL -> R.string.autodub_problem_voice
                                 AutoDubProblem.NO_DUB_MODEL -> R.string.autodub_problem_dub
+                                AutoDubProblem.NO_MARKS -> R.string.marks_problem_missing
                                 AutoDubProblem.NO_MEMORY -> R.string.dub_problem_memory
                                 AutoDubProblem.FAILED -> R.string.autodub_problem_failed
                             },

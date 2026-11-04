@@ -798,13 +798,18 @@ fun ImageEditorScreen(
 
     // -- The parts of the editor ----------------------------------------------------------------
     // On a screen wider than it is tall: where the picture is (true: right of the tools), for the switch.
-    val topBar: @Composable (playerSide: Boolean?) -> Unit = { playerSide ->
+    val topBar: @Composable (playerSide: Boolean?, usualLayout: Boolean) -> Unit = { playerSide, usualLayout ->
         EditorTopBar(
             playerRight = playerSide,
             onSwapSides = { right ->
                 onLandscapeLayout(
                     if (right) com.cuscus.ffmpeggui.settings.LandscapeLayout.PLAYER_LEFT else com.cuscus.ffmpeggui.settings.LandscapeLayout.PLAYER_RIGHT,
                 )
+            },
+            onUsualLayout = if (usualLayout) {
+                { onLandscapeLayout(com.cuscus.ffmpeggui.settings.LandscapeLayout.AUTO) }
+            } else {
+                null
             },
             fileName = fileName,
             formatLabel = stringResource(format.labelRes),
@@ -1362,8 +1367,10 @@ fun ImageEditorScreen(
             val landscape = maxWidth > maxHeight
             val landscapeLayout = com.cuscus.ffmpeggui.ui.theme.LocalAppSettings.current.landscapeLayout
             // Or always, on a screen wider than it is tall, when the settings put the picture on a side.
-            val sideBySide = landscapeLayout.forcesSides(landscape) ||
-                (landscape && maxHeight < IMAGE_TOOLS_HEIGHT + IMAGE_CHROME_HEIGHT + IMAGE_MIN_STAGE_HEIGHT)
+            val autoSides = landscape && maxHeight < IMAGE_TOOLS_HEIGHT + IMAGE_CHROME_HEIGHT + IMAGE_MIN_STAGE_HEIGHT
+            val sideBySide = landscapeLayout.forcesSides(landscape) || autoSides
+            // The way back to the usual layout, where it would change something (a tablet).
+            val usualLayout = landscapeLayout.offersUsualLayout(landscape, autoSides)
             val playerRight = sideBySide && landscapeLayout == com.cuscus.ffmpeggui.settings.LandscapeLayout.PLAYER_RIGHT
             val playerSide = if (landscape) playerRight else null
             // A large screen: an open tool's panel beside the picture, the tool row under both.
@@ -1372,7 +1379,7 @@ fun ImageEditorScreen(
                 val motion = MaterialTheme.motionScheme
                 val panelWidth = (maxWidth * SIDE_PANEL_SHARE).coerceIn(SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH)
                 Column(modifier = Modifier.fillMaxSize().imePadding()) {
-                    topBar(playerSide)
+                    topBar(playerSide, usualLayout)
                     Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                             stage(Modifier.weight(1f).fillMaxWidth())
@@ -1404,7 +1411,7 @@ fun ImageEditorScreen(
                     modifier = Modifier.fillMaxSize().imePadding(),
                     player = {
                         Column(modifier = Modifier.fillMaxSize()) {
-                            topBar(playerSide)
+                            topBar(playerSide, usualLayout)
                             stage(Modifier.weight(1f).fillMaxWidth())
                         }
                     },
@@ -1434,7 +1441,7 @@ fun ImageEditorScreen(
                     label = "imageToolsHeight",
                 )
                 Column(modifier = Modifier.fillMaxSize().imePadding()) {
-                    topBar(playerSide)
+                    topBar(playerSide, usualLayout)
                     stage(Modifier.weight(1f).fillMaxWidth())
                     controls()
                     toolsPane(Modifier.fillMaxWidth().height(toolsHeight))

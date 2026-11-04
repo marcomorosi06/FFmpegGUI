@@ -155,6 +155,8 @@ class SmartFeaturesUi(
     val dub: DubFeatureUi? = null,
     /** The magic eraser's models (see EraseModel). */
     val erase: EraseFeatureUi? = null,
+    /** The invisible AI marks, imported before any model (see MarkerModel). */
+    val marks: MarksFeatureUi? = null,
     /** Every model tries ONNX Runtime's XNNPACK kernels (see AiKernels). */
     val fastKernels: Boolean = true,
     val onFastKernels: (Boolean) -> Unit = {},
@@ -808,7 +810,7 @@ private fun SectionTitle(title: String, text: String? = null) {
 }
 
 /** What differs between the models' cards. */
-private class ModelSpec(
+internal class ModelSpec(
     val title: String,
     /** Said while it is imported. */
     val importing: String,
@@ -834,7 +836,7 @@ private class ModelSpec(
  * files and their checksums once it is here, or what went wrong.
  */
 @Composable
-private fun ModelCard(
+internal fun ModelCard(
     spec: ModelSpec,
     model: SpeechModelStore.State,
     loaded: Boolean,

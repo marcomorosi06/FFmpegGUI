@@ -2,9 +2,14 @@
 
 package com.cuscus.ffmpeggui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.semantics.Role
 import com.cuscus.ffmpeggui.ui.expressive.PolygonShape
 import com.cuscus.ffmpeggui.ui.expressive.springPress
@@ -57,6 +62,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.unit.Dp
 import androidx.graphics.shapes.toPath
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.graphics.drawscope.translate
@@ -246,6 +252,14 @@ fun EditorTimeline(
      * (see drawClipSoundBand), to cut and line sounds up by ear and eye.
      */
     clipWaveforms: Boolean = false,
+    /**
+     * The most it may grow to, to show more rows of lanes before they scroll (the
+     * tools beside the player have the whole height); it is never lower than
+     * [TIMELINE_HEIGHT], nor taller than its rows need.
+     */
+    maxHeight: Dp = TIMELINE_HEIGHT,
+    /** Told of every step of a drag, to spot a DJ's scratch (see DjScratch); null: not looked for. */
+    scratch: DjScratch? = null,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -269,7 +283,6 @@ fun EditorTimeline(
     val trackTop = rulerHeight + with(density) { ROW_GAP.toPx() }
     val trackHeight = with(density) { TRACK_HEIGHT.toPx() }
     val lanesTop = trackTop + trackHeight + with(density) { ROW_GAP.toPx() }
-    val lanesViewport = with(density) { (TIMELINE_HEIGHT - RULER_HEIGHT - ROW_GAP - TRACK_HEIGHT - ROW_GAP).toPx() }
     val minPxPerMs = with(density) { MIN_DP_PER_SECOND.toPx() } / 1000f
     val maxPxPerMs = with(density) { MAX_DP_PER_SECOND.toPx() } / 1000f
     val handleGrabPx = with(density) { SOUND_HANDLE_GRAB.toPx() }
@@ -294,11 +307,28 @@ fun EditorTimeline(
             hasItems = items.isNotEmpty(),
         )
     }
+    // As tall as its rows need, between its usual height and [maxHeight]; the rows past it scroll.
+    val neededHeight = with(density) { (lanesTop + lanes.contentHeight).toDp() }
+    val targetHeight = neededHeight.coerceIn(TIMELINE_HEIGHT, maxOf(TIMELINE_HEIGHT, maxHeight))
+    val timelineHeight by animateDpAsState(targetHeight, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "timelineHeight")
+    val lanesViewport = with(density) { (timelineHeight - RULER_HEIGHT - ROW_GAP - TRACK_HEIGHT - ROW_GAP).toPx() }
 
     // Zoom (pixels per millisecond); 0 until the width is known.
     var pxPerMs by viewState.zoom
     var laneScroll by viewState.laneScroll
     var widthPx by remember { mutableFloatStateOf(0f) }
+    // Pinched on past the widest zoom: the ruler, squeezed, names spans no video has, and
+    // springs back when the fingers leave (see drawRuler). 1: not pinched past.
+    var overPinch by remember { mutableFloatStateOf(1f) }
+    val pinchBack = remember { Animatable(1f) }
+    val reducedMotion = com.cuscus.ffmpeggui.onboarding.rememberReducedMotion()
+    val absurdUnits = rememberAbsurdUnits()
+    val absurdDepth by remember { derivedStateOf { depthPastWidest(min(overPinch, pinchBack.value)) } }
+    val absurdLevel by remember { derivedStateOf { spanAt(absurdDepth, absurdUnits.size) } }
+    // Each new span a tick.
+    LaunchedEffect(Unit) {
+        snapshotFlow { absurdLevel }.collect { level -> if (level >= 0 && overPinch < 1f) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick) }
+    }
     LaunchedEffect(widthPx, totalMs > 0) {
         if (pxPerMs == 0f && widthPx > 0f && totalMs > 0) {
             // At first the whole project spans about one and a half screens.
@@ -321,6 +351,7 @@ fun EditorTimeline(
     val currentTrimStart by rememberUpdatedState(trimStartMs)
     val currentTotal by rememberUpdatedState(totalMs)
     val currentOnScrub by rememberUpdatedState(onScrub)
+    val currentScratch by rememberUpdatedState(scratch)
     fun position(): Float =
         if (drag.active) drag.positionMs.floatValue
         else (currentTrimStart + playback.playheadMs.longValue).toFloat().coerceIn(0f, currentTotal.toFloat())
@@ -339,6 +370,8 @@ fun EditorTimeline(
         val after = (before - delta / pxPerMs).coerceIn(0f, currentTotal.toFloat())
         drag.positionMs.floatValue = after
         val now = System.nanoTime()
+        // A fling never turns back: only the finger scratches.
+        currentScratch?.drag(delta, now)
         if (now - drag.lastScrubNanos >= SCRUB_INTERVAL_NANOS) {
             drag.lastScrubNanos = now
             currentOnScrub(after.toLong())
@@ -718,7 +751,7 @@ fun EditorTimeline(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(TIMELINE_HEIGHT)
+            .height(timelineHeight)
             .onSizeChanged { widthPx = it.width.toFloat() },
     ) {
         Canvas(
@@ -732,11 +765,29 @@ fun EditorTimeline(
                             if (event.changes.count { it.pressed } >= 2 && pxPerMs > 0f) {
                                 val zoom = event.calculateZoom()
                                 if (zoom != 1f) {
-                                    pxPerMs = (pxPerMs * zoom).coerceIn(minPxPerMs, maxPxPerMs)
+                                    // At the widest already, pinching on goes past it (and back first).
+                                    if (overPinch < 1f || (zoom < 1f && pxPerMs <= minPxPerMs * WIDEST_SLACK)) {
+                                        overPinch = (overPinch * zoom).coerceIn(MIN_OVER_PINCH, 1f)
+                                    } else {
+                                        pxPerMs = (pxPerMs * zoom).coerceIn(minPxPerMs, maxPxPerMs)
+                                    }
                                     event.changes.forEach { it.consume() }
                                 }
                             }
                         } while (event.changes.any { it.pressed })
+                        // The fingers left: the ruler springs back to the video's own time.
+                        if (overPinch < 1f) {
+                            val from = overPinch
+                            overPinch = 1f
+                            scope.launch {
+                                pinchBack.snapTo(from)
+                                if (reducedMotion) {
+                                    pinchBack.snapTo(1f)
+                                } else {
+                                    pinchBack.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
+                                }
+                            }
+                        }
                     }
                 }
                 .scrollable(state = scrollState, orientation = Orientation.Horizontal)
@@ -1099,7 +1150,11 @@ fun EditorTimeline(
             val positionMs = position()
             fun x(ms: Float): Float = centre + (ms - positionMs) * pxPerMs
 
-            drawRuler(textMeasurer, positionMs, pxPerMs, rulerHeight, muted, mutedStyle, currentTotal)
+            drawRuler(
+                textMeasurer, positionMs, pxPerMs, rulerHeight, muted, mutedStyle, currentTotal,
+                absurd = absurdLevel.takeIf { it >= 0 }?.let { absurdUnits[it] },
+                squeeze = 1f - RULER_SQUEEZE * absurdDepth,
+            )
 
             // -- Video track ------------------------------------------------------------
             val clips = currentTimeline.clips
@@ -2042,7 +2097,11 @@ private fun DrawScope.drawRuler(
     color: Color,
     style: TextStyle,
     totalMs: Long,
-) {
+    /** Pinched past the widest zoom: what each tick is called instead of its time (its count of some vast span). */
+    absurd: ((Int) -> String)? = null,
+    /** How squeezed the ruler is (1: not), around the playhead. */
+    squeeze: Float = 1f,
+) = scale(scaleX = squeeze, scaleY = 1f, pivot = Offset(size.width / 2f, 0f)) {
     val centre = size.width / 2f
     val minLabelGap = 64.dp.toPx()
     val stepMs = RULER_STEPS_MS.firstOrNull { it * pxPerMs >= minLabelGap } ?: RULER_STEPS_MS.last()
@@ -2056,10 +2115,52 @@ private fun DrawScope.drawRuler(
         if (tick + stepMs / 2 <= visibleTo) {
             drawLine(color.copy(alpha = 0.5f), Offset(half, height - 3.dp.toPx()), Offset(half, height), strokeWidth = 1.dp.toPx())
         }
-        drawLabel(measurer, formatRulerTime(tick, withTenths = stepMs < 1000), Offset(x + 3.dp.toPx(), 0f), 60.dp.toPx(), null, style)
+        if (absurd == null) {
+            drawLabel(measurer, formatRulerTime(tick, withTenths = stepMs < 1000), Offset(x + 3.dp.toPx(), 0f), 60.dp.toPx(), null, style)
+        } else {
+            // Longer words: on every other tick, with the room of two.
+            val index = (tick / stepMs).toInt()
+            if (index % 2 == 0) drawLabel(measurer, absurd(index), Offset(x + 3.dp.toPx(), 0f), 2 * stepMs * pxPerMs - 6.dp.toPx(), null, style)
+        }
         tick += stepMs
     }
 }
+
+/** How far past the widest zoom [overPinch] is, 0 (not) to 1 (as far as it goes). */
+private fun depthPastWidest(overPinch: Float): Float =
+    if (overPinch >= 1f) 0f else (ln(overPinch) / ln(MIN_OVER_PINCH)).coerceIn(0f, 1f)
+
+/** Which of [units] spans the ruler names at [depth]; -1: its own time still. */
+private fun spanAt(depth: Float, units: Int): Int =
+    if (depth < ABSURD_FROM || units == 0) -1 else (((depth - ABSURD_FROM) / (1f - ABSURD_FROM)) * units).toInt().coerceAtMost(units - 1)
+
+/** The vast spans, from a day to an eon, each counting its ticks. */
+@Composable
+private fun rememberAbsurdUnits(): List<(Int) -> String> {
+    val resources = LocalContext.current.resources
+    return remember(resources) { ABSURD_UNITS.map { id -> { n: Int -> resources.getQuantityString(id, n, n) } } }
+}
+
+private val ABSURD_UNITS = listOf(
+    R.plurals.ruler_absurd_day,
+    R.plurals.ruler_absurd_year,
+    R.plurals.ruler_absurd_century,
+    R.plurals.ruler_absurd_ice_age,
+    R.plurals.ruler_absurd_era,
+    R.plurals.ruler_absurd_eon,
+)
+
+/** The furthest a pinch goes past the widest zoom, as a share of it. */
+private const val MIN_OVER_PINCH = 0.02f
+
+/** Just past the widest zoom the ruler still tells the time: a pinch that only grazes it changes nothing. */
+private const val ABSURD_FROM = 0.1f
+
+/** How much the ruler squeezes at the furthest. */
+private const val RULER_SQUEEZE = 0.22f
+
+/** The zoom counts as the widest this close to it. */
+private const val WIDEST_SLACK = 1.0005f
 
 /**
  * One line of small text, cut to [maxWidth], optionally on a dark pill.

@@ -56,6 +56,12 @@ import com.cuscus.ffmpeggui.onboarding.SpokenWordsArt
 import com.cuscus.ffmpeggui.onboarding.rememberLoop
 import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
 import com.cuscus.ffmpeggui.ui.expressive.PolygonShape
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.graphics.shapes.Morph
+import com.cuscus.ffmpeggui.ui.expressive.MorphShape
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
@@ -81,7 +87,171 @@ internal fun SmartShowcase(page: SmartPage, modifier: Modifier = Modifier) {
         SmartPage.VOICE -> VoiceShowcase(modifier)
         SmartPage.DUB -> DubShowcase(modifier)
         SmartPage.ABOUT -> Box(contentAlignment = Alignment.Center, modifier = modifier) { ProjectsArt(active = true, modifier = Modifier.graphicsLayer { scaleX = 0.8f; scaleY = 0.8f }) }
+        SmartPage.MARKS -> MarksShowcase(modifier)
     }
+}
+
+// -- The AI marks --------------------------------------------------------------------------------
+
+/**
+ * The seal and what it marks: in the middle a seal that keeps turning and
+ * breathing between a twelve-sided cookie and a sun, its rings rippling out
+ * like a pond's; on one side a voice, on the other a picture, floating. Each
+ * time a ring reaches one, a small leaf badge with a tick springs onto it:
+ * marked, and nothing else shown. Then the badges go and it starts again.
+ */
+@Composable
+private fun MarksShowcase(modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val t by rememberLoop(5_200, "marks", still = 0.55f)
+    val sealMorph = remember { Morph(MaterialShapes.Cookie12Sided, MaterialShapes.Sunny) }
+    val ringMorph = remember { Morph(MaterialShapes.Cookie9Sided, MaterialShapes.Circle) }
+    val ring = scheme.primary
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier.background(Brush.verticalGradient(listOf(scheme.tertiaryContainer, scheme.primaryContainer))),
+    ) {
+        // The rings: three at a time, each growing from the seal, rounding off and fading as it goes.
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            for (i in 0 until 3) {
+                val p = (t * 1.5f + i / 3f) % 1f
+                val d = size.minDimension * (0.42f + 0.9f * p)
+                val outline = MorphShape(ringMorph, p, rotationDegrees = 30f * p + t * 120f).createOutline(Size(d, d), layoutDirection, this)
+                val path = (outline as? androidx.compose.ui.graphics.Outline.Generic)?.path ?: continue
+                translate(left = (size.width - d) / 2f, top = (size.height - d) / 2f) {
+                    drawPath(path, ring, alpha = 0.32f * (1f - p) * (1f - p), style = Stroke(width = (6f - 4f * p).dp.toPx()))
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+            // Both sides as wide: the seal sits in the very middle, where its rings start from.
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.width(CARD_SLOT)) {
+                MarkedCard(t, popAt = 0.30f, phase = 0f) { VoiceInCard(t) }
+            }
+            // The seal: turning, breathing, its shield upright.
+            val breath = 0.5f - 0.5f * kotlin.math.cos(2f * PI.toFloat() * t)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(104.dp)
+                    .graphicsLayer {
+                        val s = 0.94f + 0.08f * breath
+                        scaleX = s
+                        scaleY = s
+                    }
+                    .clip(MorphShape(sealMorph, breath, rotationDegrees = t * 360f))
+                    .background(Brush.linearGradient(listOf(scheme.primary, scheme.tertiary))),
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(52.dp).clip(CircleShape).background(scheme.surfaceContainerLowest),
+                ) {
+                    Icon(Icons.Rounded.VerifiedUser, contentDescription = null, tint = scheme.primary, modifier = Modifier.size(28.dp))
+                }
+            }
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.width(CARD_SLOT)) {
+                MarkedCard(t, popAt = 0.42f, phase = 0.5f) { PictureInCard() }
+            }
+        }
+    }
+}
+
+/**
+ * A card floating gently ([phase] apart from the other), that springs a
+ * little when its badge lands at [popAt] of the loop.
+ */
+@Composable
+private fun MarkedCard(t: Float, popAt: Float, phase: Float, content: @Composable () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val shown = ((t - popAt) / 0.14f).coerceIn(0f, 1f)
+    val leaving = if (t > 0.86f) ((t - 0.86f) / 0.08f).coerceIn(0f, 1f) else 0f
+    val pop = backOut(shown) * (1f - leaving)
+    // A short bump of the card as the badge lands.
+    val bump = if (shown in 0.001f..0.999f) 0.06f * sin(PI.toFloat() * shown) else 0f
+    Box(
+        modifier = Modifier.graphicsLayer {
+            translationY = 5.dp.toPx() * sin(2f * PI.toFloat() * (t + phase))
+            scaleX = 1f + bump
+            scaleY = 1f + bump
+        },
+    ) {
+        content()
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .graphicsLayer {
+                    translationX = 8.dp.toPx()
+                    translationY = (-8).dp.toPx()
+                    scaleX = pop
+                    scaleY = pop
+                    rotationZ = -90f * (1f - shown)
+                    alpha = pop.coerceIn(0f, 1f)
+                }
+                .size(26.dp)
+                .clip(remember { PolygonShape(MaterialShapes.Clover4Leaf) })
+                .background(scheme.tertiary),
+        ) {
+            Icon(Icons.Rounded.Check, contentDescription = null, tint = scheme.onTertiary, modifier = Modifier.size(15.dp))
+        }
+    }
+}
+
+/** A voice: a pill with its wave moving. */
+@Composable
+private fun VoiceInCard(t: Float) {
+    val scheme = MaterialTheme.colorScheme
+    val bar = scheme.primary
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.size(width = 80.dp, height = 56.dp).clip(RoundedCornerShape(28.dp)).background(scheme.surfaceContainerHighest),
+    ) {
+        Canvas(modifier = Modifier.size(width = 52.dp, height = 30.dp)) {
+            val n = 7
+            val gap = size.width / n
+            for (i in 0 until n) {
+                val h = size.height * (0.28f + 0.72f * abs(sin(i * 0.8f + 2f * PI.toFloat() * t * 2f)))
+                val x = gap * (i + 0.5f)
+                drawLine(bar, Offset(x, (size.height - h) / 2f), Offset(x, (size.height + h) / 2f), strokeWidth = gap * 0.55f, cap = StrokeCap.Round)
+            }
+        }
+    }
+}
+
+/** A picture: a little landscape, its sun and its hill, in a rounded square. */
+@Composable
+private fun PictureInCard() {
+    val scheme = MaterialTheme.colorScheme
+    val sun = scheme.tertiary
+    val hill = scheme.secondary
+    val sky = scheme.secondaryContainer
+    Box(
+        modifier = Modifier
+            .size(64.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(scheme.surfaceContainerHighest)
+            .padding(6.dp)
+            .clip(RoundedCornerShape(16.dp)),
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawRect(sky)
+            drawCircle(sun, radius = size.minDimension * 0.16f, center = Offset(size.width * 0.7f, size.height * 0.32f))
+            drawOval(hill, topLeft = Offset(-size.width * 0.15f, size.height * 0.58f), size = Size(size.width * 1.3f, size.height * 0.8f))
+        }
+    }
+}
+
+/** The width each side of the seal takes, the same for both. */
+private val CARD_SLOT = 88.dp
+
+/** An ease that overshoots a little and settles (as a spring does), 0..1. */
+private fun backOut(x: Float): Float {
+    if (x <= 0f) return 0f
+    if (x >= 1f) return 1f
+    val c1 = 1.70158f
+    val c3 = c1 + 1f
+    val y = x - 1f
+    return 1f + c3 * y * y * y + c1 * y * y
 }
 
 // -- Speech --------------------------------------------------------------------------------------

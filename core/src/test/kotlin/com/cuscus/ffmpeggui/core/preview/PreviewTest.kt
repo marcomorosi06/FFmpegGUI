@@ -267,6 +267,31 @@ class PreviewTest {
     }
 
     @Test
+    fun `fonts and pictures embedded in an ass file never reach the burnt script`() {
+        val source = listOf(
+            "[Script Info]",
+            "[V4+ Styles]",
+            "Style: Default,Evil Sans,20",
+            "[Fonts]",
+            "fontname: evil_0.ttf",
+            "M3=!(&QNC`IZ]",
+            "[graphics]",
+            "filename: logo.png",
+            "M3=!(&QNC`IZ]",
+            "[Events]",
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+            "Dialogue: 0,0:00:04.50,0:00:05.50,Default,,0,0,0,,hi",
+        ).joinToString("\n")
+        val content = SubtitleRetimer().retime(source, cuts, sourceIndex = 0)!!.content
+        assertFalse(content.contains("[Fonts]", ignoreCase = true))
+        assertFalse(content.contains("[Graphics]", ignoreCase = true))
+        assertFalse(content.contains("fontname:"))
+        assertFalse(content.contains("M3=!"))
+        assertTrue(content.contains("Style: Default,Evil Sans,20"))
+        assertTrue(content.contains("Dialogue: 0,0:00:00.50,0:00:01.50,Default,,0,0,0,,hi"))
+    }
+
+    @Test
     fun `nothing is returned when no line survives the edit`() {
         assertNull(SubtitleRetimer().retime("1\n00:00:08,000 --> 00:00:09,000\ngone\n", cuts, sourceIndex = 0))
         assertNull(SubtitleRetimer().retime("", cuts, sourceIndex = 0))

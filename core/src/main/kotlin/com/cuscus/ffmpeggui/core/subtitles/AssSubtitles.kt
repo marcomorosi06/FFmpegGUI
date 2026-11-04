@@ -33,7 +33,6 @@ object AssSubtitles {
 
         val out = StringBuilder()
         out.append("[Script Info]\n")
-        out.append("; Made by FFmpeg GUI\n")
         out.append("ScriptType: v4.00+\n")
         out.append("PlayResX: ").append(playWidth).append('\n')
         out.append("PlayResY: ").append(PLAY_HEIGHT).append('\n')

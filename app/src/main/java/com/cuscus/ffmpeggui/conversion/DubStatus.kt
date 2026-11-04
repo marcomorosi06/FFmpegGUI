@@ -34,6 +34,12 @@ enum class DubProblem {
     /** The original voice could not be set apart to be lowered. */
     NO_SEPARATION,
 
+    /** The AI marks are not installed: nothing is said without them (EU AI Act, Article 50(2)). */
+    NO_MARKS,
+
+    /** The AI mark did not hold on the voice: the dub is not kept. */
+    MARK_NOT_HELD,
+
     /** Something else went wrong. */
     FAILED,
 }

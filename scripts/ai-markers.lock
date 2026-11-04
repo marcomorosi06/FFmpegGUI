@@ -1,0 +1,57 @@
+# What scripts/export-ai-markers.py makes the invisible AI marks' files from,
+# and what they come out as (docs/MODELS.md, "The AI marks"). The app pins the
+# same (app/.../marking/MarkerModel.kt; scripts/check-model-pins.py checks that
+# the two agree), and .github/workflows/ai-markers.yml publishes them as the
+# release release_tag of this repository.
+#
+# A value of zeros is not pinned yet: the workflow then only learns it (it
+# downloads, builds and checks everything, publishes nothing) and hands back a
+# filled-in lock; scripts/pin-ai-markers.py copies it here, into the app and
+# into docs/MODELS.md. Nothing goes out, and the app imports nothing, until
+# every value is pinned.
+
+release_tag                 ai-markers-1
+python                      3.13
+opset                       17
+
+# The fixed window AudioSeal's ONNX files take: 5 s at 16 kHz (core/marking/SpeechMarking.kt).
+window                      80000
+
+# AudioSeal, by Meta (facebookresearch). MIT, the weights included ("We have
+# updated our license to full MIT license (including the license for the model
+# weights)", its README). Its package (the network's code) and its weights.
+audioseal_repository        https://github.com/facebookresearch/audioseal
+audioseal_package           audioseal==0.2.1
+audioseal_package_sha256    e51ee84850d5e2351346c52b1711373cdedb952676da91484fd0cff430236c25
+audioseal_licence_url       https://raw.githubusercontent.com/facebookresearch/audioseal/main/LICENSE
+audioseal_licence_sha256    da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93
+audioseal_generator_url     https://huggingface.co/facebook/audioseal/resolve/main/generator_base.pth
+audioseal_generator_sha256  0000000000000000000000000000000000000000000000000000000000000000
+audioseal_detector_url      https://huggingface.co/facebook/audioseal/resolve/main/detector_base.pth
+audioseal_detector_sha256   0000000000000000000000000000000000000000000000000000000000000000
+
+# TrustMark, by Adobe. MIT, the model files included ("The MIT license covers
+# both the code in this repo and the model files which are downloaded upon
+# first use", its README; confirmed for redistributing them unchanged in
+# trustmark_confirmation). Its ONNX files, as Adobe serves them, unchanged.
+trustmark_repository        https://github.com/adobe/trustmark
+trustmark_commit            0000000000000000000000000000000000000000
+trustmark_licence           LICENSE
+trustmark_licence_sha256    58d47a5cdfaaceda98925d845e8207d90336c62347a2383f95962b667b1cdaf5
+trustmark_confirmation      https://github.com/adobe/trustmark/issues/48
+trustmark_encoder_url       https://cai-watermark.adobe.net/watermarking/trustmark-models/encoder_Q.onnx
+trustmark_encoder_sha256    0000000000000000000000000000000000000000000000000000000000000000
+trustmark_decoder_url       https://cai-watermark.adobe.net/watermarking/trustmark-models/decoder_Q.onnx
+trustmark_decoder_sha256    0000000000000000000000000000000000000000000000000000000000000000
+
+# The files the release serves (the TrustMark ones hash as Adobe's, above).
+generator_file              audioseal-generator.onnx
+generator_sha256            0000000000000000000000000000000000000000000000000000000000000000
+generator_bytes             0
+detector_file               audioseal-detector.onnx
+detector_sha256             0000000000000000000000000000000000000000000000000000000000000000
+detector_bytes              0
+encoder_file                trustmark-encoder-q.onnx
+encoder_bytes               0
+decoder_file                trustmark-decoder-q.onnx
+decoder_bytes               0

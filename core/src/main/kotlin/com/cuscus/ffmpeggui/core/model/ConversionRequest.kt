@@ -47,6 +47,12 @@ data class ConversionRequest(
     /** One entry per picture overlay, in stacking order; bound like [textOverlays]. */
     val imageOverlays: List<ImagePlacement> = emptyList(),
     /**
+     * True when a picture seen in the output was changed by an AI model (the
+     * magic eraser, or one another program marked so): the output says so
+     * (AI Act, Article 50(2); see aiDisclosure), never by which model.
+     */
+    val aiEditedPictures: Boolean = false,
+    /**
      * The picture looks laid over the whole video (black and white, a glitch...,
      * see PictureLook), on the exported video's clock: each changes everything
      * under it, after the captions and pictures, in this order.

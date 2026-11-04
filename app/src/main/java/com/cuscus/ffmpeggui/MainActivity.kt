@@ -395,6 +395,31 @@ class MainActivity : ComponentActivity() {
                         onDismiss = container.smartFeatures::acknowledgeRetiredModels,
                     )
 
+                    // Models deleted for want of the AI marks (MarkingSweep): said once, with the way to the marks.
+                    val clearedForMarks by container.smartFeatures.clearedForMarks.collectAsState()
+                    com.cuscus.ffmpeggui.marking.ModelsClearedDialog(
+                        removed = clearedForMarks,
+                        onSetUp = {
+                            container.smartFeatures.acknowledgeClearedForMarks()
+                            com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.MARKS
+                            navController.navigate(Screen.settingsCategory(SettingsCategory.SMART))
+                        },
+                        onDismiss = container.smartFeatures::acknowledgeClearedForMarks,
+                    )
+                    // A model to be imported before the AI marks (MarkingGate): why they come first.
+                    val markRefusals by com.cuscus.ffmpeggui.marking.MarkingGate.refusals.collectAsState()
+                    var answeredRefusals by remember { mutableStateOf(markRefusals) }
+                    if (markRefusals > answeredRefusals) {
+                        com.cuscus.ffmpeggui.marking.MarkersFirstDialog(
+                            onSetUp = {
+                                answeredRefusals = markRefusals
+                                com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.MARKS
+                                navController.navigate(Screen.settingsCategory(SettingsCategory.SMART))
+                            },
+                            onDismiss = { answeredRefusals = markRefusals },
+                        )
+                    }
+
                     CompositionLocalProvider(
                         com.cuscus.ffmpeggui.stickers.LocalStickerShelf provides stickerShelf,
                         LocalSubjectCut provides subjectCut,
@@ -960,6 +985,7 @@ class MainActivity : ComponentActivity() {
                                 val piperImporting by smart.piperStore.importing.collectAsState()
                                 val fastKernels by smart.fastKernels.collectAsState()
                                 val eraseLoaded by smart.eraser.inMemory.collectAsState()
+                                val markerModel by smart.markerStore.state.collectAsState()
                                 val usage by produceState<ExportsUsage?>(null, usageRefresh) {
                                     value = withContext(Dispatchers.IO) { container.exportedFiles.usage() }
                                 }
@@ -1067,6 +1093,15 @@ class MainActivity : ComponentActivity() {
                                             onDelete = smart::deleteEraseModel,
                                             onUnload = smart.eraser::unload,
                                         ),
+                                        marks = com.cuscus.ffmpeggui.settings.MarksFeatureUi(
+                                            model = markerModel,
+                                            loaded = false,
+                                            onImport = smart.markerStore::import,
+                                            onStopImport = smart.markerStore::stop,
+                                            onVerify = smart.markerStore::verify,
+                                            onDeleteAll = smart::deleteMarkersAndModels,
+                                            onUnload = smart.marker::unload,
+                                        ),
                                         fastKernels = fastKernels,
                                         onFastKernels = smart::setFastKernels,
                                         cutout = CutoutFeatureUi(
@@ -1101,7 +1136,7 @@ class MainActivity : ComponentActivity() {
                         }
 
                         composable(Screen.About.route) {
-                            AboutScreen(versionName = versionName, onBack = { navController.popBackStack() })
+                            AboutScreen(versionName = versionName, onBack = { navController.popBackStack() }, life = container.ffmpegLife)
                         }
                     }
                     }

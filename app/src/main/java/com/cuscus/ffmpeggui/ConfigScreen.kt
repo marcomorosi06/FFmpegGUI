@@ -1238,7 +1238,7 @@ fun ConfigScreen(
     // The four parts of the editor, laid out below for the shape of the window.
     // On a screen wider than it is tall the top bar has the switch that moves the player
     // to the other side of the tools: [playerSide] says where it is (null: no switch).
-    val topBar: @Composable (playerSide: Boolean?) -> Unit = { playerSide ->
+    val topBar: @Composable (playerSide: Boolean?, usualLayout: Boolean) -> Unit = { playerSide, usualLayout ->
         EditorTopBar(
             fileName = fileName,
             formatLabel = stringResource(format.labelRes),
@@ -1252,6 +1252,11 @@ fun ConfigScreen(
             },
             playerRight = playerSide,
             onSwapSides = { right -> onLandscapeLayout(if (right) LandscapeLayout.PLAYER_LEFT else LandscapeLayout.PLAYER_RIGHT) },
+            onUsualLayout = if (usualLayout) {
+                { onLandscapeLayout(LandscapeLayout.AUTO) }
+            } else {
+                null
+            },
         )
     }
     // What the sound view of an audio file shows around its waveform.
@@ -1393,6 +1398,13 @@ fun ConfigScreen(
             }
         }
     }
+    // Scratching the timeline turns the play button into a record for a moment (see DjScratch);
+    // not with the system's animations off.
+    val reducedMotion = com.cuscus.ffmpeggui.onboarding.rememberReducedMotion()
+    val scratchDensity = LocalDensity.current
+    val djScratch = remember(scratchDensity, reducedMotion) {
+        if (reducedMotion) null else DjScratch(with(scratchDensity) { DjScratch.MIN_SWING.toPx() })
+    }
     val controls: @Composable () -> Unit = {
         ControlRow(
             playback = playback,
@@ -1418,75 +1430,83 @@ fun ConfigScreen(
                 selectedTool = EditorTool.EASING
             },
             onStepFrame = { forward, held -> stepFrame(forward, held) },
+            scratch = djScratch,
         )
     }
     // Timeline and tools, or the panel of the open tool: always the same size, so the
     // preview never changes size.
     /** The timeline and the tool row under it. */
     val timelineArea: @Composable () -> Unit = {
-        Column(modifier = Modifier.fillMaxSize()) {
-            EditorTimeline(
-                timeline = timeline,
-                sources = sources,
-                trimStartMs = trimStartMs,
-                trimEndMs = trimEndMs,
-                playback = playback,
-                viewState = timelineState,
-                selectedClipId = scopeClipId,
-                textOverlays = if (audioMode) emptyList() else textOverlays,
-                imageOverlays = if (audioMode) emptyList() else imageOverlays,
-                sounds = audioClips,
-                clock = clock,
-                kinds = when {
-                    audioMode -> listOf(LaneKind.SOUND)
-                    gifMode -> LaneKind.entries.filter { it != LaneKind.SOUND }
-                    else -> LaneKind.entries
-                },
-                soundClips = audioMode,
-                // A GIF has no sound; an audio file's clips are drawn as their sound already.
-                clipWaveforms = !audioMode && !gifMode && LocalAppSettings.current.clipWaveforms,
-                selectedItemId = selectedSound?.id ?: selectedText?.id ?: selectedImage?.id,
-                onSelectClip = selectClip,
-                onTrimClip = onTrimClip,
-                onMoveClip = onMoveClip,
-                // Joins between clips: their transitions (none for a sound file's clips).
-                onJunction = if (audioMode) null else openTransition,
-                onSelectItem = { kind, id -> if (kind == LaneKind.SOUND) selectSound(id) else selectOverlay(id) },
-                onEditSound = { id, span -> updateSound(id, null) { it.copy(span = span, keyframes = it.keyframes.respanned(it.span.startMs, it.span.endMs, span.startMs, span.endMs)) } },
-                onEditOverlay = onSetOverlaySpan,
-                // A keyframe dragged along what it belongs to: one undo step, its values and
-                // easing kept (see Keyframes.moved).
-                onMoveKeyframe = if (isManualMode) null else { owner, fromMs, toMs -> moveKeyframe(owner, fromMs, toMs) },
-                onScrub = scrubTimeline,
-                onAddClip = { clipPicker.launch(if (audioMode) arrayOf("audio/*", "video/*") else arrayOf("video/*", "image/*")) },
-                onAdd = { kind ->
-                    when (kind) {
-                        LaneKind.EFFECT -> effectPickerOpen = true
-                        LaneKind.TEXT -> addText()
-                        LaneKind.IMAGE -> addImage()
-                        LaneKind.SOUND -> addSound()
-                    }
-                },
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            EditorToolbar(
-                items = soundItems ?: overlayItems ?: clipItems ?: (if (audioRowOpen && !audioMode) videoAudioItems else wholeItems),
-                onBack = when {
-                    selectedSound != null -> {
-                        { selectedSoundId = null }
-                    }
-                    overlayItems != null -> {
-                        { selectedOverlayId = null }
-                    }
-                    selectedClip != null -> {
-                        { selectedClipId = null }
-                    }
-                    audioRowOpen && !audioMode -> {
-                        { audioRowOpen = false }
-                    }
-                    else -> null
-                },
-            )
+        // Beside the player the tools have the whole height: the timeline grows into it,
+        // showing more rows of lanes, instead of leaving it empty above the tool row.
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val timelineRoom = maxHeight - TOOLBAR_HEIGHT - 8.dp
+            Column(modifier = Modifier.fillMaxSize()) {
+                EditorTimeline(
+                    maxHeight = timelineRoom,
+                    scratch = djScratch,
+                    timeline = timeline,
+                    sources = sources,
+                    trimStartMs = trimStartMs,
+                    trimEndMs = trimEndMs,
+                    playback = playback,
+                    viewState = timelineState,
+                    selectedClipId = scopeClipId,
+                    textOverlays = if (audioMode) emptyList() else textOverlays,
+                    imageOverlays = if (audioMode) emptyList() else imageOverlays,
+                    sounds = audioClips,
+                    clock = clock,
+                    kinds = when {
+                        audioMode -> listOf(LaneKind.SOUND)
+                        gifMode -> LaneKind.entries.filter { it != LaneKind.SOUND }
+                        else -> LaneKind.entries
+                    },
+                    soundClips = audioMode,
+                    // A GIF has no sound; an audio file's clips are drawn as their sound already.
+                    clipWaveforms = !audioMode && !gifMode && LocalAppSettings.current.clipWaveforms,
+                    selectedItemId = selectedSound?.id ?: selectedText?.id ?: selectedImage?.id,
+                    onSelectClip = selectClip,
+                    onTrimClip = onTrimClip,
+                    onMoveClip = onMoveClip,
+                    // Joins between clips: their transitions (none for a sound file's clips).
+                    onJunction = if (audioMode) null else openTransition,
+                    onSelectItem = { kind, id -> if (kind == LaneKind.SOUND) selectSound(id) else selectOverlay(id) },
+                    onEditSound = { id, span -> updateSound(id, null) { it.copy(span = span, keyframes = it.keyframes.respanned(it.span.startMs, it.span.endMs, span.startMs, span.endMs)) } },
+                    onEditOverlay = onSetOverlaySpan,
+                    // A keyframe dragged along what it belongs to: one undo step, its values and
+                    // easing kept (see Keyframes.moved).
+                    onMoveKeyframe = if (isManualMode) null else { owner, fromMs, toMs -> moveKeyframe(owner, fromMs, toMs) },
+                    onScrub = scrubTimeline,
+                    onAddClip = { clipPicker.launch(if (audioMode) arrayOf("audio/*", "video/*") else arrayOf("video/*", "image/*")) },
+                    onAdd = { kind ->
+                        when (kind) {
+                            LaneKind.EFFECT -> effectPickerOpen = true
+                            LaneKind.TEXT -> addText()
+                            LaneKind.IMAGE -> addImage()
+                            LaneKind.SOUND -> addSound()
+                        }
+                    },
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                EditorToolbar(
+                    items = soundItems ?: overlayItems ?: clipItems ?: (if (audioRowOpen && !audioMode) videoAudioItems else wholeItems),
+                    onBack = when {
+                        selectedSound != null -> {
+                            { selectedSoundId = null }
+                        }
+                        overlayItems != null -> {
+                            { selectedOverlayId = null }
+                        }
+                        selectedClip != null -> {
+                            { selectedClipId = null }
+                        }
+                        audioRowOpen && !audioMode -> {
+                            { audioRowOpen = false }
+                        }
+                        else -> null
+                    },
+                )
+            }
         }
     }
     /** The panel of [tool]; [side]: beside the preview (a large screen) rather than under it. */
@@ -2107,6 +2127,10 @@ fun ConfigScreen(
             }
         }
     }
+    // The preview, moved (never built again) when the layout changes with the window's shape:
+    // turning the phone keeps the video where it was, playing or paused, instead of starting over.
+    val currentPreviewPane by rememberUpdatedState(previewPane)
+    val movablePreview = remember { movableContentOf { modifier: Modifier -> currentPreviewPane(modifier) } }
     val toolsPane: @Composable (Modifier) -> Unit = { modifier ->
         val motion = MaterialTheme.motionScheme
         AnimatedContent(
@@ -2135,8 +2159,10 @@ fun ConfigScreen(
             // Or always, on a screen wider than it is tall, when the settings put the player on a side.
             val landscape = maxWidth > maxHeight
             val landscapeLayout = LocalAppSettings.current.landscapeLayout
-            val sideBySideNow = landscapeLayout.forcesSides(landscape) ||
-                (landscape && maxHeight < EDITOR_TOOLS_HEIGHT + EDITOR_CHROME_HEIGHT + MIN_PREVIEW_HEIGHT)
+            val autoSides = landscape && maxHeight < EDITOR_TOOLS_HEIGHT + EDITOR_CHROME_HEIGHT + MIN_PREVIEW_HEIGHT
+            val sideBySideNow = landscapeLayout.forcesSides(landscape) || autoSides
+            // The way back to the usual layout, where it would change something (a tablet).
+            val usualLayout = landscapeLayout.offersUsualLayout(landscape, autoSides)
             // A large screen (a tablet on its side, a monitor): the timeline across the whole
             // width at the bottom, the preview above it, and an open tool's panel beside the
             // preview, so that the timeline and the preview stay in sight while it is open.
@@ -2155,10 +2181,10 @@ fun ConfigScreen(
                 val motion = MaterialTheme.motionScheme
                 val panelWidth = (maxWidth * SIDE_PANEL_SHARE).coerceIn(SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH)
                 Column(modifier = Modifier.fillMaxSize().imePadding()) {
-                    if (!full) topBar(playerSide)
+                    if (!full) topBar(playerSide, usualLayout)
                     Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                            previewPane(Modifier.weight(1f).fillMaxWidth())
+                            movablePreview(Modifier.weight(1f).fillMaxWidth())
                             if (!full) controls()
                         }
                         if (!full) AnimatedContent(
@@ -2189,8 +2215,8 @@ fun ConfigScreen(
                     modifier = Modifier.fillMaxSize().imePadding(),
                     player = {
                         Column(modifier = Modifier.fillMaxSize()) {
-                            if (!full) topBar(playerSide)
-                            previewPane(Modifier.weight(1f).fillMaxWidth())
+                            if (!full) topBar(playerSide, usualLayout)
+                            movablePreview(Modifier.weight(1f).fillMaxWidth())
                         }
                     },
                     tools = {
@@ -2218,8 +2244,8 @@ fun ConfigScreen(
                     label = "toolsHeight",
                 )
                 Column(modifier = Modifier.fillMaxSize().imePadding()) {
-                    if (!full) topBar(playerSide)
-                    previewPane(Modifier.weight(1f).fillMaxWidth())
+                    if (!full) topBar(playerSide, usualLayout)
+                    movablePreview(Modifier.weight(1f).fillMaxWidth())
                     if (!full) controls()
                     if (!full) toolsPane(Modifier.fillMaxWidth().height(toolsHeight))
                 }
@@ -2453,7 +2479,8 @@ private fun footageHdr(timeline: Timeline, sources: List<EditorSource>): VideoHd
  * extension shows) and its target format, Export on the right, the one filled
  * button. On a screen wider than it is tall ([playerRight] not null) the switch
  * that moves the player to the other side of the tools joins Export as one
- * connected pair. At least [EDITOR_TOP_BAR_HEIGHT] tall, taller with large
+ * connected group, led by the way back to the usual layout when the settings
+ * keep the player on a side ([onUsualLayout]). At least [EDITOR_TOP_BAR_HEIGHT] tall, taller with large
  * text, so that nothing is cut.
  */
 @Composable
@@ -2466,8 +2493,14 @@ internal fun EditorTopBar(
     playerRight: Boolean? = null,
     /** The switch was tapped; it gets where the player was. */
     onSwapSides: (Boolean) -> Unit = {},
+    /** Back to the usual layout (see offersUsualLayout); null shows no such button. */
+    onUsualLayout: (() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    // Kept while the button goes away, so that a tap during its exit still works.
+    val usualLayout by rememberUpdatedState(onUsualLayout)
+    val offersUsual = onUsualLayout != null && playerRight != null
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -2503,7 +2536,14 @@ internal fun EditorTopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
         ) {
-            if (playerRight != null) ConnectedSwapSidesButton(playerRight = playerRight, onSwap = { onSwapSides(playerRight) })
+            AnimatedVisibility(
+                visible = offersUsual,
+                enter = expandHorizontally(motion.fastSpatialSpec(), expandFrom = Alignment.End) + fadeIn(motion.fastEffectsSpec()),
+                exit = shrinkHorizontally(motion.fastSpatialSpec(), shrinkTowards = Alignment.End) + fadeOut(motion.fastEffectsSpec()),
+            ) {
+                ConnectedUsualLayoutButton(onClick = { usualLayout?.invoke() })
+            }
+            if (playerRight != null) ConnectedSwapSidesButton(playerRight = playerRight, onSwap = { onSwapSides(playerRight) }, leads = !offersUsual)
             // Alone it is a pill that squares up under the finger; joined to the switch, its inner end is narrow.
             Button(
                 onClick = onExport,
@@ -2550,6 +2590,8 @@ private fun ControlRow(
      * held (the preview then follows as it scrubs); false at either end.
      */
     onStepFrame: (forward: Boolean, held: Boolean) -> Boolean = { _, _ -> false },
+    /** The timeline's scratch, which turns the play button into a record; null: never. */
+    scratch: DjScratch? = null,
 ) {
     val haptic = LocalHapticFeedback.current
     var isPlaying by playback.isPlaying
@@ -2566,8 +2608,10 @@ private fun ControlRow(
             AdaptiveClock(playback = playback)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(FRAME_STEP_GAP)) {
                 FrameStepButton(forward = false, enabled = true, onStep = { held -> onStepFrame(false, held) })
-                MorphingPlayButton(
+                // A record for a moment while the timeline is scratched (see DjScratch).
+                PlayOrRecord(
                     isPlaying = isPlaying,
+                    scratch = scratch,
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         isPlaying = !isPlaying

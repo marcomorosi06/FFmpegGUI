@@ -104,12 +104,12 @@ internal fun LayoutSample(layout: LandscapeLayout, color: Color) {
 
 /** A window with the player at [side] (0 left, 1 right) and the tools beside it. */
 /**
- * The same switch as the leading half of a connected pair (Export the other,
- * see EditorTopBar): a tonal button, its outer end round, squaring up under
- * the finger, the layout drawn in it sliding to the new side.
+ * The switch as part of a connected group with Export (see EditorTopBar): a
+ * tonal button squaring up under the finger, the layout drawn in it sliding to
+ * the new side; its outer end round when it [leads] the group.
  */
 @Composable
-internal fun ConnectedSwapSidesButton(playerRight: Boolean, onSwap: () -> Unit, modifier: Modifier = Modifier) {
+internal fun ConnectedSwapSidesButton(playerRight: Boolean, onSwap: () -> Unit, modifier: Modifier = Modifier, leads: Boolean = true) {
     val haptic = LocalHapticFeedback.current
     val scheme = MaterialTheme.colorScheme
     val side by animateFloatAsState(if (playerRight) 1f else 0f, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "swapSide")
@@ -120,7 +120,7 @@ internal fun ConnectedSwapSidesButton(playerRight: Boolean, onSwap: () -> Unit, 
             onSwap()
         },
         shapes = IconButtonDefaults.shapes(
-            shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp, topEnd = 8.dp, bottomEnd = 8.dp),
+            shape = if (leads) LEADING_SHAPE else MIDDLE_SHAPE,
             pressedShape = RoundedCornerShape(8.dp),
         ),
         modifier = modifier
@@ -132,6 +132,45 @@ internal fun ConnectedSwapSidesButton(playerRight: Boolean, onSwap: () -> Unit, 
         }
     }
 }
+
+/**
+ * Back to the usual layout (the player above the tools, as the window's size
+ * suggests), leading the connected group: shown while the settings put the
+ * player on a side and the window would lay it otherwise (see [offersUsualLayout]).
+ */
+@Composable
+internal fun ConnectedUsualLayoutButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val haptic = LocalHapticFeedback.current
+    val scheme = MaterialTheme.colorScheme
+    val label = stringResource(R.string.editor_layout_usual)
+    FilledTonalIconButton(
+        onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+            onClick()
+        },
+        shapes = IconButtonDefaults.shapes(shape = LEADING_SHAPE, pressedShape = RoundedCornerShape(8.dp)),
+        modifier = modifier
+            .size(width = 56.dp, height = 48.dp)
+            .semantics { contentDescription = label },
+    ) {
+        Canvas(modifier = Modifier.size(22.dp)) {
+            drawStacked(player = scheme.onSecondaryContainer, tools = scheme.onSecondaryContainer.copy(alpha = 0.35f))
+        }
+    }
+}
+
+/**
+ * Whether the top bar offers the way back to the usual layout: on a window
+ * [landscape] (wider than tall), while the settings put the player on a side,
+ * unless the window is so low that it would be laid side by side anyway
+ * ([autoSides]: a phone on its side), where going back would change nothing.
+ */
+internal fun LandscapeLayout.offersUsualLayout(landscape: Boolean, autoSides: Boolean): Boolean =
+    landscape && this != LandscapeLayout.AUTO && !autoSides
+
+/** A connected group's first button, round at its outer end; and one in the middle. */
+private val LEADING_SHAPE = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp, topEnd = 8.dp, bottomEnd = 8.dp)
+private val MIDDLE_SHAPE = RoundedCornerShape(8.dp)
 
 private fun DrawScope.drawLayout(side: Float, player: Color, tools: Color) {
     val w = size.width

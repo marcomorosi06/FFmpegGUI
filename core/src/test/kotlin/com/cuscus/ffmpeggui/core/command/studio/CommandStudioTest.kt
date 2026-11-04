@@ -264,6 +264,14 @@ scale AVOptions:
     }
 
     @Test
+    fun `dropping or setting the AI tags is said to change nothing`() {
+        val text = "ffmpeg -i input.mp4 -map_metadata -1 -metadata AI_GENERATED= -metadata:s:a:0 digital_source_type=x -metadata title=Mine output.mp4"
+        val issues = lint.check(text).filter { it.code == LintCode.AI_MARKS_KEPT }
+        assertEquals(listOf("-1", "AI_GENERATED=", "digital_source_type=x"), issues.map { text.substring(it.start, it.end) })
+        assertTrue(issues.all { it.severity == LintSeverity.WARNING })
+    }
+
+    @Test
     fun `laid out on lines and back, it runs the same`() {
         val line = "ffmpeg -y -i input.mp4 -c:v libx264 -vf \"scale=-2:720, fps=30\" -an output.mp4"
         val tidy = tidyCommand(line, catalog)

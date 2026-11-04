@@ -49,7 +49,7 @@ class PcmStereoFile(file: File) : VoiceSeparation.Source, AutoCloseable {
  * what FLAC keeps for four channels.
  *
  * A [comment], when given, goes in a LIST INFO chunk before the samples
- * (ICMT, and ISFT for the software): FFmpeg reads it as the "comment" tag.
+ * (ICMT): FFmpeg reads it as the "comment" tag.
  */
 class WavWriter(
     private val file: File,
@@ -110,7 +110,10 @@ class WavWriter(
 
         private const val EXTENSIBLE = 0xFFFE
 
-        /** A LIST INFO chunk with [comment] (ICMT) and the software (ISFT), ASCII, each NUL-ended and even. */
+        /**
+         * A LIST INFO chunk with [comment] (ICMT), ASCII, NUL-ended and even. No
+         * software name: a file says nothing of what made it (see core.provenance).
+         */
         fun infoChunk(comment: String): ByteArray {
             fun sub(id: String, text: String): ByteArray {
                 val bytes = text.filter { it.code in 0x20..0x7E }.toByteArray(Charsets.US_ASCII) + 0
@@ -119,7 +122,7 @@ class WavWriter(
                 b.put(id.toByteArray(Charsets.US_ASCII)).putInt(bytes.size).put(padded)
                 return b.array()
             }
-            val body = "INFO".toByteArray(Charsets.US_ASCII) + sub("ICMT", comment) + sub("ISFT", "FFmpegGUI")
+            val body = "INFO".toByteArray(Charsets.US_ASCII) + sub("ICMT", comment)
             val b = ByteBuffer.allocate(8 + body.size).order(ByteOrder.LITTLE_ENDIAN)
             b.put("LIST".toByteArray(Charsets.US_ASCII)).putInt(body.size).put(body)
             return b.array()

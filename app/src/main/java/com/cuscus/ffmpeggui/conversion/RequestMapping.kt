@@ -90,6 +90,16 @@ internal object VoiceStemLookup {
     var of: (EditorSource) -> java.io.File? = { null }
 }
 
+/**
+ * Whether a model changed the picture at a URI (the magic eraser, or another
+ * program that marked it so; see core.provenance.AiMarksReader): set by the
+ * view model. What is exported from it says so.
+ */
+internal object AiEditLookup {
+    @Volatile
+    var of: (android.net.Uri) -> Boolean = { false }
+}
+
 /** Describes what to do, without saying where the files are. */
 internal fun ConversionSettings.toRequest(
     format: OutputFormat,
@@ -188,6 +198,9 @@ private fun ConversionSettings.toRequestOf(
     // A hidden caption (the layers list's eye) is kept in the project only.
     textOverlays = textOverlays.filter { !it.hidden && (it.clipId == null || it.clipId in footage.clipIds) },
     imageOverlays = footage.pictures.map { it.toPlacement() },
+    // Every picture the export may show that a model changed (the picture on its canvas included).
+    aiEditedPictures = (footage.files.map { it.uri } + footage.pictures.mapNotNull { it.uri } + imageOverlays.filter { it.isPhoto }.mapNotNull { it.uri })
+        .any { AiEditLookup.of(it) },
     looks = if (format.isImage) emptyList() else lookSpans(),
     // The picture on its canvas: placed as its layer says.
     photoPlacement = imageOverlays.firstOrNull { it.isPhoto }?.takeIf { format.isImage && imageEdit.canvas != null }?.toPlacement(),

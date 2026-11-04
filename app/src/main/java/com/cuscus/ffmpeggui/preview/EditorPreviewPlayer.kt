@@ -218,6 +218,9 @@ class EditorPreviewPlayer(context: Context) {
     private var playing = false
     /** The master clock while playing: position in the output, in milliseconds. */
     private var outputClockMs = 0.0
+
+    /** Where the first sequence starts, on the output clock (see [startAt]). */
+    private var startOutputMs = 0L
     private var lastTickNanos = 0L
 
     /**
@@ -274,6 +277,15 @@ class EditorPreviewPlayer(context: Context) {
      * the clocks around it move. When the clips change, playback resumes from
      * the same output instant, clamped to the new length.
      */
+    /**
+     * Makes the first sequence set start at [outputMs] rather than at the
+     * beginning: a player made again (its preview laid elsewhere) goes on from
+     * where the one before it was. Call before the first [setSequence].
+     */
+    fun startAt(outputMs: Long) {
+        startOutputMs = outputMs.coerceAtLeast(0L)
+    }
+
     fun setSequence(newClips: List<PreviewClip>, newLevels: List<ClipLevels>) {
         if (newClips == clips && newLevels == levels) return
         if (newClips == clips) {
@@ -285,8 +297,10 @@ class EditorPreviewPlayer(context: Context) {
             if (replaceShiftedItems()) seekToMedia(mediaMs)
             return
         }
-        // Measured on the old sequence, while clips, lengths and levels still agree.
-        val previousOutputMs = currentOutputMs()
+        // Measured on the old sequence, while clips, lengths and levels still agree; the very
+        // first one starts where it was asked to (see startAt).
+        val previousOutputMs = if (clips.isEmpty()) startOutputMs else currentOutputMs()
+        startOutputMs = 0L
 
         clips = newClips
         lengths = newClips.map { it.expectedLengthMs }.toMutableList()

@@ -164,12 +164,24 @@ Parakeet TDT 0.6B v3 token list, by NVIDIA
                                                    parakeet/CC-BY-4.0.txt
 anti-vocale (credited for the on-device transcription approach)
                                  Apache-2.0        anti-vocale/LICENSE.txt
+IPTC Digital Source Type, two identifiers (the AI marks of exported files)
+                                 CC-BY-4.0         iptc/ATTRIBUTION.txt,
+                                                   parakeet/CC-BY-4.0.txt
 
 
 Not part of the APK
 -------------------------------------------------------------------------
 The AI models are not in the app: the user downloads them, under their
-own licences:
+own licences. The AI marks come first (imported before any other model):
+  AudioSeal, by Meta ....................... MIT        (ONNX by FFmpeg GUI, from
+                                                       Meta's weights)
+                                                       ai-markers/LICENSE-audioseal.txt
+  TrustMark Q, by Adobe .................... MIT        (Adobe's ONNX files,
+                                                       unchanged; T. Bui,
+                                                       S. Agarwal, J. Collomosse,
+                                                       ICCV 2025)
+                                                       ai-markers/LICENSE-trustmark.txt
+                                                       ai-markers/NOTICE.txt
   Parakeet TDT 0.6B v3, by NVIDIA ......... CC-BY-4.0
   IS-Net and U2-NetP, by Xuebin Qin et al. . Apache-2.0 (ONNX by rembg, MIT)
   BiRefNet-lite, by Zheng Peng et al. ...... MIT        (ONNX by FFmpeg GUI, from

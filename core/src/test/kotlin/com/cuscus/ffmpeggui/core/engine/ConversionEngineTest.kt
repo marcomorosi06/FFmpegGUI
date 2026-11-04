@@ -671,4 +671,51 @@ class ConversionEngineTest {
         assertTrue(outcome is ConversionOutcome.Failure)
         assertEquals(1, executor.commands.size)
     }
+
+    @Test
+    fun `a file whose format has no place for the AI marks is not handed out`() = runBlocking {
+        val outputDir = temp.newFolder("out")
+        val job = ConversionJob(request.copy(format = OutputFormat.BMP, aiEditedPictures = true), MediaSources(listOf(main)))
+
+        val outcome = engine(FakeExecutor(), FakeStager(), outputDir).run(job)
+
+        assertEquals(ConversionOutcome.Failure(FailureReason.AI_MARKS_NO_PLACE, "bmp"), outcome)
+        assertTrue(outputDir.listFiles().isNullOrEmpty())
+    }
+
+    @Test
+    fun `a file the AI marks cannot be written into is not handed out`() = runBlocking {
+        val outputDir = temp.newFolder("out")
+        // FFmpeg's stand-in writes "partial": not a PNG.
+        val job = ConversionJob(request.copy(format = OutputFormat.PNG, aiEditedPictures = true), MediaSources(listOf(main)))
+
+        val outcome = engine(FakeExecutor(), FakeStager(), outputDir).run(job)
+
+        assertTrue(outcome is ConversionOutcome.Failure && outcome.reason == FailureReason.AI_MARKS_FAILED)
+        assertTrue(outputDir.listFiles().isNullOrEmpty())
+    }
+
+    @Test
+    fun `a hand-written command gets the AI tags written again after it`() = runBlocking {
+        val outputDir = temp.newFolder("out")
+        val executor = FakeExecutor()
+        val job = ConversionJob(
+            request.copy(format = OutputFormat.CUSTOM, sounds = listOf(com.cuscus.ffmpeggui.core.model.PlacedSound(aiVoice = "Kokoro (af_heart)"))),
+            MediaSources(listOf(main), sounds = listOf(NamedSource("file:///dub.wav", "dub.wav"))),
+            CommandMode.Manual("ffmpeg -i input.mov -map_metadata -1 output.mkv"),
+        )
+
+        val outcome = engine(executor, FakeStager(), outputDir).run(job)
+
+        assertTrue(outcome is ConversionOutcome.Success)
+        assertEquals(2, executor.commands.size)
+        val copy = executor.commands.last().arguments
+        assertTrue("copy" in copy)
+        assertTrue("AI_GENERATED=AI-generated voice" in copy)
+        assertEquals(File((outcome as ConversionOutcome.Success).outputPath).parent, outputDir.path)
+        // Nothing the project made with AI: no second pass.
+        val plain = FakeExecutor()
+        engine(plain, FakeStager(), temp.newFolder("out2")).run(job.copy(request = job.request.copy(sounds = listOf(com.cuscus.ffmpeggui.core.model.PlacedSound()))))
+        assertEquals(1, plain.commands.size)
+    }
 }

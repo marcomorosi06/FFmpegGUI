@@ -136,7 +136,12 @@ silent track, so files of different size, frame rate or audio layout can be
 mixed. Everything after the join (filters, overlays, fades, split) works on the
 joined sequence. Subtitles are timed against the main file, so
 `SubtitleRetimer` rewrites them to follow their footage through cuts, moves
-and reversal before they are burnt in.
+and reversal before they are burnt in. It also drops what a SubStation Alpha
+script carries embedded (its `[Fonts]` and `[Graphics]` sections): FFmpeg's
+`subtitles` filter has libass extract such fonts, and FreeType would parse
+them inside the app's process, where a crafted one could reach a bug of its
+(CVE-2025-27363 affects the FreeType 2.13.0 of FFmpegKitNext 6.1.1). Fonts are
+picked in the app instead, or come from the phone.
 
 ### Placed sounds
 
@@ -670,9 +675,22 @@ Where each one acts:
   shape (the largest preview for a vertical one). `SideBySide`
   (`LayoutChoice.kt`) lays the two out without building the player again when it
   changes side (it would start over): the halves slide across with the
-  theme's spatial spring. On a landscape screen the editors' top bar has the
+  theme's spatial spring. Turning the phone changes the layout itself (stacked,
+  side by side, studio): the video editor's preview is movable content
+  (`movableContentOf`), moved to its new place rather than built again, so the
+  video goes on from the same instant, playing or paused. Should a preview be
+  made again all the same, its new player starts where the playhead was
+  (`EditorPreviewPlayer.startAt`), not at the beginning. On a landscape screen the editors' top bar has the
   switch (`ConnectedSwapSidesButton`) that moves the player to the other side
-  and keeps the choice, joined to Export as one connected pair;
+  and keeps the choice, joined to Export as one connected group. While the
+  settings keep the player on a side, the group is led by the way back to the
+  usual layout (`ConnectedUsualLayoutButton`, the setting back to "As it
+  fits"), but only where that changes something (`offersUsualLayout`: not on a
+  window so low that it would be side by side anyway, a phone on its side).
+  Beside the player the tools have the whole height, so the video editor's
+  timeline grows into it (`EditorTimeline`'s `maxHeight`, up to what its rows
+  need) and shows more rows of lanes before they scroll, instead of leaving
+  the space empty above the tool row;
 - the editors' top bar (`EditorTopBar` in `ConfigScreen.kt`, shared by the
   video, audio, GIF and photo editors): a floating pill on `surfaceContainer`,
   Close a tonal button that squares up under the finger, the file's name cut in
@@ -1489,6 +1507,7 @@ later ask for the notification permission at the first export.
 | the SVG editor                              | `core/vector/svg/`, `app/.../svgedit/`               |
 | subtitle translation (models, text, UI)     | `core/translate/`, `app/.../translate/`              |
 | dubbing in the subtitles' language          | `core/dub/`, `app/.../dub/`                          |
+| the marks of what AI made (AI Act Art. 50)  | `core/provenance/`, `core/marking/`, `seal` in `ConversionEngine.kt`, `app/.../provenance/`, `app/.../marking/`, `scripts/export-ai-markers.py` |
 | the voice set apart from the rest           | `core/voice/`, `app/.../voice/`, `app/.../VoicePanels.kt`, `app/.../VoiceScreen.kt` |
 | SVG gradients (editing, tracing)            | `core/vector/svg/SvgGradients.kt`, `app/.../svgedit/SvgGradientEditor.kt`, `core/vector/VectorTracer.kt` |
 | SVG booleans, aligning, grouping            | `app/.../svgedit/SvgBooleans.kt`, `core/vector/svg/SvgArrange.kt`, `app/.../svgedit/SvgActions.kt` |
@@ -1885,13 +1904,12 @@ where they cannot run, the plain kernels are used, and a change lets go of
 every model in memory. A dub says how long it took.
 
 **Marked as AI-generated** (AI Act, Article 50(2)). The dub's WAV carries a
-LIST INFO comment (`WavWriter`) naming the engine and voice; the clip keeps
-it (`AudioClip.aiVoice`, in the project), the request carries it
-(`PlacedSound.aiVoice`), and an export where a dub is heard gets the tags
-`AI_GENERATED` and `DIGITAL_SOURCE_TYPE` (IPTC
-`compositeWithTrainedAlgorithmicMedia`), in MP4 and M4A with
-`use_metadata_tags`. FFmpeg keeps only the last `-movflags`, so the command
-gives them once, all together (`CommandBuilder.oneMovFlags`).
+LIST INFO comment (`WavWriter`) saying "AI-generated voice", and an XMP
+chunk saying it is all made by a model (IPTC `trainedAlgorithmicMedia`,
+`RiffXmp`); no dub is kept without it. The clip keeps the voice's name
+(`AudioClip.aiVoice`, in the project) and the request carries it
+(`PlacedSound.aiVoice`): every export where a dub is heard is marked (see
+"Marked as made with AI" below).
 
 ## Magic eraser
 
@@ -1930,6 +1948,119 @@ past the erased part (its grow and blur reach two, so the weights are those of
 the whole crop: tested), and the result is laid row by row into the picture
 itself, which is then written. The app asks for the larger heap
 (`largeHeap`) as the margin for what is left.
+
+## Marked as made with AI
+
+A file that holds what an AI model made says so, in a form programs can
+read (Regulation (EU) 2024/1689, Article 50(2); the Commission's guidelines
+on Article 50 count dubbing and the removal of things from a picture among
+what is marked, and transcription, translation, background removal and
+noise reduction among what is not). `core.provenance`, pure and tested:
+
+- **What.** `AiDisclosure`: whether a dub is heard (a clip with an
+  `aiVoice`) and whether a picture a model changed is seen
+  (`ConversionRequest.aiEditedPictures`), in words ("AI-generated voice",
+  "AI-generated inpainting") and as IPTC's Digital Source Type (`compositeWithTrainedAlgorithmicMedia`; a dub's own
+  file `trainedAlgorithmicMedia`). `aiDisclosure()` keeps what the format
+  carries; for a command written by hand, `aiSources()` takes everything
+  and `AiSeal.disclosureFor` what a file of its extension can hold (sound,
+  pictures, both, or nothing for text).
+- **Nothing else.** No model, no voice (one the user imported may carry a
+  person's name), no app, no version, no date, nothing of the phone or the
+  person: as little as Article 50 asks for, so that the marks, alone or
+  with other data, point to no one (GDPR, data minimisation). The app's own
+  name is gone from the other files it writes too (the WAV's ISFT, the
+  Ultra HDR XMP's `xmptk`, the subtitle script's header).
+- **Where the pictures come from.** The magic eraser writes its PNG with
+  the same XMP iTXt (`EraseEngine`);
+  `AiMarksReader` reads the XMP of the PNG and JPEG files of a project (its
+  files, the pictures laid over it, the picture on its canvas), its own
+  results wherever a project copied them and pictures other programs marked
+  as made with a trained model (IPTC's source type, nothing more), and
+  `RequestMapping` sets `aiEditedPictures` (`AiEditLookup`, set from
+  `AppContainer.aiMarks`, one read per file).
+- **Two layers.** The tags `AI_GENERATED` and `DIGITAL_SOURCE_TYPE`, given
+  by `CommandBuilder` after the user's own (MP4 and M4A with
+  `use_metadata_tags`; FFmpeg keeps only the last `-movflags`, so the
+  command gives them once, all together, `CommandBuilder.oneMovFlags`), and
+  an XMP packet (`Xmp`) that `ConversionEngine.seal` writes into the
+  finished file, after FFmpeg and after the picture tags, each part of a
+  zip included: MP4 and QuickTime in a top-level uuid box, WAV and AVI in
+  a `_PMX` chunk, PNG in iTXt, JPEG in APP1 (an Ultra HDR picture keeps its
+  own XMP, which names its gain map, with the marks merged in, and its MPF
+  index is set right; `UltraHdr.assemble` does the same), WebP in an
+  `XMP ` chunk (a simple WebP made extended), GIF in an application
+  extension, TIFF in tag 700, SVG in `<metadata>`. An XMP already there is
+  put out of use. Matroska, WebM, MP3, FLAC and Ogg keep only the tags.
+- **Not removable.** The settings cannot leave them out (the tags come
+  last, the XMP after FFmpeg). A command written by hand is followed by a
+  stream copy that writes the tags again (`AiSeal.remux`, for the formats
+  whose marks are their tags, and MP4), then the XMP; the command studio
+  says so where a command drops or sets them (`LintCode.AI_MARKS_KEPT`).
+- **Never without them.** A format with no place for the marks (BMP,
+  MPEG-TS and -PS, an extension `AiSeal` does not know) fails with
+  `AI_MARKS_NO_PLACE`, a file they cannot be written into with
+  `AI_MARKS_FAILED`; the unfinished file is deleted, as on any failure.
+
+**The invisible marks** (`core/marking/`, pure and tested; `app/.../marking/`):
+
+- **Voices: AudioSeal** (`MarkEngine.markSpeech`, from `DubEngine` once the
+  voice is let go of, and for the voice previews too). Each line at 16 kHz
+  (`Resampler`), in 5 s windows that overlap by 0.5 s (the ONNX files take a
+  fixed window: `scripts/export-ai-markers.py`), each window's watermark
+  from the generator with the message of zeros, joined with crossfades,
+  back at the line's own rate and added to it: the speech itself is never
+  resampled, the silences between lines stay silent. Then read back by the
+  detector over every line: at least 80% of the speech (its 20 ms frames
+  above -50 dBFS) marked, the message zeros, or the dub is not kept.
+- **Pictures: TrustMark Q** (`MarkEngine.markPicture`, from `EraseEngine`
+  before the PNG is written), as Adobe's `encode()`: the whole picture (its
+  centre square when one side is more than twice the other) averaged down to
+  256 x 256, the encoder's difference with each colour's mean taken away,
+  stretched back bilinearly and added, fading in over the last 1% of each
+  edge; the transparency left as it was. The payload is TrustMark's
+  BCH_SUPER schema with 40 data bits of zeros (its 56 BCH bits are zeros
+  too, the version 0000): Adobe's own reader finds it as such. Read back at
+  once: at most 3 wrong bits of 96 (BCH corrects 8), or the result is not
+  kept.
+- **What was made before** (a dub, an erased picture, from an older version
+  or another program that marked it as made with a trained model):
+  `MarkGuard`, right before an export, reads its mark and, when it has none,
+  marks a copy that the export uses (a dub line by line between its
+  silences: `SpeechMarking.runs`); an export that cannot have them fails.
+- **First of all** (`MarkingGate`, `MarkingSweep`): the marks' four files
+  (`MarkerModel`, one import) come before any other model. Every store's
+  import asks the gate; the refusal says why (`MarkersFirstDialog`). At
+  every start, before any store reads its files, models without the marks,
+  or older than them, all go and the user is told once
+  (`ModelsClearedDialog`); removing the marks removes every model. The dub
+  and the eraser refuse to start without them, and the engines throw rather
+  than hand out something unmarked.
+- **Nothing that tells anyone apart.** Both payloads are zeros, the same for
+  every user: no identifier of the phone, the person, the file or the
+  model, no date, nothing random (a random value per file would make its
+  copies linkable). The metadata are signed by no one, by choice: a key per
+  phone would link every file of a person, a key shared by every copy of an
+  open-source app is public and proves nothing, a server that signs would
+  need the network the app does not have and would make whoever runs it the
+  controller of what it is sent; a trusted time-stamp would add the date.
+  The Code of Practice on AI-generated content suggests signed, time-stamped
+  metadata; it is voluntary, the Act asks for marks "as far as technically
+  feasible", and the GDPR (data minimisation, Article 5(1)(c); the AI Act
+  does not override it, its Article 2(7)) asks for as little as needed: the
+  robustness signing would add is what the invisible marks give.
+- **Their files** are made by `.github/workflows/ai-markers.yml` (on every
+  push that changes `scripts/ai-markers.lock`, the export script or the
+  tools, and by hand): AudioSeal converted from Meta's weights, TrustMark's
+  ONNX files as Adobe serves them, every input pinned by hash, built twice
+  and compared, checked against PyTorch and against compression, published
+  as the pre-release `ai-markers-1`. Until its first run has learned the
+  pins (`scripts/pin-ai-markers.py`) nothing can be imported and no app
+  release passes `scripts/check-model-pins.py`. See docs/MODELS.md.
+
+The terms (README, About) ask not to remove the marks. Their limits: a
+sound or a picture changed enough (re-recorded, heavily cropped, painted
+over) can lose the invisible mark, as any mark today.
 
 ## Smart subtitles (speech)
 
@@ -2495,6 +2626,43 @@ Next steps, which have to move together:
    requires).
 2. Then raise `composeBom`, `lifecycle` (2.11+), `navigationCompose` (2.10+),
    `coreKtx`, `media3`, and `material3` to 1.5.0 stable once it is published.
+
+## Hidden corners
+
+A few things for whoever pokes where they need not. None ever starts by
+chance while working, none touches a project or an export, none needs the
+network, and each keeps to the vibration setting and to the system's
+animations (off: they stand still, or do not show).
+
+- **Life, by FFmpeg** (`settings/AboutLife.kt`, `core/eggs/LifeGame`,
+  `media/FfmpegLife`, tested). Seven taps on FFmpeg's version in About, as the
+  build number unlocks Android's developer options (from the fourth, the row
+  counts down). FFmpeg's own `life` source computes Conway's Game of Life on a
+  32 x 20 grid with its edges joined, 48 generations a run as raw grey bytes,
+  each run going on from the last grid (written as text for the source's
+  `filename`); a game that dies or only blinks is shuffled again. A card under
+  the row shows it (cells born grow from a dot into a rounded square, those
+  dying shrink away, the badge changing shape every generation), the page's
+  background plays it faintly, tiled; a tap on the grid drops a glider, from
+  which FFmpeg goes on. The first generations tick softly, then it plays
+  silently; leaving the page ends it, and the run's files go at once (and
+  with the cache janitor).
+- **The DJ's scratch** (`DjScratch.kt`, `core/eggs/ScratchDetector`, tested).
+  Dragging the video editor's timeline back and forth quickly and widely
+  (four turns within 1.2 seconds, each swing at least 56 dp) turns the play
+  button into a vinyl for a moment: it follows the finger, ticks at every
+  turn, spins on by itself and springs back into the button once the finger
+  has rested. The playhead moves as any scrub moves it; nothing else changes.
+- **The infinite zoom** (`EditorTimeline`). Pinching on past the widest zoom
+  squeezes the ruler and has it count days, then years, centuries, ice ages,
+  eras and eons (a tick for each new span); it springs back to the video's own
+  time when the fingers leave.
+- **The command studio's small talk** (`command/StudioReply.kt`,
+  `core/command/studio/CommandJokes`, tested). A terminal classic typed as the
+  whole command (sudo, rm -rf of the root, make me a sandwich, :wq, vim,
+  ping, whoami, xyzzy, coffee and a few more) gets a reply in a bubble that
+  springs out under the header, read out by TalkBack; such a command can
+  never be run (Run is off), and a real command is never taken for one.
 
 ## Known limitations (backend)
 

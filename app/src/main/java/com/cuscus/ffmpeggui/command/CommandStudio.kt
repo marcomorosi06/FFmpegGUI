@@ -116,6 +116,7 @@ import com.cuscus.ffmpeggui.core.command.CommandAlias
 import com.cuscus.ffmpeggui.core.command.CommandFile
 import com.cuscus.ffmpeggui.core.command.studio.CatalogTopic
 import com.cuscus.ffmpeggui.core.command.studio.CommandAssist
+import com.cuscus.ffmpeggui.core.command.studio.CommandJokes
 import com.cuscus.ffmpeggui.core.command.studio.CommandLint
 import com.cuscus.ffmpeggui.core.command.studio.DocTopic
 import com.cuscus.ffmpeggui.core.command.studio.FfmpegCatalog
@@ -260,6 +261,8 @@ fun CommandStudioDialog(
         if (collapsed) CommandAssist(ui.catalog, ui.aliases).at(value.text, cursor) else null
     }
     val issues = remember(value.text, ui.catalog, ui.aliases) { CommandLint(ui.catalog, ui.aliases).check(value.text) }
+    // A terminal classic typed as a whole: a reply instead of errors, and it never runs.
+    val joke = remember(value.text) { CommandJokes.replyTo(value.text) }
     LaunchedEffect(assist?.needsFilterHelp) { assist?.needsFilterHelp?.let { ui.onRequestHelp("filter=$it") } }
 
     Dialog(
@@ -315,8 +318,9 @@ fun CommandStudioDialog(
                             run()
                         }
                     },
-                    canRun = value.text.isNotBlank(),
+                    canRun = value.text.isNotBlank() && joke == null,
                 )
+                StudioReply(joke)
                 StudioEditor(
                     value = value,
                     catalog = ui.catalog,

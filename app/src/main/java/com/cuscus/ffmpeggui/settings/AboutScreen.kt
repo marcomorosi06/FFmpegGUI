@@ -2,6 +2,7 @@
 
 package com.cuscus.ffmpeggui.settings
 
+import com.cuscus.ffmpeggui.media.FfmpegLife
 import com.cuscus.ffmpeggui.ui.expressive.springPress
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.CloudDownload
@@ -135,279 +136,336 @@ private const val LOGO_GLYPH_SCALE = 0.95f
 private const val LOGO_TURN_MS = 36_000
 
 @Composable
-fun AboutScreen(versionName: String, onBack: () -> Unit) {
+fun AboutScreen(versionName: String, onBack: () -> Unit, life: FfmpegLife? = null) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     var licenceFile by remember { mutableStateOf<LicenceFile?>(null) }
     val ffmpeg by produceState<Pair<String?, String?>>(null to null) {
         value = withContext(Dispatchers.IO) { FfmpegInfo.ffmpegVersion() to FfmpegInfo.kitVersion() }
     }
+    // The hidden game: seven taps on FFmpeg's version (see AboutLife).
+    val game = remember(life) { life?.let { AboutLife(it) } }
+    val lifeTaps = remember { LifeTaps() }
+    var lifeOn by remember { mutableStateOf(false) }
+    if (game != null) PlayAboutLife(game, lifeOn)
+    val backdrop by animateFloatAsState(if (lifeOn) 1f else 0f, MaterialTheme.motionScheme.slowEffectsSpec(), label = "lifeBackdrop")
 
     // On a wide screen, a column of a readable width in the middle.
     val side = LocalWindowLayout.current.sidePadding(WindowLayout.READABLE_WIDTH)
-    Column(
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = side, vertical = 16.dp),
-    ) {
-        // No title: the logo and the name below say where this is.
-        SettingsHeader(title = null, onBack = onBack)
-
-        // The logo and the name, on a stage of big shapes turning behind them.
-        val scheme = MaterialTheme.colorScheme
-        ExpressiveStage(
-            stage = Stage(scheme.primaryContainer, scheme.tertiaryContainer, listOf(scheme.primary, scheme.tertiary, scheme.secondary)),
-            minHeight = 0.dp,
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp)) {
-                ShapeShiftingLogo(size = 168.dp)
-                Spacer(modifier = Modifier.height(20.dp))
-                val density = LocalDensity.current
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = stringResource(R.string.home_title_ffmpeg),
-                        style = TextStyle(fontFamily = DisplayFamily, fontWeight = FontWeight(760), fontSize = with(density) { 36.dp.toSp() }),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = stringResource(R.string.home_title_gui),
-                        style = TextStyle(fontFamily = DisplayFamily, fontWeight = FontWeight(1000), fontSize = with(density) { 36.dp.toSp() }),
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = stringResource(R.string.about_version, versionName),
-                    style = MaterialTheme.typography.labelLargeEmphasized,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.secondaryContainer)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        if (game != null && backdrop > 0f) {
+            AboutLifeBackdrop(game, Modifier.matchParentSize().graphicsLayer { alpha = backdrop })
         }
+        Column(
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = side, vertical = 16.dp),
+        ) {
+            // No title: the logo and the name below say where this is.
+            SettingsHeader(title = null, onBack = onBack)
 
-        // What the app is, at a glance.
-        FactPills()
-
-        MottoCard()
-
-        // The project's two doors, large.
-        ProjectButtons(
-            onGithub = { openLink(context, ProjectLinks.GITHUB) },
-            onKofi = { openLink(context, ProjectLinks.KOFI) },
-        )
-
-        SettingsGroup(
-            title = stringResource(R.string.about_project),
-            rows = listOf<@Composable (Shape) -> Unit>(
-                { shape ->
-                    SettingsRow(
-                        shape = shape,
-                        icon = Icons.Rounded.Person,
-                        title = stringResource(R.string.about_author),
-                        summary = stringResource(R.string.about_author_summary),
-                        badge = MaterialShapes.Cookie12Sided,
-                        colors = ToneColors(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer),
-                    )
-                },
-            ),
-        )
-
-        SettingsGroup(
-            title = stringResource(R.string.about_under_hood),
-            rows = listOf<@Composable (Shape) -> Unit>(
-                { shape ->
-                    val (version, kit) = ffmpeg
-                    SettingsRow(
-                        shape = shape,
-                        icon = Icons.Rounded.Movie,
-                        title = if (version != null) stringResource(R.string.about_ffmpeg, version) else stringResource(R.string.about_ffmpeg_plain),
-                        summary = if (kit != null) stringResource(R.string.about_ffmpeg_summary, kit) else stringResource(R.string.about_ffmpeg_summary_plain),
-                        badge = MaterialShapes.Cookie9Sided,
-                        colors = ToneColors(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer),
-                    )
-                },
-                { shape ->
-                    SettingsRow(
-                        shape = shape,
-                        icon = Icons.Rounded.Layers,
-                        title = stringResource(R.string.about_compose),
-                        summary = stringResource(R.string.about_compose_summary),
-                        badge = MaterialShapes.Flower,
-                    )
-                },
-                { shape ->
-                    SettingsRow(
-                        shape = shape,
-                        icon = Icons.Rounded.AutoAwesome,
-                        title = stringResource(R.string.about_sherpa),
-                        summary = stringResource(R.string.about_sherpa_summary),
-                        badge = MaterialShapes.Clover8Leaf,
-                        onClick = { openLink(context, ProjectLinks.SHERPA_ONNX) },
-                        trailing = { OutLinkIcon() },
-                    )
-                },
-            ),
-        )
-
-        SectionTitle(stringResource(R.string.about_licences))
-        // Always in sight: no warranty, which licence covers what, and every licence text.
-        SettingsGroup(
-            title = null,
-            rows = listOf<@Composable (Shape) -> Unit>(
-                { shape ->
-                    SettingsRow(
-                        shape = shape,
-                        icon = Icons.Rounded.Info,
-                        title = stringResource(R.string.about_licence_as_is),
-                        summary = stringResource(R.string.about_licence_as_is_summary),
-                        badge = MaterialShapes.Cookie12Sided,
-                        colors = ToneColors(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer),
-                        onClick = { licenceFile = LicenceFile.NOTICE },
-                    )
-                },
-                { shape ->
-                    SettingsRow(
-                        shape = shape,
-                        icon = Icons.Rounded.Description,
-                        title = stringResource(R.string.about_licence_all),
-                        summary = stringResource(R.string.about_licence_all_summary),
-                        badge = MaterialShapes.Cookie9Sided,
-                        colors = ToneColors(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer),
-                        onClick = { licenceFile = LicenceFile.INDEX },
-                    )
-                },
-            ),
-        )
-        // Each licence opens its own text, kept in the app.
-        val inApp = listOf(
-            Triple(R.string.about_licence_app, R.string.about_licence_app_summary, "ffmpeg-gui/EUPL-1.2.txt"),
-            Triple(R.string.about_licence_ffmpeg, R.string.about_licence_gpl, "ffmpeg-libraries/ffmpeg-kit-next-GPL-3.0.txt"),
-            Triple(R.string.about_licence_font, R.string.about_licence_ofl, "GoogleSansFlex-OFL.txt"),
-            Triple(R.string.about_licence_androidx, R.string.about_licence_apache, "androidx/LICENSE.txt"),
-            Triple(R.string.about_licence_androidsvg, R.string.about_licence_apache, "androidsvg/LICENSE.txt"),
-            Triple(R.string.about_licence_sherpa, R.string.about_licence_sherpa_summary, "sherpa-onnx/LICENSE.txt"),
-            Triple(R.string.about_licence_onnxruntime, R.string.about_licence_mit, "onnxruntime/LICENSE.txt"),
-            Triple(R.string.about_licence_anti_vocale, R.string.about_licence_anti_vocale_summary, "anti-vocale/LICENSE.txt"),
-        )
-        LicenceSection(
-            title = stringResource(R.string.about_licences_in_app),
-            icon = Icons.Rounded.Gavel,
-            shape = MaterialShapes.Cookie9Sided,
-            rows = inApp.map { (title, licence, file) ->
-                @Composable { shape: Shape ->
-                    val name = stringResource(title)
-                    LicenceRow(shape, name, stringResource(licence), icon = if (file.startsWith("GoogleSans")) Icons.Rounded.TextFields else Icons.Rounded.Gavel, local = true) {
-                        licenceFile = LicenceFile(name, file)
+            // The logo and the name, on a stage of big shapes turning behind them.
+            val scheme = MaterialTheme.colorScheme
+            ExpressiveStage(
+                stage = Stage(scheme.primaryContainer, scheme.tertiaryContainer, listOf(scheme.primary, scheme.tertiary, scheme.secondary)),
+                minHeight = 0.dp,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp)) {
+                    ShapeShiftingLogo(size = 168.dp)
+                    Spacer(modifier = Modifier.height(20.dp))
+                    val density = LocalDensity.current
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(
+                            text = stringResource(R.string.home_title_ffmpeg),
+                            style = TextStyle(fontFamily = DisplayFamily, fontWeight = FontWeight(760), fontSize = with(density) { 36.dp.toSp() }),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = stringResource(R.string.home_title_gui),
+                            style = TextStyle(fontFamily = DisplayFamily, fontWeight = FontWeight(1000), fontSize = with(density) { 36.dp.toSp() }),
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
                     }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = stringResource(R.string.about_version, versionName),
+                        style = MaterialTheme.typography.labelLargeEmphasized,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.secondaryContainer)
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
                 }
-            } + listOf<@Composable (Shape) -> Unit>(
-                { shape ->
-                    // The effects in the app are the project's own, drawn by its script.
-                    LicenceRow(shape, stringResource(R.string.about_licence_effects), stringResource(R.string.about_licence_effects_summary), icon = Icons.Rounded.AutoAwesome) {
-                        openLink(context, ProjectLinks.EFFECTS_SCRIPT)
+            }
+
+            // What the app is, at a glance.
+            FactPills()
+
+            MottoCard()
+
+            // The project's two doors, large.
+            ProjectButtons(
+                onGithub = { openLink(context, ProjectLinks.GITHUB) },
+                onKofi = { openLink(context, ProjectLinks.KOFI) },
+            )
+
+            SettingsGroup(
+                title = stringResource(R.string.about_project),
+                rows = listOf<@Composable (Shape) -> Unit>(
+                    { shape ->
+                        SettingsRow(
+                            shape = shape,
+                            icon = Icons.Rounded.Person,
+                            title = stringResource(R.string.about_author),
+                            summary = stringResource(R.string.about_author_summary),
+                            badge = MaterialShapes.Cookie12Sided,
+                            colors = ToneColors(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer),
+                        )
+                    },
+                ),
+            )
+
+            SettingsGroup(
+                title = stringResource(R.string.about_under_hood),
+                rows = listOf<@Composable (Shape) -> Unit>(
+                    { shape ->
+                        val (version, kit) = ffmpeg
+                        val usual = if (kit != null) stringResource(R.string.about_ffmpeg_summary, kit) else stringResource(R.string.about_ffmpeg_summary_plain)
+                        SettingsRow(
+                            shape = shape,
+                            icon = Icons.Rounded.Movie,
+                            title = if (version != null) stringResource(R.string.about_ffmpeg, version) else stringResource(R.string.about_ffmpeg_plain),
+                            summary = aboutLifeSummary(lifeTaps, lifeOn) ?: usual,
+                            badge = MaterialShapes.Cookie9Sided,
+                            colors = ToneColors(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer),
+                            haptic = HapticFeedbackType.SegmentTick,
+                            // Seven taps, as for Android's developer options: FFmpeg plays the Game of Life.
+                            onClick = if (game == null) null else {
+                                {
+                                    if (lifeOn) {
+                                        lifeOn = false
+                                    } else if (lifeTaps.tap(android.os.SystemClock.uptimeMillis())) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                        lifeOn = true
+                                    }
+                                }
+                            },
+                        )
+                    },
+                    { shape ->
+                        SettingsRow(
+                            shape = shape,
+                            icon = Icons.Rounded.Layers,
+                            title = stringResource(R.string.about_compose),
+                            summary = stringResource(R.string.about_compose_summary),
+                            badge = MaterialShapes.Flower,
+                        )
+                    },
+                    { shape ->
+                        SettingsRow(
+                            shape = shape,
+                            icon = Icons.Rounded.AutoAwesome,
+                            title = stringResource(R.string.about_sherpa),
+                            summary = stringResource(R.string.about_sherpa_summary),
+                            badge = MaterialShapes.Clover8Leaf,
+                            onClick = { openLink(context, ProjectLinks.SHERPA_ONNX) },
+                            trailing = { OutLinkIcon() },
+                        )
+                    },
+                ),
+            )
+            AboutLifeSlot(game, lifeOn) { lifeOn = false }
+
+            SectionTitle(stringResource(R.string.about_licences))
+            // Always in sight: no warranty, which licence covers what, and every licence text.
+            SettingsGroup(
+                title = null,
+                rows = listOf<@Composable (Shape) -> Unit>(
+                    { shape ->
+                        SettingsRow(
+                            shape = shape,
+                            icon = Icons.Rounded.Info,
+                            title = stringResource(R.string.about_licence_as_is),
+                            summary = stringResource(R.string.about_licence_as_is_summary),
+                            badge = MaterialShapes.Cookie12Sided,
+                            colors = ToneColors(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer),
+                            onClick = { licenceFile = LicenceFile.NOTICE },
+                        )
+                    },
+                    { shape ->
+                        // What a model made is marked in the files: said here, with the vocabulary it uses.
+                        val title = stringResource(R.string.about_ai_marks)
+                        SettingsRow(
+                            shape = shape,
+                            icon = Icons.Rounded.AutoAwesome,
+                            title = title,
+                            summary = stringResource(R.string.about_ai_marks_summary),
+                            badge = MaterialShapes.Clover8Leaf,
+                            colors = ToneColors(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer),
+                            onClick = { licenceFile = LicenceFile(title, "iptc/ATTRIBUTION.txt") },
+                        )
+                    },
+                    { shape ->
+                        SettingsRow(
+                            shape = shape,
+                            icon = Icons.Rounded.Description,
+                            title = stringResource(R.string.about_licence_all),
+                            summary = stringResource(R.string.about_licence_all_summary),
+                            badge = MaterialShapes.Cookie9Sided,
+                            colors = ToneColors(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer),
+                            onClick = { licenceFile = LicenceFile.INDEX },
+                        )
+                    },
+                ),
+            )
+            // Each licence opens its own text, kept in the app.
+            val inApp = listOf(
+                Triple(R.string.about_licence_app, R.string.about_licence_app_summary, "ffmpeg-gui/EUPL-1.2.txt"),
+                Triple(R.string.about_licence_ffmpeg, R.string.about_licence_gpl, "ffmpeg-libraries/ffmpeg-kit-next-GPL-3.0.txt"),
+                Triple(R.string.about_licence_font, R.string.about_licence_ofl, "GoogleSansFlex-OFL.txt"),
+                Triple(R.string.about_licence_androidx, R.string.about_licence_apache, "androidx/LICENSE.txt"),
+                Triple(R.string.about_licence_androidsvg, R.string.about_licence_apache, "androidsvg/LICENSE.txt"),
+                Triple(R.string.about_licence_sherpa, R.string.about_licence_sherpa_summary, "sherpa-onnx/LICENSE.txt"),
+                Triple(R.string.about_licence_onnxruntime, R.string.about_licence_mit, "onnxruntime/LICENSE.txt"),
+                Triple(R.string.about_licence_anti_vocale, R.string.about_licence_anti_vocale_summary, "anti-vocale/LICENSE.txt"),
+            )
+            LicenceSection(
+                title = stringResource(R.string.about_licences_in_app),
+                icon = Icons.Rounded.Gavel,
+                shape = MaterialShapes.Cookie9Sided,
+                rows = inApp.map { (title, licence, file) ->
+                    @Composable { shape: Shape ->
+                        val name = stringResource(title)
+                        LicenceRow(shape, name, stringResource(licence), icon = if (file.startsWith("GoogleSans")) Icons.Rounded.TextFields else Icons.Rounded.Gavel, local = true) {
+                            licenceFile = LicenceFile(name, file)
+                        }
                     }
-                },
-                { shape ->
-                    // The splash screen comes from the author's other app, under the same licence:
-                    // its own copy of the EUPL comes with the app.
-                    val name = stringResource(R.string.about_licence_splash)
-                    LicenceRow(shape, name, stringResource(R.string.about_licence_splash_summary), icon = Icons.Rounded.AutoAwesome, local = true) {
-                        licenceFile = LicenceFile(name, "wifi-audio-streaming/LICENSE.txt")
-                    }
-                },
-            ),
-        )
-        LicenceSection(
-            title = stringResource(R.string.about_licences_models),
-            icon = Icons.Rounded.CloudDownload,
-            shape = MaterialShapes.Flower,
-            rows = listOf<@Composable (Shape) -> Unit>(
-                { shape ->
-                    // The model is not in the app: the user downloads it; its licence asks for the credit.
-                    LicenceRow(shape, stringResource(R.string.about_licence_parakeet), stringResource(R.string.about_licence_cc_by)) {
-                        openLink(context, ProjectLinks.CC_BY)
-                    }
-                },
-                { shape ->
-                    // Also downloaded by the user: the cut-out models, and the project that converted them.
-                    LicenceRow(shape, stringResource(R.string.about_licence_isnet), stringResource(R.string.about_licence_apache)) {
-                        openLink(context, CutoutModel.PRECISE.modelPageUrl)
-                    }
-                },
-                { shape ->
-                    LicenceRow(shape, stringResource(R.string.about_licence_u2net), stringResource(R.string.about_licence_apache)) {
-                        openLink(context, CutoutModel.FAST.modelPageUrl)
-                    }
-                },
-                { shape ->
-                    LicenceRow(shape, stringResource(R.string.about_licence_rembg), stringResource(R.string.about_licence_mit)) {
-                        openLink(context, CutoutModel.REMBG_URL)
-                    }
-                },
-                { shape ->
-                    // Converted to ONNX by this project and served from its releases: the licence
-                    // and the notice of the changes go with the files, and come with the app too.
-                    val name = stringResource(R.string.about_licence_edgetam)
-                    LicenceRow(shape, name, stringResource(R.string.about_licence_ours_apache), local = true) {
-                        licenceFile = LicenceFile(name, "edgetam/NOTICE.txt")
-                    }
-                },
-                { shape ->
-                    val name = stringResource(R.string.about_licence_birefnet)
-                    LicenceRow(shape, name, stringResource(R.string.about_licence_ours_mit), local = true) {
-                        licenceFile = LicenceFile(name, "birefnet/NOTICE.txt")
-                    }
-                },
-                { shape ->
-                    // Every model in one record: licences, sources, hashes, what they were trained on.
-                    LicenceRow(shape, stringResource(R.string.about_licence_models_record), stringResource(R.string.about_licence_models_record_summary)) {
-                        openLink(context, ProjectLinks.MODELS_RECORD)
-                    }
-                },
-                { shape ->
-                    // The translation models: downloaded by the user, credited as their licence asks.
-                    LicenceRow(shape, stringResource(R.string.about_licence_opus_mt), stringResource(R.string.about_licence_cc_by)) {
-                        openLink(context, com.cuscus.ffmpeggui.translate.OpusMt.PROJECT_URL)
-                    }
-                },
-                { shape ->
-                    // The dubbing model: downloaded by the user, credited as its licence asks.
-                    LicenceRow(shape, stringResource(R.string.about_licence_kokoro), stringResource(R.string.about_licence_apache)) {
-                        openLink(context, com.cuscus.ffmpeggui.dub.DubModel.MODEL_PAGE_URL)
-                    }
-                },
-                { shape ->
-                    // Voices the user imports: each under the licence of its own model card.
-                    LicenceRow(shape, stringResource(R.string.about_licence_piper), stringResource(R.string.about_licence_piper_summary)) {
-                        openLink(context, com.cuscus.ffmpeggui.dub.PiperVoiceStore.VOICES_PAGE_URL)
-                    }
-                },
-                { shape ->
-                    // The voice model: downloaded by the user, credited as its licence asks.
-                    LicenceRow(shape, stringResource(R.string.about_licence_spleeter), stringResource(R.string.about_licence_mit)) {
-                        openLink(context, com.cuscus.ffmpeggui.voice.VoiceModel.MODEL_PAGE_URL)
-                    }
-                },
-                { shape ->
-                    // The magic eraser's two models, downloaded by the user.
-                    LicenceRow(shape, stringResource(R.string.about_licence_migan), stringResource(R.string.about_licence_mit)) {
-                        openLink(context, com.cuscus.ffmpeggui.erase.EraseModel.MIGAN_PAGE_URL)
-                    }
-                },
-                { shape ->
-                    LicenceRow(shape, stringResource(R.string.about_licence_lama), stringResource(R.string.about_licence_apache)) {
-                        openLink(context, com.cuscus.ffmpeggui.erase.EraseModel.LAMA_PAGE_URL)
-                    }
-                },
-            ),
-        )
-        Spacer(modifier = Modifier.height(8.dp))
+                } + listOf<@Composable (Shape) -> Unit>(
+                    { shape ->
+                        // The effects in the app are the project's own, drawn by its script.
+                        LicenceRow(shape, stringResource(R.string.about_licence_effects), stringResource(R.string.about_licence_effects_summary), icon = Icons.Rounded.AutoAwesome) {
+                            openLink(context, ProjectLinks.EFFECTS_SCRIPT)
+                        }
+                    },
+                    { shape ->
+                        // The splash screen comes from the author's other app, under the same licence:
+                        // its own copy of the EUPL comes with the app.
+                        val name = stringResource(R.string.about_licence_splash)
+                        LicenceRow(shape, name, stringResource(R.string.about_licence_splash_summary), icon = Icons.Rounded.AutoAwesome, local = true) {
+                            licenceFile = LicenceFile(name, "wifi-audio-streaming/LICENSE.txt")
+                        }
+                    },
+                ),
+            )
+            LicenceSection(
+                title = stringResource(R.string.about_licences_models),
+                icon = Icons.Rounded.CloudDownload,
+                shape = MaterialShapes.Flower,
+                rows = listOf<@Composable (Shape) -> Unit>(
+                    { shape ->
+                        // The model is not in the app: the user downloads it; its licence asks for the credit.
+                        LicenceRow(shape, stringResource(R.string.about_licence_parakeet), stringResource(R.string.about_licence_cc_by)) {
+                            openLink(context, ProjectLinks.CC_BY)
+                        }
+                    },
+                    { shape ->
+                        // Also downloaded by the user: the cut-out models, and the project that converted them.
+                        LicenceRow(shape, stringResource(R.string.about_licence_isnet), stringResource(R.string.about_licence_apache)) {
+                            openLink(context, CutoutModel.PRECISE.modelPageUrl)
+                        }
+                    },
+                    { shape ->
+                        LicenceRow(shape, stringResource(R.string.about_licence_u2net), stringResource(R.string.about_licence_apache)) {
+                            openLink(context, CutoutModel.FAST.modelPageUrl)
+                        }
+                    },
+                    { shape ->
+                        LicenceRow(shape, stringResource(R.string.about_licence_rembg), stringResource(R.string.about_licence_mit)) {
+                            openLink(context, CutoutModel.REMBG_URL)
+                        }
+                    },
+                    { shape ->
+                        // Converted to ONNX by this project and served from its releases: the licence
+                        // and the notice of the changes go with the files, and come with the app too.
+                        val name = stringResource(R.string.about_licence_edgetam)
+                        LicenceRow(shape, name, stringResource(R.string.about_licence_ours_apache), local = true) {
+                            licenceFile = LicenceFile(name, "edgetam/NOTICE.txt")
+                        }
+                    },
+                    { shape ->
+                        val name = stringResource(R.string.about_licence_birefnet)
+                        LicenceRow(shape, name, stringResource(R.string.about_licence_ours_mit), local = true) {
+                            licenceFile = LicenceFile(name, "birefnet/NOTICE.txt")
+                        }
+                    },
+                    { shape ->
+                        // The AI marks: AudioSeal converted here, TrustMark as Adobe serves it; both MIT.
+                        val name = stringResource(R.string.about_licence_ai_marks)
+                        LicenceRow(shape, name, stringResource(R.string.about_licence_ai_marks_summary), local = true) {
+                            licenceFile = LicenceFile(name, "ai-markers/NOTICE.txt")
+                        }
+                    },
+                    { shape ->
+                        val name = stringResource(R.string.about_licence_audioseal)
+                        LicenceRow(shape, name, stringResource(R.string.about_licence_mit), local = true) {
+                            licenceFile = LicenceFile(name, "ai-markers/LICENSE-audioseal.txt")
+                        }
+                    },
+                    { shape ->
+                        val name = stringResource(R.string.about_licence_trustmark)
+                        LicenceRow(shape, name, stringResource(R.string.about_licence_mit), local = true) {
+                            licenceFile = LicenceFile(name, "ai-markers/LICENSE-trustmark.txt")
+                        }
+                    },
+                    { shape ->
+                        // Every model in one record: licences, sources, hashes, what they were trained on.
+                        LicenceRow(shape, stringResource(R.string.about_licence_models_record), stringResource(R.string.about_licence_models_record_summary)) {
+                            openLink(context, ProjectLinks.MODELS_RECORD)
+                        }
+                    },
+                    { shape ->
+                        // The translation models: downloaded by the user, credited as their licence asks.
+                        LicenceRow(shape, stringResource(R.string.about_licence_opus_mt), stringResource(R.string.about_licence_cc_by)) {
+                            openLink(context, com.cuscus.ffmpeggui.translate.OpusMt.PROJECT_URL)
+                        }
+                    },
+                    { shape ->
+                        // The dubbing model: downloaded by the user, credited as its licence asks.
+                        LicenceRow(shape, stringResource(R.string.about_licence_kokoro), stringResource(R.string.about_licence_apache)) {
+                            openLink(context, com.cuscus.ffmpeggui.dub.DubModel.MODEL_PAGE_URL)
+                        }
+                    },
+                    { shape ->
+                        // Voices the user imports: each under the licence of its own model card.
+                        LicenceRow(shape, stringResource(R.string.about_licence_piper), stringResource(R.string.about_licence_piper_summary)) {
+                            openLink(context, com.cuscus.ffmpeggui.dub.PiperVoiceStore.VOICES_PAGE_URL)
+                        }
+                    },
+                    { shape ->
+                        // The voice model: downloaded by the user, credited as its licence asks.
+                        LicenceRow(shape, stringResource(R.string.about_licence_spleeter), stringResource(R.string.about_licence_mit)) {
+                            openLink(context, com.cuscus.ffmpeggui.voice.VoiceModel.MODEL_PAGE_URL)
+                        }
+                    },
+                    { shape ->
+                        // The magic eraser's two models, downloaded by the user.
+                        LicenceRow(shape, stringResource(R.string.about_licence_migan), stringResource(R.string.about_licence_mit)) {
+                            openLink(context, com.cuscus.ffmpeggui.erase.EraseModel.MIGAN_PAGE_URL)
+                        }
+                    },
+                    { shape ->
+                        LicenceRow(shape, stringResource(R.string.about_licence_lama), stringResource(R.string.about_licence_apache)) {
+                            openLink(context, com.cuscus.ffmpeggui.erase.EraseModel.LAMA_PAGE_URL)
+                        }
+                    },
+                ),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
     }
 
     licenceFile?.let { file ->
@@ -570,7 +628,7 @@ private fun LicenceRow(
 }
 
 @Composable
-private fun OutLinkIcon() {
+internal fun OutLinkIcon() {
     Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
 }
 

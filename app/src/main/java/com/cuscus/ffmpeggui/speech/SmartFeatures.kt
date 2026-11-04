@@ -12,6 +12,11 @@ import com.cuscus.ffmpeggui.cutout.RefineModel
 import com.cuscus.ffmpeggui.cutout.RetiredModels
 import com.cuscus.ffmpeggui.cutout.SubjectCutter
 import com.cuscus.ffmpeggui.R
+import com.cuscus.ffmpeggui.marking.MarkEngine
+import com.cuscus.ffmpeggui.marking.MarkGuard
+import com.cuscus.ffmpeggui.marking.MarkerModel
+import com.cuscus.ffmpeggui.marking.MarkingGate
+import com.cuscus.ffmpeggui.marking.MarkingSweep
 import com.cuscus.ffmpeggui.translate.TranslationEngine
 import com.cuscus.ffmpeggui.translate.TranslationModelStore
 import com.cuscus.ffmpeggui.media.FfmpegAudioExtractor
@@ -68,6 +73,42 @@ class SmartFeatures(
         AiKernels.fast = choices.getBoolean(KEY_FAST_KERNELS, true)
     }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * The invisible AI marks (see MarkerModel): imported before any other
+     * model, written into what the models make. Made first: whether they are
+     * here decides, before any model store reads its files, whether the
+     * models may stay (MarkingSweep).
+     */
+    val markerStore = SpeechModelStore(context, MarkerModel.FILES)
+
+    /** True when the marks are installed and checked (and pinned: see MarkerModel.NOT_PINNED). */
+    val markersReady: Boolean get() = !MarkerModel.NOT_PINNED && markerStore.state.value is SpeechModelStore.State.Ready
+
+    /** What the models deleted at this start for want of the marks were, not yet shown to the user. */
+    private val _cleared = MutableStateFlow(
+        runCatching { MarkingSweep.sweep(app, markersReady) }.onFailure { Log.w(TAG, "Could not check the models against the AI marks", it) }
+            .let { MarkingSweep.pending(app) },
+    )
+
+    /** The models deleted for want of the AI marks, not yet shown (ModelsClearedDialog). */
+    val clearedForMarks: StateFlow<List<MarkingSweep.Removed>> = _cleared.asStateFlow()
+
+    /** The user has seen which models went, and why. */
+    fun acknowledgeClearedForMarks() {
+        _cleared.value = emptyList()
+        scope.launch(Dispatchers.IO) { MarkingSweep.acknowledge(app) }
+    }
+
+    /** Writes and finds the AI marks. */
+    val marker = MarkEngine(context, markerStore)
+
+    /** Marks, right before an export, what a model made before the marks were there. */
+    val markGuard = MarkGuard(context, marker)
+
+    init {
+        MarkingGate.ready = { markersReady }
+    }
 
     val speechStores: Map<SpeechVariant, SpeechModelStore> =
         SpeechVariant.entries.associateWith { SpeechModelStore(context, SpeechModel.of(it)) }
@@ -151,7 +192,7 @@ class SmartFeatures(
         .stateIn(scope, SharingStarted.Eagerly, eraseStores.getValue(_eraseVariant.value).state.value)
 
     /** Fills in what is painted over a picture. */
-    val eraser = EraseEngine(context) { _eraseVariant.value to eraseStores.getValue(_eraseVariant.value) }
+    val eraser = EraseEngine(context, marker) { _eraseVariant.value to eraseStores.getValue(_eraseVariant.value) }
 
     /** Uses [variant] of the eraser from now on (the other one is let go of from memory). */
     fun chooseErase(variant: EraseVariant) {
@@ -197,7 +238,7 @@ class SmartFeatures(
     val piperStore = PiperVoiceStore(context, dubStore)
 
     /** Says the subtitles with them. */
-    val dubber = DubEngine(context, dubStore, piperStore)
+    val dubber = DubEngine(context, dubStore, piperStore, marker)
 
     private val _fastKernels = MutableStateFlow(AiKernels.fast)
 
@@ -216,6 +257,39 @@ class SmartFeatures(
         translator.unload()
         dubber.unload()
         eraser.unload()
+        marker.unload()
+    }
+
+    /**
+     * Removes the AI marks, and with them every model: none may stay without
+     * them (MarkingGate). What the models made stays: projects use it.
+     */
+    fun deleteMarkersAndModels() {
+        engine.unload()
+        cutoutEngine.unload()
+        refineEngine.unload()
+        voiceSeparator.unload()
+        translator.unload()
+        dubber.unload()
+        eraser.unload()
+        marker.unload()
+        stopTest()
+        stopCutoutTest()
+        speechStores.values.forEach { it.delete() }
+        cutoutStores.values.forEach { it.delete() }
+        refineStore.delete()
+        eraseStores.values.forEach { it.delete() }
+        voiceStore.delete()
+        dubStore.delete()
+        piperStore.voices.value.forEach { piperStore.delete(it.id) }
+        translationStore.models.value.forEach { translationStore.delete(it.id) }
+        markerStore.delete()
+        scope.launch(Dispatchers.IO) {
+            // Whatever a store left (a half-finished import) goes too, without a notice: the user asked.
+            runCatching { MarkingSweep.clearAll(app) }
+            MarkingSweep.acknowledge(app)
+            MarkingSweep.markersRemoved(app)
+        }
     }
 
     /** Removes the Piper voice [id] (the dubs already made with it stay). */
@@ -382,6 +456,10 @@ class SmartFeatures(
     }
 
     init {
+        // The marks just installed: what is imported from now on comes after them.
+        scope.launch {
+            markerStore.state.collect { if (it is SpeechModelStore.State.Ready) MarkingSweep.markersInstalled(app) }
+        }
         // Old models still on the phone go, and the user is told once (RetiredModelsDialog).
         scope.launch(Dispatchers.IO) {
             runCatching { RetiredModels.sweep(app) }.onFailure { Log.w(TAG, "Could not delete the retired models", it) }

@@ -83,6 +83,22 @@ The smart features run entirely on the phone. Their models are not in the app: t
 | Pictures | JPG, PNG, WEBP, BMP, TIFF, SVG |
 | Anything else | Stream copy, or any FFmpeg command you write |
 
+## Marked as made with AI
+
+When a file holds what an AI model made (a dub's voice, a picture the magic eraser changed), FFmpeg GUI says so inside it, in a form programs can read and detect, as the EU AI Act asks ([Regulation (EU) 2024/1689](https://eur-lex.europa.eu/eli/reg/2024/1689/oj), Article 50(2)).
+
+**A mark that cannot be seen or heard**, in the sound and the picture themselves: [AudioSeal](https://github.com/facebookresearch/audioseal) (Meta, MIT) on every voice a model says, [TrustMark](https://github.com/adobe/trustmark) (Adobe, MIT) on every picture the magic eraser changes, written as they are made and read back before they are kept; what was made before them gets them at export. It holds through compression and resizing. Their files are imported before any other model: without them no model can be imported, and none stays on the phone.
+
+**And the metadata**: IPTC's [Digital Source Type](https://cv.iptc.org/newscodes/digitalsourcetype/) in the file's XMP, and tags of its own (`AI_GENERATED`, `DIGITAL_SOURCE_TYPE`) where the format has them. The marks are written after FFmpeg, so neither the metadata settings nor a command written by hand can leave them out; a format with no place for them (BMP, for example) is not written. Subtitles, transcripts, translations, subject cut-outs and voice separation are not marked: they do not make anything that passes for real.
+
+The marks say only that ("AI-generated voice", "AI-generated inpainting"; the invisible marks carry a payload of zeros): not which model or voice, not which app, no date, nothing about you or your phone, nothing random. They are the same in every file of every user: **no fingerprint of any kind**, they cannot tell one file, phone or person from another.
+
+**Please do not remove these marks** from the files you share: they tell people what was not recorded.
+
+## Security
+
+FFmpeg GUI is in alpha, and its FFmpeg runtime is due for an update: some of the libraries it bundles are older than their fixed releases. What that means, what is already in place, and how to report a vulnerability privately: **[SECURITY.md](SECURITY.md)**.
+
 ## Requirements
 
 - Android 10 (API 29) or higher
@@ -161,6 +177,8 @@ FFmpeg GUI is made by one person, in spare time, and will stay free and open sou
 - [EdgeTAM](https://github.com/facebookresearch/EdgeTAM) by Meta (Apache 2.0), a [Segment Anything 2](https://github.com/facebookresearch/sam2) for phones, converted to ONNX by this project (`scripts/export-edgetam.py`; what changed is in its NOTICE) and served from its [releases](https://github.com/marcomorosi06/FFmpegGUI/releases/tag/edgetam-onnx-1), downloaded by the user
 - [anti-vocale](https://github.com/RisorseArtificiali/anti-vocale) (Apache 2.0), where the idea of on-device transcription and the way to run the model come from
 - [Google Sans Flex](https://fonts.google.com/specimen/Google+Sans+Flex) (SIL Open Font License)
+- [AudioSeal](https://github.com/facebookresearch/audioseal) by Meta (MIT, the weights included), converted to ONNX by this project (`scripts/export-ai-markers.py`), and [TrustMark](https://github.com/adobe/trustmark) by Adobe (MIT, the model files included; T. Bui, S. Agarwal, J. Collomosse, ICCV 2025), Adobe's ONNX files unchanged ([redistribution confirmed](https://github.com/adobe/trustmark/issues/48)): the AI marks, served from this repository's [releases](https://github.com/marcomorosi06/FFmpegGUI/releases/tag/ai-markers-1) with their licences and NOTICE, downloaded by the user
+- Two identifiers of IPTC's [Digital Source Type](https://cv.iptc.org/newscodes/digitalsourcetype/) vocabulary (CC BY 4.0), in the AI marks of exported files
 - The [Obtainium](https://github.com/ImranR98/Obtainium) logo by ImranR98 (GPL 3.0), in this page's Obtainium buttons only ([its licence](docs/badges/LICENSE-obtainium-logo.txt))
 - The photos and the video inside the store screenshots, from [Pexels](https://www.pexels.com/license/) (free to use, no attribution required): [winter forest](https://www.pexels.com/video/aerial-winter-landscape-over-forest-and-snow-29513356/), [gerbera](https://www.pexels.com/photo/elegant-woman-with-pink-gerbera-flower-39296598/), [Victoria Street](https://www.pexels.com/it-it/foto/la-pittoresca-victoria-street-di-edimburgo-in-scozia-39767336/), [puppy](https://www.pexels.com/photo/adorable-puppy-running-through-autumn-leaves-34928384/); not part of the app ([credits](fastlane/metadata/android/en-US/images/CREDITS.txt))
 

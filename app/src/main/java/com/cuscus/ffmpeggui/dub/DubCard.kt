@@ -258,6 +258,8 @@ fun DubCard(ui: DubEditing, modifier: Modifier = Modifier) {
                                     DubProblem.NOTHING -> R.string.dub_problem_nothing
                                     DubProblem.NO_SEPARATION -> R.string.dub_problem_separation
                                     DubProblem.FAILED -> R.string.dub_problem_failed
+                                    DubProblem.NO_MARKS -> R.string.marks_problem_missing
+                                    DubProblem.MARK_NOT_HELD -> R.string.marks_problem_voice
                                 },
                             )
                             DubStatus.Idle -> stringResource(if (ui.modelReady) R.string.dub_hint else R.string.dub_needs_model)

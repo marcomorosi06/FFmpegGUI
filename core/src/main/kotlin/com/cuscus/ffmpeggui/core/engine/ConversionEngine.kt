@@ -16,6 +16,11 @@ import com.cuscus.ffmpeggui.core.model.OutputFormat
 import com.cuscus.ffmpeggui.core.output.OutputPlan
 import com.cuscus.ffmpeggui.core.output.OutputPlanner
 import com.cuscus.ffmpeggui.core.output.PartsArchive
+import com.cuscus.ffmpeggui.core.provenance.AiDisclosure
+import com.cuscus.ffmpeggui.core.provenance.AiSeal
+import com.cuscus.ffmpeggui.core.provenance.Xmp
+import com.cuscus.ffmpeggui.core.provenance.aiDisclosure
+import com.cuscus.ffmpeggui.core.provenance.aiSources
 import com.cuscus.ffmpeggui.core.command.FontProvider
 import com.cuscus.ffmpeggui.core.preview.SubtitleParser
 import com.cuscus.ffmpeggui.core.preview.SubtitleRetimer
@@ -226,6 +231,10 @@ class ConversionEngine(
                         val tagged = pictureTagger?.write(tagPath, request.format, request.metadata) ?: false
                         if (!tagged) onEvent(ConversionEvent.LogLine("Tags not written: ${request.format.extension} cannot hold them here"))
                     }
+                    // Last of all on each file: nothing after may drop the marks (the Ultra HDR
+                    // picture keeps its JPG's, see UltraHdr.assemble).
+                    val sealed = if (prepared.plan.packed) PartsArchive.parts(prepared.plan.commandPath).map(File::getPath) else listOf(tagPath)
+                    seal(job, sealed, session, full, onEvent)?.let { return it }
                     if (hdr != null && hdrBase != null && hdrPictures != null) {
                         currentCoroutineContext().ensureActive()
                         if (!writeUltraHdr(job, hdr, hdrBase, hdrPictures, session, prepared.plan.commandPath, onEvent)) {
@@ -290,7 +299,7 @@ class ConversionEngine(
             val picture = File(base).readBytes()
             val bytes = if (metadata != null) {
                 try {
-                    UltraHdr.assemble(picture, File(gainMapJpg).readBytes(), metadata).also {
+                    UltraHdr.assemble(picture, File(gainMapJpg).readBytes(), metadata, request.aiDisclosure()).also {
                         onEvent(ConversionEvent.LogLine(String.format(java.util.Locale.ROOT, "Ultra HDR: up to %.2f stops brighter", metadata.maxStops)))
                     }
                 } catch (e: RuntimeException) {
@@ -307,6 +316,65 @@ class ConversionEngine(
             onEvent(ConversionEvent.LogLine("The picture could not be written: ${e.message}"))
             false
         }
+    }
+
+    /**
+     * Writes the AI marks into each of [files] (see core.provenance and
+     * Regulation (EU) 2024/1689, Article 50(2)): after FFmpeg, so neither the
+     * metadata settings nor a command typed by hand can leave them out. For
+     * such a command the container's tags are written again too (a stream
+     * copy), since the command may have dropped them. Null when every file
+     * says what machines made in it (or nothing was made by one), else why
+     * not: such a file is never handed out without them.
+     */
+    private suspend fun seal(
+        job: ConversionJob,
+        files: List<String>,
+        session: StagingSession,
+        full: StorageFull,
+        onEvent: (ConversionEvent) -> Unit,
+    ): ConversionOutcome? {
+        val manual = job.mode is CommandMode.Manual
+        val all = if (manual) job.request.aiSources() else job.request.aiDisclosure()
+        if (all.isEmpty) return null
+        if (files.isEmpty()) return ConversionOutcome.Failure(FailureReason.ENCODING_FAILED, "no files written")
+        for ((index, path) in files.withIndex()) {
+            currentCoroutineContext().ensureActive()
+            val disclosure = AiSeal.disclosureFor(path, all)
+            if (disclosure.isEmpty) continue
+            val way = AiSeal.wayFor(path)
+            if (way == AiSeal.Way.NONE) return ConversionOutcome.Failure(FailureReason.AI_MARKS_NO_PLACE, path.substringAfterLast('.', "").lowercase())
+            if (manual && (way == AiSeal.Way.TAGS || way == AiSeal.Way.MP4)) {
+                val copy = session.scratchFile("marked_$index.${path.substringAfterLast('.')}")
+                val command = AiSeal.remux(path, copy, disclosure)
+                onEvent(ConversionEvent.LogLine(command.toDisplayString()))
+                when (val result = logged(command, null, full, onEvent)) {
+                    ExecutionResult.Success -> try {
+                        File(copy).copyTo(File(path), overwrite = true)
+                    } catch (e: IOException) {
+                        return ConversionOutcome.Failure(FailureReason.AI_MARKS_FAILED, e.message.orEmpty())
+                    } finally {
+                        File(copy).delete()
+                    }
+                    ExecutionResult.Cancelled -> return ConversionOutcome.Cancelled
+                    is ExecutionResult.Failed -> {
+                        File(copy).delete()
+                        if (full.seen) return full.or(FailureReason.AI_MARKS_FAILED, "")
+                        // Without the tags only a format whose marks are its tags is left unmarked.
+                        if (way == AiSeal.Way.TAGS) return ConversionOutcome.Failure(FailureReason.AI_MARKS_FAILED, "exit code ${result.returnCode}")
+                        onEvent(ConversionEvent.LogLine("AI tags not written again (exit code ${result.returnCode}): the XMP says it"))
+                    }
+                }
+            }
+            val sourceType = AiDisclosure.COMPOSITE
+            when (AiSeal.mark(File(path), disclosure, sourceType)) {
+                AiSeal.Marked.WRITTEN, AiSeal.Marked.TAGS_ONLY -> Unit
+                AiSeal.Marked.NO_PLACE -> return ConversionOutcome.Failure(FailureReason.AI_MARKS_NO_PLACE, path.substringAfterLast('.', "").lowercase())
+                AiSeal.Marked.FAILED -> return ConversionOutcome.Failure(FailureReason.AI_MARKS_FAILED, File(path).name)
+            }
+        }
+        onEvent(ConversionEvent.LogLine("Marked as made with AI (EU AI Act, Article 50(2)): ${all.text}"))
+        return null
     }
 
     /**
@@ -358,8 +426,11 @@ class ConversionEngine(
         encode: suspend (FfmpegCommand) -> ExecutionResult,
     ): ExecutionResult? {
         val request = job.request
-        val target = request.compression?.targetBytes?.takeIf { it > 0L } ?: return null
+        val asked = request.compression?.targetBytes?.takeIf { it > 0L } ?: return null
         if (job.mode != CommandMode.Generated || request.format != OutputFormat.JPG || request.image.hdr != null) return null
+        // Room for the AI marks written afterwards (see seal): the file still fits once they are in.
+        val disclosure = request.aiDisclosure()
+        val target = if (disclosure.isEmpty) asked else (asked - Xmp.packet(disclosure).toByteArray(Charsets.UTF_8).size - MARK_SEGMENT_HEADER).coerceAtLeast(1L)
         val output = File(paths.output)
         if (!output.exists() || output.length() <= target) return null
         val best = File(session.scratchFile("fitted.jpg"))
@@ -549,6 +620,9 @@ class ConversionEngine(
     private companion object {
         /** Halvings of the quality range when a JPG must fit a size (the JPG scale has 30 steps). */
         const val FIT_STEPS = 6
+
+        /** An APP1 segment's marker, length and XMP namespace, around the AI marks' packet. */
+        const val MARK_SEGMENT_HEADER = 4 + 29
 
         const val MAX_SUBTITLE_BYTES = 5L * 1024 * 1024
 

@@ -1,0 +1,367 @@
+name: AI marks (ONNX)
+
+# The files of the invisible AI marks (docs/MODELS.md, "The AI marks"): the app
+# imports them before any other model and writes their marks into what its
+# models make (EU AI Act, Article 50(2)). AudioSeal (Meta, MIT) converted to
+# ONNX here, TrustMark Q (Adobe, MIT) as Adobe serves it.
+#
+# It runs by itself when what the files are made from changes on master (the
+# lock, the export script, the tools), and by hand (Actions > AI marks > Run
+# workflow).
+#
+#   1. plan: reads scripts/ai-markers.lock. A value of zeros is not pinned
+#      yet: the run then only learns (it builds and checks everything,
+#      publishes nothing) and hands back the lock filled in, as the artifact
+#      "ai-markers-learned" and in the run's summary. Copy it with
+#      scripts/pin-ai-markers.py and push: the next run publishes.
+#   2. build: scripts/export-ai-markers.py, twice and independently (two runner
+#      images, the second on two CPU cores), from the upstream files the lock
+#      pins (every hash checked), with the tools pinned in
+#      scripts/model-export-requirements.txt. Each build checks the marks
+#      work as the app makes them: found again after compression, not found
+#      where they are not (see the script).
+#   3. publish: only when both builds are byte-identical (and agree on what
+#      they learned), and only what is not published yet: the release
+#      release_tag of the lock, a pre-release (never "latest": the app's own
+#      releases stay apart), downloaded again and checked against the app's
+#      pins before it goes public. A release that exists is never replaced.
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - scripts/ai-markers.lock
+      - scripts/export-ai-markers.py
+      - scripts/model-export-requirements.txt
+      - .github/workflows/ai-markers.yml
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the release if it does not exist yet"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ai-markers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: Read the lock
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      learning: ${{ steps.lock.outputs.learning }}
+      tag: ${{ steps.lock.outputs.tag }}
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read the lock
+        id: lock
+        run: |
+          lock=scripts/ai-markers.lock
+          if grep -Eq '^[a-z_0-9]+ +(0{40}|0{64}|0)$' "$lock"; then
+            echo "learning=true" >> "$GITHUB_OUTPUT"
+            echo "### Not pinned yet: this run learns the pins and publishes nothing" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "learning=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$(awk '$1 == "release_tag" { print $2 }' "$lock")" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build on ${{ matrix.runner }}${{ matrix.cpus && ' (2 cores)' || '' }}
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-24.04
+          - ubuntu-26.04
+        include:
+          - runner: ubuntu-26.04
+            cpus: "0,1"
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Make room on the disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
+          df -h /
+
+      - name: Read the lock
+        id: lock
+        run: |
+          lock=scripts/ai-markers.lock
+          value() { awk -v k="$1" '$1 == k { print $2 }' "$lock"; }
+          for key in python audioseal_generator_url audioseal_detector_url audioseal_licence_url \
+            trustmark_repository trustmark_commit trustmark_encoder_url trustmark_decoder_url; do
+            echo "$key=$(value "$key")" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ steps.lock.outputs.python }}
+
+      - name: Install the pinned tools
+        run: |
+          sudo apt-get update -qq
+          # eSpeak NG says the speech the marks are tried on; FFmpeg compresses it.
+          sudo apt-get install -y -qq espeak-ng ffmpeg > /dev/null
+          python -m pip install --disable-pip-version-check --require-hashes --no-deps \
+            -r scripts/model-export-requirements.txt
+          python -m pip check || true
+
+      - name: Get the upstream files
+        env:
+          GENERATOR_URL: ${{ steps.lock.outputs.audioseal_generator_url }}
+          DETECTOR_URL: ${{ steps.lock.outputs.audioseal_detector_url }}
+          LICENCE_URL: ${{ steps.lock.outputs.audioseal_licence_url }}
+          ENCODER_URL: ${{ steps.lock.outputs.trustmark_encoder_url }}
+          DECODER_URL: ${{ steps.lock.outputs.trustmark_decoder_url }}
+          REPOSITORY: ${{ steps.lock.outputs.trustmark_repository }}
+          COMMIT: ${{ steps.lock.outputs.trustmark_commit }}
+          LEARNING: ${{ needs.plan.outputs.learning }}
+          # Only if Hugging Face ever asks to sign in for AudioSeal's weights (a repository secret).
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          up="$RUNNER_TEMP/upstream"
+          mkdir -p "$up"
+          get() { curl --fail --location --silent --show-error --retry 3 -o "$up/$1" "$2"; }
+          hf() {
+            if [ -n "$HF_TOKEN" ]; then
+              curl --fail --location --silent --show-error --retry 3 -H "Authorization: Bearer $HF_TOKEN" -o "$up/$1" "$2"
+            else
+              get "$1" "$2"
+            fi
+          }
+          hf generator_base.pth "$GENERATOR_URL"
+          hf detector_base.pth "$DETECTOR_URL"
+          get LICENSE-audioseal "$LICENCE_URL"
+          get encoder_Q.onnx "$ENCODER_URL"
+          get decoder_Q.onnx "$DECODER_URL"
+          git clone --quiet --filter=blob:none --no-checkout "$REPOSITORY" "$up/trustmark"
+          if [ "$COMMIT" = "0000000000000000000000000000000000000000" ]; then
+            git -C "$up/trustmark" checkout --quiet HEAD
+            echo "TRUSTMARK_COMMIT=$(git -C "$up/trustmark" rev-parse HEAD)" >> "$GITHUB_ENV"
+          else
+            git -C "$up/trustmark" -c advice.detachedHead=false checkout --quiet "$COMMIT"
+          fi
+          # The photos the picture marks are tried on: EdgeTAM's own examples, at its pinned commit.
+          edgetam_commit=$(awk '$1 == "commit" { print $2 }' scripts/edgetam-onnx.lock)
+          git clone --quiet --filter=blob:none --no-checkout --sparse https://github.com/facebookresearch/EdgeTAM "$up/pictures"
+          git -C "$up/pictures" sparse-checkout set notebooks/images
+          git -C "$up/pictures" -c advice.detachedHead=false checkout --quiet "$edgetam_commit"
+
+      - name: Export and check
+        env:
+          CPUS: ${{ matrix.cpus }}
+          LEARNING: ${{ needs.plan.outputs.learning }}
+        run: |
+          up="$RUNNER_TEMP/upstream"
+          out="$RUNNER_TEMP/out"
+          set -- --generator "$up/generator_base.pth" --detector "$up/detector_base.pth" \
+            --encoder "$up/encoder_Q.onnx" --decoder "$up/decoder_Q.onnx" \
+            --audioseal-licence "$up/LICENSE-audioseal" --trustmark "$up/trustmark" \
+            --pictures "$up/pictures/notebooks/images/truck.jpg" "$up/pictures/notebooks/images/groceries.jpg" \
+              "$up/pictures/notebooks/images/cars.jpg" \
+            --out "$out"
+          if [ "$LEARNING" = true ]; then
+            set -- "$@" --learn ${TRUSTMARK_COMMIT:+--trustmark-commit "$TRUSTMARK_COMMIT"}
+          fi
+          run() { if [ -n "$CPUS" ]; then taskset -c "$CPUS" "$@"; else "$@"; fi; }
+          run python -I scripts/export-ai-markers.py "$@"
+          {
+            echo "### On ${{ matrix.runner }}${CPUS:+ (CPUs $CPUS)}"
+            echo
+            echo '```'
+            cat "$out/SHA256SUMS"
+            echo '```'
+            echo
+            echo '```json'
+            cat "$out/check.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$LEARNING" != true ]; then
+            python -I scripts/check-model-pins.py --release-dir "markers=$out"
+          fi
+
+      - name: Upload the files
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ai-markers-${{ matrix.runner }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: ignore
+
+  publish:
+    name: Compare and publish
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download both builds
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: builds
+
+      - name: Compare the two builds
+        env:
+          LEARNING: ${{ needs.plan.outputs.learning }}
+        run: |
+          a=builds/ai-markers-ubuntu-24.04
+          b=builds/ai-markers-ubuntu-26.04
+          if ! cmp -s "$a/SHA256SUMS" "$b/SHA256SUMS"; then
+            echo "::error::The two builds differ: nothing is published."
+            diff "$a/SHA256SUMS" "$b/SHA256SUMS" || true
+            exit 1
+          fi
+          echo "### Both builds byte-identical" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$LEARNING" = true ]; then
+            if ! cmp -s "$a/ai-markers.lock.learned" "$b/ai-markers.lock.learned"; then
+              echo "::error::The two builds learned different pins: run again."
+              diff "$a/ai-markers.lock.learned" "$b/ai-markers.lock.learned" || true
+              exit 1
+            fi
+            {
+              echo "### The pins learned"
+              echo
+              echo "Download the artifact \`ai-markers-learned\`, then:"
+              echo
+              echo '```'
+              echo "python3 scripts/pin-ai-markers.py ai-markers.lock.learned"
+              echo '```'
+              echo
+              echo "and push: the next run publishes \`${{ needs.plan.outputs.tag }}\`."
+              echo
+              echo '```'
+              cat "$a/ai-markers.lock.learned"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Hand back the pins learned
+        if: needs.plan.outputs.learning == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ai-markers-learned
+          path: builds/ai-markers-ubuntu-24.04/ai-markers.lock.learned
+
+      - name: Publish what is not published yet
+        if: needs.plan.outputs.learning != 'true' && (github.event_name == 'push' || inputs.publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          retry() {
+            local n
+            for n in 1 2 3 4 5; do
+              "$@" && return 0
+              echo "Failed (attempt $n): $*"
+              sleep $((n * 15))
+            done
+            return 1
+          }
+          held() {
+            retry gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+              --jq '.assets[] | select(.state == "uploaded") | "\(.name) \(.size)"'
+          }
+          dir=builds/ai-markers-ubuntu-24.04
+          stage=stage
+          rm -rf "$stage"
+          mkdir -p "$stage"
+          cp "$dir"/*.onnx "$dir/check.json" "$stage/"
+          cp "$dir/LICENSE-audioseal" "$stage/LICENSE-audioseal.txt"
+          cp "$dir/LICENSE-trustmark" "$stage/LICENSE-trustmark.txt"
+          cp "$dir/NOTICE" "$stage/NOTICE.txt"
+          cp "$dir/PROVENANCE" "$stage/PROVENANCE.txt"
+          cp builds/ai-markers-ubuntu-26.04/PROVENANCE "$stage/PROVENANCE-second-build.txt"
+          cp "$dir/SHA256SUMS" "$stage/SHA256SUMS.txt"
+          files=("$stage"/*)
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $TAG exists: only what it lacks is uploaded."
+          else
+            {
+              echo "The invisible AI marks of FFmpeg GUI: AudioSeal by Meta (MIT License), converted to ONNX here,"
+              echo "and TrustMark Q by Adobe (MIT License), Adobe's own ONNX files unchanged. The app imports them"
+              echo "before any other model and marks with them what its models make (EU AI Act, Article 50(2))."
+              echo "The marks carry nothing but \"made with AI\": the same for everyone, no identifier of any kind."
+              echo
+              echo "Made from what \`scripts/ai-markers.lock\` pins at ${GITHUB_SHA}, twice (ubuntu-24.04;"
+              echo "ubuntu-26.04 on two cores), with byte-identical results. See NOTICE for what was converted and"
+              echo "what is unchanged, PROVENANCE for everything the files were made from, check.json for how the"
+              echo "marks held up (compression, resizing) and that nothing unmarked was found marked."
+              echo
+              echo '```'
+              cat "$dir/SHA256SUMS"
+              echo '```'
+              echo
+              echo "TrustMark: T. Bui, S. Agarwal, J. Collomosse, ICCV 2025. The record of every model the app can"
+              echo "use: docs/MODELS.md. This is not legal advice."
+            } > notes.md
+            if ! gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "$TAG" --notes-file notes.md --draft --prerelease --latest=false; then
+              sleep 15
+              gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 ||
+                retry gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+                  --title "$TAG" --notes-file notes.md --draft --prerelease --latest=false
+            fi
+          fi
+          if [ "$(retry gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true ]; then
+            retry gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | while read -r name; do
+              if [ ! -f "$stage/$name" ]; then
+                retry gh release delete-asset "$TAG" "$name" --repo "$GITHUB_REPOSITORY" --yes
+              fi
+            done
+          fi
+          has() {
+            awk -v n="$2" -v z="$3" '$1 == n && (z == "" || $2 == z) { found = 1 } END { exit !found }' <<< "$1"
+          }
+          for round in 1 2 3; do
+            there=$(held)
+            missing=0
+            for f in "${files[@]}"; do
+              name=$(basename "$f")
+              size=$(stat -c %s "$f")
+              if [[ "$name" == *.onnx ]]; then
+                has "$there" "$name" "$size" && present=1 || present=0
+              else
+                has "$there" "$name" "" && present=1 || present=0
+              fi
+              if [ "$present" = 0 ]; then
+                missing=1
+                echo "Uploading $name ($size bytes, round $round)"
+                retry gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$f"
+              fi
+            done
+            [ "$missing" = 0 ] && break
+          done
+          rm -rf published
+          mkdir -p published
+          retry gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir published --clobber
+          python3 -I scripts/check-model-pins.py --release-dir markers=published
+          retry gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+          echo "### Published: \`${TAG}\`" >> "$GITHUB_STEP_SUMMARY"

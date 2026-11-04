@@ -85,6 +85,8 @@ class TranslationModelStore(context: Context) {
     @Synchronized
     fun import(uris: List<Uri>, repo: String?) {
         if (job?.isActive == true) return
+        // The AI marks come first (MarkingGate): without them nothing is read.
+        if (!com.cuscus.ffmpeggui.marking.MarkingGate.allowsImport()) return
         job = scope.launch {
             _importing.value = Importing.Working(0f, "")
             _importing.value = try {

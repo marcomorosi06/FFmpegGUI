@@ -1,5 +1,5 @@
-# The Python tools scripts/export-edgetam.py and scripts/export-birefnet.py
-# write the app's ONNX files with (Python 3.13, Linux x86_64, CPU only), every
+# The Python tools scripts/export-edgetam.py, scripts/export-birefnet.py and
+# scripts/export-ai-markers.py write the app's ONNX files with (Python 3.13, Linux x86_64, CPU only), every
 # package pinned by version and SHA-256. Install with:
 #
 #   python3.13 -m pip install --require-hashes --no-deps -r scripts/model-export-requirements.txt
@@ -26,6 +26,8 @@
 #   kornia==0.9.0
 #   huggingface_hub==2.4.0
 #   opencv-python-headless==5.0.0.93
+#   audioseal==0.2.1 (added by hand, its wheel only: its own requirements,
+#   numpy, omegaconf, torch and einops, are all above)
 
 antlr4-python3-runtime==4.9.3 \
     --hash=sha256:f224469b4168294902bb1efa80a8bf7855f24c99aef99cbefc1bcd3cce77881b
@@ -36,6 +38,9 @@ anyio==4.16.0 \
     --hash=sha256:59bb03251907983d1603d27c3087ddb1e93299ea2163adcdba37899a4fb12ffb \
     --hash=sha256:c66ae634e0b8228396b801741beb3294326d4b6102f7bba4041c0dfb58c29026
     # via httpx2
+audioseal==0.2.1 \
+    --hash=sha256:e51ee84850d5e2351346c52b1711373cdedb952676da91484fd0cff430236c25
+    # via scripts/export-ai-markers.py
 click==8.5.0 \
     --hash=sha256:255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360 \
     --hash=sha256:ba0d2089de75ea0310e2dde03160e6ca10009947fb95a182f9b54021bb272e34

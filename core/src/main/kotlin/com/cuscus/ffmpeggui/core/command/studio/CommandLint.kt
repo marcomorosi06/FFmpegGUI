@@ -2,6 +2,7 @@ package com.cuscus.ffmpeggui.core.command.studio
 
 import com.cuscus.ffmpeggui.core.command.AliasKind
 import com.cuscus.ffmpeggui.core.command.CommandAlias
+import com.cuscus.ffmpeggui.core.provenance.AiSeal
 
 /*
  * Checks a hand-written command and says what looks wrong, where. It only
@@ -22,6 +23,13 @@ enum class LintCode {
     NO_OUTPUT,
     BAD_INPUT_INDEX,
     UNKNOWN_FILE,
+
+    /**
+     * Tags dropped or set that say a machine made the file: they are written
+     * again after the command when the project holds what one made (see
+     * core.provenance.AiSeal), so this changes nothing there.
+     */
+    AI_MARKS_KEPT,
 }
 
 /** One remark on the text from [start] to [end]; [subject] is the word it is about. */
@@ -58,7 +66,13 @@ class CommandLint(private val catalog: FfmpegCatalog, private val files: List<Co
                         issues += LintIssue(span.start, span.end, LintSeverity.ERROR, LintCode.MISSING_VALUE, span.value)
                     }
                 }
-                is ArgRole.Value -> value(text, spans[role.option].value, span, inputs, known, spans.getOrNull(role.option - 1)?.value, issues)
+                is ArgRole.Value -> {
+                    val option = spans[role.option].value
+                    if (dropsAiMarks(option, span.value)) {
+                        issues += LintIssue(span.start, span.end, LintSeverity.WARNING, LintCode.AI_MARKS_KEPT, span.value)
+                    }
+                    value(text, option, span, inputs, known, spans.getOrNull(role.option - 1)?.value, issues)
+                }
                 ArgRole.Bare -> if (OUTPUT.matches(span.value)) hasOutput = true
                 ArgRole.Program -> Unit
             }
@@ -73,6 +87,13 @@ class CommandLint(private val catalog: FfmpegCatalog, private val files: List<Co
             issues += LintIssue(maxOf(0, end - 1), end, LintSeverity.ERROR, LintCode.NO_OUTPUT, alias, fix)
         }
         return issues.sortedBy { it.start }
+    }
+
+    /** True when [option] [value] would leave out, or set, the tags that say a machine made the file. */
+    private fun dropsAiMarks(option: String, value: String): Boolean = when (option.substringBefore(':')) {
+        "-map_metadata" -> value.trim().startsWith("-1")
+        "-metadata" -> value.substringBefore('=').trim().uppercase() in AI_TAGS
+        else -> false
     }
 
     private fun value(
@@ -159,6 +180,7 @@ class CommandLint(private val catalog: FfmpegCatalog, private val files: List<Co
     private companion object {
         val OUTPUT = Regex("""output(_%\d*d)?(\.[A-Za-z0-9]+)?""")
         val MAP_INDEX = Regex("""^-?(\d+)""")
+        val AI_TAGS = setOf(AiSeal.AI_GENERATED_TAG, AiSeal.DIGITAL_SOURCE_TAG)
         val INPUT_LABEL = Regex("""(\d+)(:.*)?""")
     }
 }

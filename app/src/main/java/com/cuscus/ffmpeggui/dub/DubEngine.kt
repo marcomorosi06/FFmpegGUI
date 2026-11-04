@@ -8,7 +8,11 @@ import com.cuscus.ffmpeggui.core.dub.DubFit
 import com.cuscus.ffmpeggui.core.dub.DubLanguage
 import com.cuscus.ffmpeggui.core.dub.DubPace
 import com.cuscus.ffmpeggui.core.dub.DubTiming
+import com.cuscus.ffmpeggui.core.provenance.AiDisclosure
+import com.cuscus.ffmpeggui.core.provenance.RiffXmp
+import com.cuscus.ffmpeggui.core.provenance.Xmp
 import com.cuscus.ffmpeggui.core.voice.WavWriter
+import com.cuscus.ffmpeggui.marking.MarkEngine
 import com.cuscus.ffmpeggui.speech.AiKernels
 import com.cuscus.ffmpeggui.speech.ModelSlot
 import com.k2fsa.sherpa.onnx.OfflineTts
@@ -42,7 +46,13 @@ import java.util.UUID
  * language, or one Piper voice), through the app's ModelGate: alone in
  * memory, and let go of as soon as the lines are said (or the sample is).
  */
-class DubEngine(context: Context, private val store: DubModelStore, private val piper: PiperVoiceStore) {
+class DubEngine(
+    context: Context,
+    private val store: DubModelStore,
+    private val piper: PiperVoiceStore,
+    /** Writes the invisible AI mark into every line said (MarkEngine): no dub without it. */
+    private val marker: MarkEngine,
+) {
 
     class ModelMissing : IOException("The dubbing model is not installed")
     class NotEnoughMemory : IOException("Not enough free memory for the dubbing model")
@@ -88,7 +98,9 @@ class DubEngine(context: Context, private val store: DubModelStore, private val 
         }
         if (said.isEmpty()) throw NothingToSay()
         try {
-            val (clips, rate) = slot.run {
+            // The AI marks first: without them no line is said (and the voice is not even loaded).
+            if (!marker.ready) throw MarkEngine.Missing()
+            val (spoken, rate) = slot.run {
                 val tts = load(speaker)
                 val sid = sid(speaker)
                 val rate = tts.sampleRate()
@@ -115,7 +127,9 @@ class DubEngine(context: Context, private val store: DubModelStore, private val 
                 }
                 clips to rate
             }
-            // The voice is let go of by now: what is left is laying the lines into the file.
+            // The voice is let go of by now. Each line gets its invisible AI mark (AudioSeal), checked
+            // on all of them together; then the lines are laid into the file.
+            val clips = marker.markSpeech(spoken, rate)
             val durations = clips.map { it.size * 1000L / rate }
             val starts = DubTiming.place(said, durations)
             val first = starts.first()
@@ -123,7 +137,7 @@ class DubEngine(context: Context, private val store: DubModelStore, private val 
             sweepOld()
             val target = File(folder, "dub-${UUID.randomUUID().toString().take(8)}.wav")
             var written = 0L
-            WavWriter(target, 1, rate, comment = aiComment(speaker)).use { writer ->
+            WavWriter(target, 1, rate, comment = AI_COMMENT).use { writer ->
                 val silence = FloatArray(rate / 10)
                 clips.forEachIndexed { index, clip ->
                     // Silence up to where the line starts, then the line.
@@ -138,6 +152,11 @@ class DubEngine(context: Context, private val store: DubModelStore, private val 
                     writer.write(clip, clip.size)
                     written += clip.size
                 }
+            }
+            // The voice's file says it is all said by a model (EU AI Act, Article 50(2)). Never without it.
+            if (!RiffXmp.write(target, Xmp.packet(AiDisclosure(speech = true), AiDisclosure.TRAINED))) {
+                target.delete()
+                throw IOException("Could not mark the dub as made with AI")
             }
             val took = System.currentTimeMillis() - began
             Log.i(TAG, "Dub of ${said.size} lines (${written * 1000L / rate} ms) made in $took ms by ${speaker.key}")
@@ -155,13 +174,17 @@ class DubEngine(context: Context, private val store: DubModelStore, private val 
 
     /** A few words said by [speaker], to hear it: a WAV file in the cache. */
     suspend fun sample(speaker: DubSpeaker, text: String, speed: Float): File = withContext(Dispatchers.Default) {
-        slot.run {
+        if (!marker.ready) throw MarkEngine.Missing()
+        val (samples, rate) = slot.run {
             val tts = load(speaker)
             val audio = tts.generate(DubTiming.oneBreath(text), sid(speaker), speed)
-            val file = File(appContext.cacheDir, "dub-sample.wav")
-            WavWriter(file, 1, audio.sampleRate, comment = aiComment(speaker)).use { it.write(audio.samples, audio.samples.size) }
-            file
+            audio.samples to audio.sampleRate
         }
+        // Even what is only heard here carries the mark: everything a model says does.
+        val marked = marker.markSpeech(listOf(samples), rate).first()
+        val file = File(appContext.cacheDir, "dub-sample.wav")
+        WavWriter(file, 1, rate, comment = AI_COMMENT).use { it.write(marked, marked.size) }
+        file
     }
 
     /** Frees the model's memory now. */
@@ -171,9 +194,6 @@ class DubEngine(context: Context, private val store: DubModelStore, private val 
         is DubSpeaker.Kokoro -> speaker.voice.id
         is DubSpeaker.Piper -> speaker.speaker
     }
-
-    /** What the files it is heard in say of a dub: that a machine made the voice, and which (AI Act, Article 50). */
-    private fun aiComment(speaker: DubSpeaker): String = "AI-generated speech: ${speaker.aiName}, made with FFmpegGUI"
 
     /** Which model [speaker] needs: one per language for Kokoro (its lexicons), one per voice for Piper. */
     private fun modelKey(speaker: DubSpeaker): String = when (speaker) {
@@ -277,6 +297,12 @@ class DubEngine(context: Context, private val store: DubModelStore, private val 
     companion object {
         private const val TAG = "DubEngine"
         private const val FOLDER = "dubs"
+
+        /**
+         * What a dub's file says of itself: that a machine made the voice (AI Act,
+         * Article 50), nothing more (see AiDisclosure).
+         */
+        private const val AI_COMMENT = AiDisclosure.SPEECH_TEXT
 
         private const val MIN_FREE_BYTES = 350L * 1024 * 1024
         private const val MIN_FREE_BYTES_PIPER = 150L * 1024 * 1024

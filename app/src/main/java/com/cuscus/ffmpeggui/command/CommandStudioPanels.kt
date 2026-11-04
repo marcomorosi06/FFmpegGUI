@@ -596,4 +596,5 @@ internal fun lintMessage(issue: LintIssue): String = when (issue.code) {
     LintCode.NO_OUTPUT -> stringResource(R.string.lint_no_output, issue.subject)
     LintCode.BAD_INPUT_INDEX -> stringResource(R.string.lint_bad_input_index, issue.subject)
     LintCode.UNKNOWN_FILE -> stringResource(R.string.lint_unknown_file, issue.subject)
+    LintCode.AI_MARKS_KEPT -> stringResource(R.string.lint_ai_marks_kept)
 }

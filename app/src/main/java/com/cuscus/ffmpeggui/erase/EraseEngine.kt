@@ -12,6 +12,10 @@ import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import com.cuscus.ffmpeggui.core.erase.InpaintArea
+import com.cuscus.ffmpeggui.core.provenance.AiDisclosure
+import com.cuscus.ffmpeggui.core.provenance.PngXmp
+import com.cuscus.ffmpeggui.core.provenance.Xmp
+import com.cuscus.ffmpeggui.marking.MarkEngine
 import com.cuscus.ffmpeggui.speech.AiKernels
 import com.cuscus.ffmpeggui.speech.ModelSlot
 import com.cuscus.ffmpeggui.speech.SpeechModel
@@ -47,7 +51,12 @@ import kotlin.math.min
  * app's ModelGate: alone in memory, and let go of as soon as the picture is
  * filled in.
  */
-class EraseEngine(context: Context, private val active: () -> Pair<EraseVariant, SpeechModelStore>) {
+class EraseEngine(
+    context: Context,
+    /** Writes the invisible AI mark into every picture erased (MarkEngine): none without it. */
+    private val marker: MarkEngine,
+    private val active: () -> Pair<EraseVariant, SpeechModelStore>,
+) {
 
     class ModelMissing : IOException("The magic eraser's model is not installed")
     class NotEnoughMemory : IOException("Not enough free memory for the magic eraser's model")
@@ -68,6 +77,8 @@ class EraseEngine(context: Context, private val active: () -> Pair<EraseVariant,
 
     /** The picture at [uri] with what [maskPath] marks (its alpha above half) filled in: a new PNG. */
     suspend fun erase(uri: Uri, maskPath: String): File = withContext(Dispatchers.Default) {
+        // The AI marks first: without them nothing is erased (and the model is not even loaded).
+        if (!marker.ready) throw MarkEngine.Missing()
         // Written in place, row by row, where the erased part was: no copy of the whole picture.
         val picture = decode(uri) ?: throw Unreadable()
         var mask: Bitmap? = null
@@ -137,9 +148,18 @@ class EraseEngine(context: Context, private val active: () -> Pair<EraseVariant,
                 picture.setPixels(pictureRow, 0, bw, crop.left + bx, crop.top + by + y, bw, 1)
             }
             back.recycle()
+            // The invisible AI mark (TrustMark), over the whole picture, read back before it is kept.
+            marker.markPicture(picture)
             folder.mkdirs()
             val target = File(folder, "erased-${UUID.randomUUID().toString().take(8)}.png")
             FileOutputStream(target).use { if (!picture.compress(Bitmap.CompressFormat.PNG, 100, it)) throw IOException("Could not write the picture") }
+            // The picture says it was changed by a model (EU AI Act, Article 50(2)), never which
+            // one, wherever it goes: what is exported from it says so too (see AiMarksReader).
+            // Never without it.
+            if (!PngXmp.write(target, Xmp.packet(AiDisclosure(pictures = true)))) {
+                target.delete()
+                throw IOException("Could not mark the picture as changed with AI")
+            }
             target
         } finally {
             mask?.recycle()

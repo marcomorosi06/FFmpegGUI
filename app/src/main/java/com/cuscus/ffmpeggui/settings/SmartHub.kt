@@ -8,6 +8,7 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import com.cuscus.ffmpeggui.ui.expressive.PolygonShape
 import com.cuscus.ffmpeggui.onboarding.rememberLoop
+import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.slideInVertically
@@ -120,6 +121,9 @@ internal enum class SmartPage(
     VOICE(Icons.Rounded.GraphicEq, MaterialShapes.SoftBurst, R.string.voice_section, R.string.smart_tag_voice, R.string.voice_intro),
     DUB(Icons.Rounded.RecordVoiceOver, MaterialShapes.Cookie12Sided, R.string.dub_section, R.string.smart_tag_dub, R.string.dub_intro),
     ABOUT(Icons.Rounded.Info, MaterialShapes.Pill, R.string.smart_about_models, R.string.smart_tag_about, R.string.smart_about_intro),
+
+    /** The invisible AI marks, before any model (see MarksSection): opened from the hub's banner. */
+    MARKS(Icons.Rounded.VerifiedUser, MaterialShapes.Clover8Leaf, R.string.marks_section, R.string.marks_tag, R.string.marks_intro),
 }
 
 /** Each feature's own pair of colours, used on its tile, its badge and its page. */
@@ -134,6 +138,7 @@ internal fun SmartPage.tone(): ToneColors {
         SmartPage.VOICE -> ToneColors(scheme.secondary, scheme.onSecondary)
         SmartPage.DUB -> ToneColors(scheme.tertiary, scheme.onTertiary)
         SmartPage.ABOUT -> ToneColors(scheme.surfaceContainerHighest, scheme.onSurface)
+        SmartPage.MARKS -> ToneColors(scheme.tertiaryContainer, scheme.onTertiaryContainer)
     }
 }
 
@@ -186,6 +191,7 @@ private fun statusOf(page: SmartPage, smart: SmartFeaturesUi): FeatureStatus = w
         }
     }
     SmartPage.ABOUT -> FeatureStatus(stringResource(R.string.smart_status_licences), StatusKind.INFO)
+    SmartPage.MARKS -> modelStatus(smart.marks?.model)
 }
 
 /**
@@ -223,7 +229,7 @@ internal fun SmartSettingsScreen(smart: SmartFeaturesUi, onBack: () -> Unit) {
             if (shown == null) {
                 Hub(smart, onBack = onBack, onOpen = { page = it })
             } else {
-                FeaturePage(shown, smart, onBack = { page = null })
+                FeaturePage(shown, smart, onBack = { page = null }, onOpen = { page = it })
             }
             Spacer(modifier = Modifier.height(24.dp))
         }
@@ -238,10 +244,14 @@ private fun Hub(smart: SmartFeaturesUi, onBack: () -> Unit, onOpen: (SmartPage) 
     val haptic = LocalHapticFeedback.current
     BackButton(onBack)
     Text(stringResource(R.string.settings_smart), style = SettingsPageTitle, color = scheme.onBackground, modifier = Modifier.padding(horizontal = 4.dp).popIn(true, 0))
+    // The AI marks first: whether they are here, and the way to them.
+    smart.marks?.let { marks ->
+        Box(modifier = Modifier.popIn(true, 1)) { MarksBanner(marks.ready) { onOpen(SmartPage.MARKS) } }
+    }
 
     val m = motion()
     // The hero: how many features are ready, each one's badge lit or not, the promise, the speed.
-    val features = SmartPage.entries.filter { it != SmartPage.ABOUT }
+    val features = SmartPage.entries.filter { it != SmartPage.ABOUT && it != SmartPage.MARKS }
     val readyPages = features.filter { statusOf(it, smart).kind == StatusKind.READY }.toSet()
     val ready = readyPages.size
     val total = features.size
@@ -518,7 +528,7 @@ private fun StatusChip(status: FeatureStatus, modifier: Modifier = Modifier) {
 // -- A feature's page ----------------------------------------------------------------------------
 
 @Composable
-private fun FeaturePage(page: SmartPage, smart: SmartFeaturesUi, onBack: () -> Unit) {
+private fun FeaturePage(page: SmartPage, smart: SmartFeaturesUi, onBack: () -> Unit, onOpen: (SmartPage) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val tone = page.tone()
     BackButton(onBack)
@@ -561,6 +571,11 @@ private fun FeaturePage(page: SmartPage, smart: SmartFeaturesUi, onBack: () -> U
         StatusChip(statusOf(page, smart))
     }
     Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.popIn(true, 2)) {
+        // Without the AI marks no model can be imported: said before its cards, with the way there.
+        val marks = smart.marks
+        if (marks != null && !marks.ready && page != SmartPage.MARKS && page != SmartPage.ABOUT) {
+            MarksFirstNotice { onOpen(SmartPage.MARKS) }
+        }
         when (page) {
             SmartPage.SPEECH -> SpeechSection(smart)
             SmartPage.TRANSLATE -> smart.translation?.let { TranslationSettingsSection(it, showHeading = false) }
@@ -569,6 +584,7 @@ private fun FeaturePage(page: SmartPage, smart: SmartFeaturesUi, onBack: () -> U
             SmartPage.VOICE -> smart.voice?.let { VoiceSettingsSection(it) }
             SmartPage.DUB -> smart.dub?.let { DubSection(it) }
             SmartPage.ABOUT -> AboutModelsSection()
+            SmartPage.MARKS -> marks?.let { MarksSection(it) }
         }
     }
 }

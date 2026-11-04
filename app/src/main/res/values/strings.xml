@@ -131,6 +131,8 @@
     <string name="error_encoding_failed">Conversion failed. Check the log.</string>
     <string name="error_packing_failed">The files were made but could not be packed into a zip. Is the storage full?</string>
     <string name="error_storage_full">The phone\'s storage is full: the export stopped and its unfinished file was deleted. Free some space, or export smaller or at a lower quality.</string>
+    <string name="error_ai_marks_no_place">This project has a voice or pictures made by an AI model, and the EU AI Act (Regulation (EU) 2024/1689, Article 50(2)) asks that such a file says so in a way programs can read. A .%1$s file has no place for that, so it was not saved: choose another format (MP4, MKV, MP3, PNG or JPG, for example).</string>
+    <string name="error_ai_marks_failed">The file was made, but the marks saying it holds what an AI model made (EU AI Act, Article 50(2)) could not be written into it, so it was not saved. Try again, or choose another format.</string>
     <string name="error_manual_empty">The command is empty</string>
     <string name="error_manual_without_output">The command has no output file (e.g. output.mp4)</string>
 
@@ -1184,6 +1186,65 @@
     <string name="settings_landscape_right_summary">Always side by side, the player on the right of the tools: the largest preview for any video.</string>
     <string name="editor_player_to_left">Move the player to the left</string>
     <string name="editor_player_to_right">Move the player to the right</string>
+    <!-- The command studio's replies to terminal classics typed in it (see CommandJokes). -->
+    <string name="studio_joke_safe">Not an FFmpeg command, so nothing runs.</string>
+    <string name="studio_joke_root">No need for root here: FFmpeg GUI already trusts you.</string>
+    <string name="studio_joke_sandwich">Ask nicely. There is a magic word.</string>
+    <string name="studio_joke_sandwich_sudo">Okay. One frame-perfect sandwich, coming right up.</string>
+    <string name="studio_joke_wipe">Not today. Nothing was deleted, and nothing typed here ever reaches a shell.</string>
+    <string name="studio_joke_way_out">This is not vim, promise. The close button is right up there.</string>
+    <string name="studio_joke_editor">No editor wars here. This one has colours and suggestions already.</string>
+    <string name="studio_joke_ping">pong</string>
+    <string name="studio_joke_whoami">Someone who reads FFmpeg\'s documentation for fun.</string>
+    <string name="studio_joke_files">Your files are in the Files panel below, tidier than any terminal.</string>
+    <string name="studio_joke_hello">Hello! Type a command, or pick one from the recipes.</string>
+    <string name="studio_joke_xyzzy">Nothing happens.</string>
+    <string name="studio_joke_teapot">418: I\'m a teapot (RFC 2324).</string>
+    <string name="studio_joke_answer">Yes, but what was the question?</string>
+    <string name="studio_joke_push">Pushing is your job. Rendering is mine.</string>
+    <!-- The timeline's ruler, pinched past its widest zoom: spans no video has. -->
+    <plurals name="ruler_absurd_day">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <plurals name="ruler_absurd_year">
+        <item quantity="one">%1$d year</item>
+        <item quantity="other">%1$d years</item>
+    </plurals>
+    <plurals name="ruler_absurd_century">
+        <item quantity="one">%1$d century</item>
+        <item quantity="other">%1$d centuries</item>
+    </plurals>
+    <plurals name="ruler_absurd_ice_age">
+        <item quantity="one">%1$d ice age</item>
+        <item quantity="other">%1$d ice ages</item>
+    </plurals>
+    <plurals name="ruler_absurd_era">
+        <item quantity="one">%1$d era</item>
+        <item quantity="other">%1$d eras</item>
+    </plurals>
+    <plurals name="ruler_absurd_eon">
+        <item quantity="one">%1$d eon</item>
+        <item quantity="other">%1$d eons</item>
+    </plurals>
+    <!-- The About page's hidden game: seven taps on FFmpeg's version. -->
+    <string name="about_life_title">Life, by FFmpeg</string>
+    <string name="about_life_generation">Generation %1$d</string>
+    <string name="about_life_failed">FFmpeg could not play it this time.</string>
+    <string name="about_life_stop">Stop the game</string>
+    <string name="about_life_shuffle">Shuffle</string>
+    <string name="about_life_credit">Every generation is computed by FFmpeg\'s own life filter. Tap the grid to drop a glider.</string>
+    <string name="about_life_drop">Drop a glider</string>
+    <string name="about_life_playing">FFmpeg is playing Conway\'s Game of Life below. Tap to stop it.</string>
+    <plurals name="about_life_taps_left">
+        <item quantity="one">%1$d tap away from something alive</item>
+        <item quantity="other">%1$d taps away from something alive</item>
+    </plurals>
+    <plurals name="about_life_grid">
+        <item quantity="one">Game of Life, generation %1$d, %2$d cell alive</item>
+        <item quantity="other">Game of Life, generation %1$d, %2$d cells alive</item>
+    </plurals>
+    <string name="editor_layout_usual">Back to the usual layout, the player above the tools</string>
     <string name="settings_editor_summary_waves">Clips show their sound</string>
     <string name="settings_editor_summary_plain">Clips show their frames only</string>
     <string name="settings_clip_waveforms">Sound of the clips</string>
@@ -1258,6 +1319,54 @@
     <string name="about_licence_app">FFmpeg GUI</string>
     <string name="about_licence_app_summary">Source code: EUPL 1.2. The app as a whole (the APK): GNU GPL 3.0</string>
     <string name="about_licence_as_is">Provided as is, without any warranty</string>
+    <!-- The invisible AI marks (EU AI Act, Article 50(2)): see marking/ and settings/MarksSettings.kt. -->
+    <string name="marks_section">AI marks</string>
+    <string name="marks_tag">Required: marks what AI makes</string>
+    <string name="marks_intro">Before any AI model, the app needs the two models that mark what AI makes. Every voice a model says and every picture the magic eraser changes then carries a mark that cannot be seen or heard, as the EU AI Act asks.</string>
+    <string name="marks_law_title">Why</string>
+    <string name="marks_law_text">The EU AI Act (Regulation (EU) 2024/1689, Article 50(2)) asks those who provide AI systems that generate or change sound and pictures to mark what they make, in a way machines can read and detect. The Commission\'s guidelines on Article 50 count dubbing and removing things from a picture among it; its Code of Practice asks for more than one layer of marks. Tap to read the law.</string>
+    <string name="marks_what_title">What is marked, and how</string>
+    <string name="marks_what_text">Every dub\'s voice, by AudioSeal (Meta), and every picture the magic eraser changes, by TrustMark (Adobe), as they are made; anything made before gets its mark when it is exported. The files also say it in their metadata. Subtitles, transcripts, translations, cut-outs and voice separation are not marked: they make nothing that passes for real.</string>
+    <string name="marks_privacy_title">What the marks never say</string>
+    <string name="marks_privacy_text">Anything about you. The marks only say \"made with AI\": the same in every file of every user, with no identifier, no date, no name of the model or the voice, nothing random. They cannot tell one file, phone or person from another.</string>
+    <string name="marks_limits_title">Their limits</string>
+    <string name="marks_limits_text">They hold through compression, resizing and volume, not through every edit: a sound or picture changed enough can lose them. Please do not remove them from what you share.</string>
+    <string name="marks_not_published">This build\'s AI marks are not published yet, so they cannot be imported, and neither can any model. The next release brings them.</string>
+    <string name="marks_files_title">The marks\' files</string>
+    <string name="marks_importing">Copying and checking the AI marks\u2026</string>
+    <string name="marks_download_text">%1$d files, about %2$s in all, from this app\'s own release on GitHub: AudioSeal converted by this project, TrustMark as Adobe publishes it. Each link opens in your browser.</string>
+    <string name="marks_import_text">Pick the downloaded files together: %1$s. Every file is checked against its SHA-256.</string>
+    <string name="marks_not_the_files">Those files are not the AI marks. Pick the four files of the release.</string>
+    <string name="marks_delete_title">Remove the AI marks and every model?</string>
+    <string name="marks_delete_text">%1$s are freed, and every AI model goes with the marks: none may stay without them. What you made with the models stays in your projects.</string>
+    <string name="marks_sources">Where they come from</string>
+    <string name="marks_release_title">The files, their licences and how they were made</string>
+    <string name="marks_release_text">The release %1$s of this app, with the NOTICE and the PROVENANCE of every file</string>
+    <string name="marks_audioseal_text">Marks voices. MIT License, the weights included</string>
+    <string name="marks_trustmark_text">Marks pictures. MIT License, the model files included, as Adobe confirmed</string>
+    <string name="marks_banner_needed">Set up the AI marks first</string>
+    <string name="marks_banner_needed_text">Required before any model, by the EU AI Act. Nothing about you goes in them.</string>
+    <string name="marks_banner_on">AI marks on</string>
+    <string name="marks_banner_on_text">What AI makes here says so, invisibly, and nothing else</string>
+    <string name="marks_locked">This feature\'s models can be imported once the AI marks are: they come first.</string>
+    <string name="marks_set_up">Set up the AI marks</string>
+    <string name="marks_first_title">AI marks first</string>
+    <string name="marks_first_text">No AI model can be imported before the two models that mark what AI makes. Without them, what the model makes could not carry its mark, and the law asks that it does.</string>
+    <string name="marks_first_law">EU AI Act, Regulation (EU) 2024/1689, Article 50(2): what an AI system generates or changes is marked, machine-readably and detectably.</string>
+    <string name="marks_first_privacy">The marks only say \"made with AI\". Nothing about you, your phone, the file or the model: the same for everyone.</string>
+    <string name="marks_first_later">Not now</string>
+    <string name="marks_cleared_title">AI models removed</string>
+    <string name="marks_cleared_text">These models were on the phone without the AI marks before them, so they were removed: %1$s. What they make must carry a mark (EU AI Act, Article 50(2)). What you made with them stays in your projects.</string>
+    <string name="marks_cleared_freed">%1$s freed</string>
+    <string name="marks_cleared_ok">Got it</string>
+    <string name="marks_problem_missing">The AI marks are not installed. Nothing a model makes leaves the app without its invisible mark (EU AI Act, Article 50(2)): set them up first in the smart features.</string>
+    <string name="marks_problem_picture">The invisible AI mark does not hold on this picture (it is very small), so the result was not kept.</string>
+    <string name="marks_problem_voice">The invisible AI mark did not hold on this voice, so the dub was not kept. Try again.</string>
+    <string name="marks_added_for_export">The invisible AI marks were added to what a model made before they were installed</string>
+    <string name="marks_export_missing">This project has a voice or pictures made by an AI model, and the AI marks are not installed: it cannot be exported without them (EU AI Act, Article 50(2)). Set them up in the smart features.</string>
+    <string name="marks_export_failed">A voice or a picture made by an AI model could not be given its invisible AI mark, so nothing was exported. Try again.</string>
+    <string name="about_ai_marks">Files made with AI say so</string>
+    <string name="about_ai_marks_summary">A dub\'s voice and pictures changed by the magic eraser carry a mark that cannot be seen or heard, and say so in their metadata, as the EU AI Act asks (Regulation (EU) 2024/1689, Article 50(2)). The marks only say \"made with AI\", nothing about you. Please do not remove them from the files you share.</string>
     <string name="about_licence_as_is_summary">To the extent permitted by law. The source code is under the EUPL 1.2; the APK, with FFmpeg and its GPL libraries, is distributed under the GNU GPL 3.0</string>
     <string name="about_licence_all">All licences</string>
     <string name="about_licence_all_summary">Every licence and notice of the app and of what it contains, readable here</string>
@@ -1555,6 +1664,10 @@
     <string name="about_licence_ours_apache">Apache License 2.0, with the notice of the changes</string>
     <string name="about_licence_birefnet">BiRefNet-lite, by Zheng Peng et al. (the finest cut-out model, downloaded by you), converted to ONNX by FFmpeg GUI</string>
     <string name="about_licence_ours_mit">MIT License, with the notice of the conversion</string>
+    <string name="about_licence_ai_marks">The AI marks (downloaded by you): AudioSeal converted to ONNX by FFmpeg GUI, TrustMark as Adobe publishes it</string>
+    <string name="about_licence_ai_marks_summary">MIT Licenses, with the notice of what was converted and what is unchanged</string>
+    <string name="about_licence_audioseal">AudioSeal, by Meta (marks voices made with AI)</string>
+    <string name="about_licence_trustmark">TrustMark, by Adobe (marks pictures changed with AI). T. Bui, S. Agarwal, J. Collomosse, ICCV 2025</string>
     <string name="about_licence_models_record">Record of the AI models</string>
     <string name="about_licence_models_record_summary">Every model the app can use: its licence, where it comes from, its SHA-256 and what it was trained on</string>
     <string name="about_licence_effects">The video effects, drawn by FFmpeg GUI\'s own script (scripts/generate-effects.py)</string>
@@ -2839,6 +2952,7 @@
     <string name="lint_no_output">No output: the command must write %1$s (any extension)</string>
     <string name="lint_bad_input_index">There is no input %1$s (they count from 0)</string>
     <string name="lint_unknown_file">%1$s is not a file of this project</string>
+    <string name="lint_ai_marks_kept">This does not remove the AI marks: when the project has a dub or pictures changed by the magic eraser, the finished file is marked again after this command, as the EU AI Act asks (Regulation (EU) 2024/1689, Article 50(2)). Other tags go as asked.</string>
     <plurals name="stickers_count">
         <item quantity="one">%1$d sticker saved</item>
         <item quantity="other">%1$d stickers saved</item>

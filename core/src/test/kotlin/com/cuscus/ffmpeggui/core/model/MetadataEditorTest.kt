@@ -126,7 +126,7 @@ class MetadataEditorTest {
         )
         val a = builder.build(request, MediaPaths.aliasesFor(request)).arguments
         val tags = a.tags()
-        assertTrue(tags.toString(), "AI_GENERATED=Contains AI-generated speech: Piper (it_IT-paola-medium)" in tags)
+        assertTrue(tags.toString(), "AI_GENERATED=AI-generated voice" in tags)
         assertTrue(tags.toString(), "DIGITAL_SOURCE_TYPE=http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia" in tags)
         assertEquals("+use_metadata_tags", a[a.indexOf("-movflags") + 1])
         // Without a dub, nothing is said.

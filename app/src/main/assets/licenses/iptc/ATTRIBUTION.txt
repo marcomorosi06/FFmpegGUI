@@ -1,0 +1,23 @@
+IPTC NewsCodes - Digital Source Type
+
+The app writes two values of the IPTC "Digital Source Type" vocabulary into
+the files it exports when they hold what an AI model made (a dub, pictures
+changed by the magic eraser), so that programs can read it (EU AI Act,
+Regulation (EU) 2024/1689, Article 50(2)):
+
+  http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia
+  http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia
+
+Vocabulary: IPTC NewsCodes, Digital Source Type
+Author:     IPTC (International Press Telecommunications Council),
+            Copyright 2024 IPTC - www.iptc.org
+Source:     https://cv.iptc.org/newscodes/digitalsourcetype/
+Licence:    Creative Commons Attribution 4.0 International (CC BY 4.0),
+            https://creativecommons.org/licenses/by/4.0/
+            ("The Creative Commons Attribution (CC BY) 4.0 license applies
+            to all NewsCodes"), full text in ../parakeet/CC-BY-4.0.txt
+
+Only the two identifiers above are used, without changes; none of the
+vocabulary's descriptions is copied into the app.
+The licensor provides the material as-is and makes no warranties; see the
+licence for the full disclaimer.

@@ -100,6 +100,16 @@ enum class FailureReason {
 
     /** The phone's storage filled up while FFmpeg was writing; the unfinished file is deleted. */
     STORAGE_FULL,
+
+    /**
+     * The project holds what an AI model made (a dub, the magic eraser) and the
+     * file's format has no place for the marks that say so (EU AI Act, Article
+     * 50(2)); the detail holds its extension. The file is not handed out.
+     */
+    AI_MARKS_NO_PLACE,
+
+    /** The marks could not be written into the finished file; it is not handed out. */
+    AI_MARKS_FAILED,
 }
 
 /** How the picture of a finished video was encoded. */

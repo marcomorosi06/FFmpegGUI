@@ -1,5 +1,7 @@
 package com.cuscus.ffmpeggui.core.hdr
 
+import com.cuscus.ffmpeggui.core.provenance.AiDisclosure
+import com.cuscus.ffmpeggui.core.provenance.Xmp
 import java.io.ByteArrayOutputStream
 import java.util.Locale
 
@@ -33,8 +35,10 @@ object UltraHdr {
     /**
      * The Ultra HDR file of [primary] (a JPG, the SDR picture, tags included)
      * and [gainMap] (a JPG of the gain map's values) read by [metadata].
+     * [disclosure]: what machines made in it, said in the picture's own XMP
+     * (a second XMP would not be read; see core.provenance).
      */
-    fun assemble(primary: ByteArray, gainMap: ByteArray, metadata: GainMapMetadata): ByteArray {
+    fun assemble(primary: ByteArray, gainMap: ByteArray, metadata: GainMapMetadata, disclosure: AiDisclosure? = null): ByteArray {
         val base = segments(primary) ?: throw IllegalArgumentException("The picture is not a JPG")
         val map = segments(gainMap) ?: throw IllegalArgumentException("The gain map is not a JPG")
 
@@ -46,7 +50,10 @@ object UltraHdr {
         val secondBytes = second.toByteArray()
 
         // The picture: SOI, its JFIF and EXIF, then its XMP and the index, then the rest.
-        val xmp = segment(APP1, (XMP_NAMESPACE + primaryXmp(secondBytes.size)).toByteArray(Charsets.UTF_8))
+        val primaryText = primaryXmp(secondBytes.size).let { text ->
+            if (disclosure == null || disclosure.isEmpty) text else checkNotNull(Xmp.mergeInto(text, disclosure)) { "Ultra HDR XMP" }
+        }
+        val xmp = segment(APP1, (XMP_NAMESPACE + primaryText).toByteArray(Charsets.UTF_8))
         val leading = base.headers.takeWhile { it.marker == APP0 || (it.marker == APP1 && !isXmp(primary, it)) }
         val leadingBytes = leading.sumOf { it.length }
         val restLength = base.headers.filter { it !in leading && !dropped(primary, it) }.sumOf { it.length } + (primary.size - base.bodyStart)
@@ -114,7 +121,7 @@ object UltraHdr {
     }
 
     internal fun primaryXmp(gainMapLength: Int): String =
-        """<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="FFmpegGUI">
+        """<x:xmpmeta xmlns:x="adobe:ns:meta/">
   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
     <rdf:Description rdf:about=""
         xmlns:Container="http://ns.google.com/photos/1.0/container/"
@@ -137,7 +144,7 @@ object UltraHdr {
 
     internal fun gainMapXmp(m: GainMapMetadata): String {
         fun f(v: Float) = String.format(Locale.ROOT, "%.6f", v)
-        return """<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="FFmpegGUI">
+        return """<x:xmpmeta xmlns:x="adobe:ns:meta/">
   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
     <rdf:Description rdf:about=""
         xmlns:hdrgm="$HDRGM"

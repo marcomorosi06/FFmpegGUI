@@ -357,6 +357,8 @@ private fun EraseHero(status: EraseStatus, celebrate: Boolean, ready: Boolean) {
                             EraseProblem.NOTHING -> R.string.erase_problem_nothing
                             EraseProblem.UNREADABLE -> R.string.cutout_problem_unreadable
                             EraseProblem.FAILED -> R.string.erase_problem_failed
+                            EraseProblem.NO_MARKS -> R.string.marks_problem_missing
+                            EraseProblem.MARK_NOT_HELD -> R.string.marks_problem_picture
                         },
                     )
                     EraseStatus.Idle -> stringResource(if (celebrate) R.string.erase_done else R.string.erase_intro)

@@ -45,6 +45,8 @@ drift apart.
 | AI dubbing | Kokoro-82M v1.0 | hexgrad | Apache 2.0 | sherpa-onnx (Apache 2.0) | sherpa-onnx's GitHub releases |
 | AI dubbing, extra voices | Piper voices | their authors | each its own | Piper / sherpa-onnx | Hugging Face, GitHub |
 | Subtitle translation | Opus-MT | University of Helsinki | CC BY 4.0 | Xenova | Hugging Face |
+| **AI marks** (voices), before any other model | AudioSeal | Meta | MIT | **this project** | **this repository's releases** |
+| **AI marks** (pictures), before any other model | TrustMark Q | Adobe | MIT | Adobe | **this repository's releases** (Adobe's files, unchanged) |
 
 ## The project's own conversions
 
@@ -166,6 +168,72 @@ the cut-out's "Finest" choice.
   commercial users to sign separate terms). They bind whoever uses the
   datasets: this project uses none of them, only the weights, under the
   licence their author gave them.
+
+### The AI marks: AudioSeal and TrustMark
+
+What the app's models make carries a mark that cannot be seen or heard (EU
+AI Act, Regulation (EU) 2024/1689, Article 50(2); see docs/ARCHITECTURE.md,
+"Marked as made with AI"). These four files write and find it. They are
+imported before any other model (`MarkingGate`); without them no model stays
+on the phone (`MarkingSweep`). The marks carry nothing but "made with AI":
+their payloads are all zeros, the same for everyone (`core/marking/Marks.kt`).
+
+- **AudioSeal** (["Proactive Detection of Voice Cloning with Localized
+  Watermarking"](https://arxiv.org/abs/2401.17264), Meta, ICML 2024), which
+  marks voices. **Licence:** MIT, "We have updated our license to full MIT
+  license (including the license for the model weights)" (its README); its
+  `LICENSE`, SHA-256 `da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93`.
+  **Made from**, pinned in `scripts/ai-markers.lock`: the package
+  `audioseal==0.2.1` (the network's code) and the weights
+  `generator_base.pth`, SHA-256 `0000000000000000000000000000000000000000000000000000000000000000`, and
+  `detector_base.pth`, SHA-256 `0000000000000000000000000000000000000000000000000000000000000000`
+  (https://huggingface.co/facebook/audioseal). **What the conversion does**
+  (`scripts/export-ai-markers.py`): the generator as `get_watermark` with its
+  message as an input, the detector as `forward`, both written as ONNX
+  (opset 17) for a fixed window of 5 s at 16 kHz; nothing trained, fine-tuned,
+  pruned or quantised; checked against PyTorch, and checked to hold on speech
+  through MP3, AAC, noise and volume and not to be found where it is not.
+  **Training data.** "Our watermark generator and detector are trained on a
+  4.5K hours subset from the VoxPopuli (Wang et al., 2021) dataset" (the
+  paper): speech of the European Parliament, published by Meta for research.
+- **TrustMark Q** (["TrustMark: Robust Watermarking and Watermark Removal for
+  Arbitrary Resolution Images"](https://arxiv.org/abs/2311.18297), T. Bui,
+  S. Agarwal, J. Collomosse, Adobe and the University of Surrey, ICCV 2025),
+  which marks pictures. **Licence:** MIT, "The MIT license covers both the
+  code in this repo and the model files which are downloaded upon first use"
+  (its README); its `LICENSE`, SHA-256
+  `58d47a5cdfaaceda98925d845e8207d90336c62347a2383f95962b667b1cdaf5`. Adobe
+  confirmed that the files may be redistributed unchanged, with this
+  attribution: https://github.com/adobe/trustmark/issues/48. **Made from**:
+  Adobe's own ONNX files, unchanged byte for byte, renamed only:
+  `encoder_Q.onnx`, SHA-256 `0000000000000000000000000000000000000000000000000000000000000000`, and
+  `decoder_Q.onnx`, SHA-256 `0000000000000000000000000000000000000000000000000000000000000000`
+  (https://cai-watermark.adobe.net/watermarking/trustmark-models/, the
+  location in Adobe's own code), Adobe's reader checked with TrustMark at commit `0000000000000000000000000000000000000000`.
+  **Training data.** "We follow the same settings of [7] to train our models
+  on 101K images from the MIRFlickR 1M dataset" (the paper).
+- **The files**, pinned in `app/.../marking/MarkerModel.kt`:
+
+  | File | Made from | SHA-256 | Bytes |
+  |---|---|---|---|
+  | `audioseal-generator.onnx` | AudioSeal, converted | `0000000000000000000000000000000000000000000000000000000000000000` | 0 |
+  | `audioseal-detector.onnx` | AudioSeal, converted | `0000000000000000000000000000000000000000000000000000000000000000` | 0 |
+  | `trustmark-encoder-q.onnx` | Adobe's `encoder_Q.onnx` | `0000000000000000000000000000000000000000000000000000000000000000` | 0 |
+  | `trustmark-decoder-q.onnx` | Adobe's `decoder_Q.onnx` | `0000000000000000000000000000000000000000000000000000000000000000` | 0 |
+
+  A value of zeros is not pinned yet: `.github/workflows/ai-markers.yml`
+  learns it on its first run (building and checking everything, publishing
+  nothing), `scripts/pin-ai-markers.py` copies what it learned here, into the
+  lock and into the app; the next run publishes the pre-release
+  [`ai-markers-1`](https://github.com/marcomorosi06/FFmpegGUI/releases/tag/ai-markers-1).
+  Until then nothing can be imported (no file matches a pin of zeros), and
+  `scripts/check-model-pins.py` refuses an app release.
+- **How the MIT licences are kept**: each `LICENSE` with its copyright
+  notice goes with the files (`LICENSE-audioseal.txt`,
+  `LICENSE-trustmark.txt` in the release; inside the AudioSeal ONNX files,
+  metadata key `license`) and is in the app
+  (`assets/licenses/ai-markers/`, readable in About, Licences), with the
+  NOTICE of what was converted and what is unchanged.
 
 ## Files published by others, which the app points to
 
@@ -319,6 +387,11 @@ git clone https://github.com/ZhengPeng7/BiRefNet && git -C BiRefNet checkout f70
 curl -LO https://github.com/ZhengPeng7/BiRefNet/releases/download/v1/BiRefNet-general-bb_swin_v1_tiny-epoch_232.pth
 venv/bin/python -I scripts/export-birefnet.py --birefnet BiRefNet --weights BiRefNet-general-bb_swin_v1_tiny-epoch_232.pth --out out-birefnet
 python3 scripts/check-model-pins.py --release-dir edgetam=out-edgetam --release-dir birefnet=out-birefnet
+# The AI marks (needs espeak-ng and ffmpeg; the upstream files as the lock and ai-markers.yml say):
+venv/bin/python -I scripts/export-ai-markers.py --generator generator_base.pth --detector detector_base.pth \
+  --encoder encoder_Q.onnx --decoder decoder_Q.onnx --audioseal-licence LICENSE-audioseal --trustmark trustmark \
+  --pictures EdgeTAM/notebooks/images/truck.jpg --out out-markers
+python3 scripts/check-model-pins.py --release-dir markers=out-markers
 ```
 
 The last line says whether your files are the very ones the app pins.
