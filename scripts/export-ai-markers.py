@@ -40,6 +40,10 @@ the app's own scheme (core/marking/SpeechMarking.kt and PictureMarking.kt):
 
 It fails rather than write files that do not do all of this.
 
+Before the picture checks it also measures, without failing, how the picture
+mark reads with other payloads and squeezes (probe_pictures): picture-probe.md
+and picture-probe.json next to the files, in the run's summary, not published.
+
 Usage:
   scripts/export-ai-markers.py --generator generator_base.pth --detector detector_base.pth
       --encoder encoder_Q.onnx --decoder decoder_Q.onnx --audioseal-licence LICENSE
@@ -275,9 +279,18 @@ def region(w, h):
     return (w - side) // 2, (h - side) // 2, side, side
 
 
-def squeeze(rgb, size):
-    """PictureMarking.Squeezer: each square the average of the pixels whose centres fall in it."""
+def squeeze(rgb, size, resize="box"):
+    """PictureMarking.Squeezer: each square the average of the pixels whose centres fall in it.
+
+    resize "pil" squeezes as Adobe's Python package does instead (PIL's bilinear, from the
+    8-bit pixels): only for the probe (probe_pictures).
+    """
     import numpy as np
+    if resize == "pil":
+        from PIL import Image
+        small = Image.fromarray(np.rint(rgb).clip(0, 255).astype(np.uint8)).resize((size, size), Image.BILINEAR)
+        out = np.asarray(small).astype(np.float64) / 127.5 - 1.0
+        return out.transpose(2, 0, 1)[None].astype(np.float32)
     h, w, _ = rgb.shape
     ys = (np.arange(h) * size // h)
     xs = (np.arange(w) * size // w)
@@ -332,22 +345,29 @@ def feather_weights(w, h):
     return weight
 
 
-def mark_picture(enc, picture):
-    """What EraseEngine does to its result: TrustMark's mark, as Adobe's encode() lays it."""
+def mark_picture(enc, picture, bits=None, resize="box", strength=STRENGTH, energy=None):
+    """What EraseEngine does to its result: TrustMark's mark, as Adobe's encode() lays it.
+
+    bits (100 of them; the app's are all zeros), resize, strength and energy (a list that
+    gets the mark's RMS at the encoder's size, in 8-bit levels) are only for the probe.
+    """
     import numpy as np
     rgb = np.asarray(picture.convert("RGB")).astype(np.float64)
     h, w, _ = rgb.shape
     left, top, rw, rh = region(w, h)
     part = rgb[top:top + rh, left:left + rw]
-    cover = squeeze(part, SIZE)
+    cover = squeeze(part, SIZE, resize)
     names = {i.name: i for i in enc.get_inputs()}
     image_name = next(n for n, i in names.items() if len(i.shape) == 4)
     bits_name = next(n for n, i in names.items() if len(i.shape) == 2)
-    stego = enc.run(None, {image_name: cover, bits_name: np.zeros((1, 100), dtype=np.float32)})[0]
+    secret = np.zeros((1, 100), dtype=np.float32) if bits is None else np.asarray(bits, dtype=np.float32).reshape(1, 100)
+    stego = enc.run(None, {image_name: cover, bits_name: secret})[0]
     residual = np.clip(stego, -1, 1) - cover
     residual = residual - residual.mean(axis=(2, 3), keepdims=True)
+    if energy is not None:
+        energy.append(float(np.sqrt(np.mean(residual ** 2)) * 127.5))
     mark = stretch(residual, rw, rh)
-    marked = np.clip(part / 127.5 - 1 + mark * STRENGTH, -1, 1) * 127.5 + 127.5
+    marked = np.clip(part / 127.5 - 1 + mark * strength, -1, 1) * 127.5 + 127.5
     weight = feather_weights(rw, rh)[..., None]
     blended = np.rint(marked * weight + part * (1 - weight)).clip(0, 255)
     out = rgb.copy()
@@ -355,13 +375,13 @@ def mark_picture(enc, picture):
     return out.astype(np.uint8)
 
 
-def read_picture(dec, rgb):
+def read_picture(dec, rgb, resize="box"):
     """The decoder's 100 logits for the picture (its region squeezed to the decoder's size)."""
     h, w, _ = rgb.shape
     left, top, rw, rh = region(w, h)
     size = dec.get_inputs()[0].shape[-1]
     size = size if isinstance(size, int) else SIZE
-    x = squeeze(rgb[top:top + rh, left:left + rw], size)
+    x = squeeze(rgb[top:top + rh, left:left + rw], size, resize)
     return dec.run(None, {dec.get_inputs()[0].name: x})[0][0]
 
 
@@ -370,6 +390,69 @@ def picture_errors(logits):
     if logits[99] > 0 or logits[98] > 0:
         return None
     return int((logits[:96] > 0).sum())
+
+
+def probe_pictures(enc, dec, layer, pictures, out):
+    """Measures, without failing, how well the picture mark reads in a few ways, so that the
+    choice of payload rests on numbers: the app's payload of zeros, a fixed one with as many
+    ones as zeros, and three random ones (fixed seeds, the same on every build); the pictures
+    squeezed as the app does ("box") and as Adobe's Python package does ("pil"); the zeros
+    also at strength 1.5. For each: the bits that read wrong out of 100 (fresh, after JPEG at
+    quality 75, at half the size), whether Adobe's reader finds the payload, the PSNR and
+    the mark's RMS at 256 x 256 (8-bit levels). Writes picture-probe.json and
+    picture-probe.md next to the files (neither is published).
+    """
+    import io
+    import numpy as np
+    from PIL import Image
+
+    def codeword(data):
+        return layer.encode_binary([data])[0].astype(np.int64)
+
+    payloads = [("zeros", "0" * 40), ("fixed half ones", "01" * 20)]
+    for seed in (1, 2, 3):
+        bits = np.random.default_rng(seed).integers(0, 2, 40)
+        payloads.append(("random %d" % seed, "".join(str(int(b)) for b in bits)))
+    ways = [(name, data, resize, 1.0) for name, data in payloads for resize in ("box", "pil")]
+    ways += [("zeros", "0" * 40, "box", 1.5), ("zeros", "0" * 40, "pil", 1.5)]
+    rows = []
+    for path in pictures:
+        picture = Image.open(path).convert("RGB")
+        original = np.asarray(picture)
+        for name, data, resize, strength in ways:
+            want = codeword(data)
+            energy = []
+            marked = mark_picture(enc, picture, want, resize, strength, energy)
+
+            def wrong(rgb):
+                return int(((read_picture(dec, rgb, resize) > 0).astype(np.int64) != want).sum())
+
+            logits = read_picture(dec, marked, resize)
+            secret, found, version = layer.decode_bitstream((logits > 0)[None].astype(np.float32), "binary")[0]
+            buffer = io.BytesIO()
+            Image.fromarray(marked).save(buffer, "JPEG", quality=75)
+            jpeg = np.asarray(Image.open(io.BytesIO(buffer.getvalue())).convert("RGB"))
+            half = np.asarray(Image.fromarray(marked).resize((marked.shape[1] // 2, marked.shape[0] // 2), Image.BILINEAR))
+            mse = np.mean((marked.astype(np.float64) - original) ** 2)
+            rows.append({
+                "picture": os.path.basename(path), "size": "%dx%d" % picture.size, "payload": name,
+                "resize": resize, "strength": strength,
+                "fresh": wrong(marked), "jpeg75": wrong(jpeg), "half": wrong(half),
+                "adobe_finds": bool(found and secret == data and version == 0),
+                "psnr_db": round(float(10 * np.log10(255 ** 2 / max(mse, 1e-12))), 2),
+                "mark_rms": round(energy[0], 3),
+            })
+    with open(os.path.join(out, "picture-probe.json"), "w", encoding="ascii") as f:
+        json.dump(rows, f, indent=2)
+    with open(os.path.join(out, "picture-probe.md"), "w", encoding="ascii") as f:
+        f.write("### The picture marks, measured (wrong bits out of 100; 8 or fewer are corrected)\n\n")
+        f.write("| picture | size | payload | resize | strength | fresh | JPEG 75 | half size | Adobe finds it | PSNR dB | mark RMS |\n")
+        f.write("|---|---|---|---|---|---|---|---|---|---|---|\n")
+        for r in rows:
+            f.write("| %(picture)s | %(size)s | %(payload)s | %(resize)s | %(strength)s | %(fresh)d | %(jpeg75)d | %(half)d | %(adobe_finds)s | %(psnr_db)s | %(mark_rms)s |\n" % r)
+    for r in rows:
+        print("probe %(picture)s %(payload)s %(resize)s x%(strength)s: fresh %(fresh)d, jpeg75 %(jpeg75)d, half %(half)d, "
+              "Adobe %(adobe_finds)s, PSNR %(psnr_db)s, RMS %(mark_rms)s" % r)
 
 
 # -- The export ---------------------------------------------------------------------------
@@ -617,6 +700,7 @@ def main():
     sys.path.insert(0, reader)
     from tmreader.datalayer import DataLayer
     layer = DataLayer(100, False, 0)
+    probe_pictures(enc, dec, layer, args.pictures, args.out)
     import io
     for path in args.pictures:
         picture = Image.open(path).convert("RGB")
