@@ -64,13 +64,13 @@ Don't trust AI-generated code? Verify it yourself or don't install it at all.
 
 | Editor | What it does |
 |---|---|
-| **Video** | Timeline of clips, speed curves, 101 transitions, keyframes, texts, overlays, effects, chroma key, subtitles, HDR |
-| **Smart features** | Subtitles from speech, transcripts, subject cut-out, translation, AI dubbing, voice separation, magic eraser |
+| **Video** | Timeline of clips, speed curves, 101 transitions, keyframes, texts, overlays, effects, chroma key, denoise, subtitles, HDR |
+| **Smart features** | Subtitles from speech, transcripts, subject cut-out (and a long press that lifts a subject off a photo), translation, AI dubbing, voice separation, magic eraser |
 | **Audio** | Waveform editor, ten-band equaliser, compressor, reverb and more, loudness levelling, tags and cover art |
 | **Pictures** | Photo editor, crop and perspective, filters, layers, shapes and blend modes, SVG editor, Ultra HDR JPG |
 | **GIF** | Its own editor, with a preview that shows colours and dithering as they will be |
 
-The smart features run entirely on the phone. Their models are not in the app: the browser downloads them once, and the app imports them and checks them against pinned SHA-256 hashes.
+The smart features run entirely on the phone. Their models are not in the app: the browser downloads them once, and the app imports them and checks them against pinned SHA-256 hashes. Each one, with its licence and source: [docs/MODELS.md](docs/MODELS.md).
 
 **[All the features, in detail](docs/FEATURES.md)**
 
@@ -112,7 +112,7 @@ Three Gradle modules, with dependencies pointing one way (`app -> media -> core`
 
 Details, data flow and a "where do I change X" table are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-> Video stabilisation and denoising are implemented in the backend but have no editor controls yet.
+> Video stabilisation is implemented in the backend but has no editor controls yet.
 
 ### Libraries
 
@@ -152,12 +152,13 @@ FFmpeg GUI is made by one person, in spare time, and will stay free and open sou
 - [Okio](https://github.com/square/okio) by Square and [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization) by JetBrains (Apache 2.0), used by AndroidX
 - [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) by NVIDIA (CC BY 4.0), downloaded by the user; its token list ships with the app
 - [IS-Net](https://github.com/xuebinqin/DIS) and [U2-Net](https://github.com/xuebinqin/U-2-Net) by Xuebin Qin et al. (Apache 2.0), as converted by [rembg](https://github.com/danielgatis/rembg) (MIT)
+- [BiRefNet](https://github.com/ZhengPeng7/BiRefNet) by Zheng Peng et al. (MIT), its lite general-use weights, converted to ONNX by this project (`scripts/export-birefnet.py`) and served from its [releases](https://github.com/marcomorosi06/FFmpegGUI/releases/tag/birefnet-lite-onnx-1) with its licence and notice, downloaded by the user
 - [Opus-MT](https://github.com/Helsinki-NLP/Opus-MT) by the University of Helsinki (CC BY 4.0), as converted to ONNX by [Xenova](https://huggingface.co/Xenova), downloaded by the user
 - [Spleeter](https://github.com/deezer/spleeter) by Deezer (MIT), as converted to ONNX and quantised by [sherpa-onnx](https://k2-fsa.github.io/sherpa/onnx/source-separation/models.html), downloaded by the user; its spectrogram and masks are computed as sherpa-onnx does, in the app's own Kotlin
 - [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) by hexgrad (Apache 2.0), in the multi-language build of [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models), with [eSpeak NG](https://github.com/espeak-ng/espeak-ng)'s data (GPL 3.0), downloaded by the user
 - [Piper](https://github.com/rhasspy/piper) voices (the format: MIT; each voice under its own licence, see its card), as published on [Hugging Face](https://huggingface.co/rhasspy/piper-voices) or packed by [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models), downloaded by the user
 - [MI-GAN](https://github.com/Picsart-AI-Research/MI-GAN) by Picsart AI Research (MIT) and [LaMa](https://github.com/advimman/lama) by Samsung AI Center (Apache 2.0, ONNX by [Carve](https://huggingface.co/Carve/LaMa-ONNX)), downloaded by the user
-- [SlimSAM](https://github.com/czg1225/SlimSAM) by Zigeng Chen et al. (Apache 2.0), a pruned [Segment Anything](https://github.com/facebookresearch/segment-anything), as converted to ONNX by [Xenova](https://huggingface.co/Xenova/slimsam-77-uniform)
+- [EdgeTAM](https://github.com/facebookresearch/EdgeTAM) by Meta (Apache 2.0), a [Segment Anything 2](https://github.com/facebookresearch/sam2) for phones, converted to ONNX by this project (`scripts/export-edgetam.py`; what changed is in its NOTICE) and served from its [releases](https://github.com/marcomorosi06/FFmpegGUI/releases/tag/edgetam-onnx-1), downloaded by the user
 - [anti-vocale](https://github.com/RisorseArtificiali/anti-vocale) (Apache 2.0), where the idea of on-device transcription and the way to run the model come from
 - [Google Sans Flex](https://fonts.google.com/specimen/Google+Sans+Flex) (SIL Open Font License)
 - The [Obtainium](https://github.com/ImranR98/Obtainium) logo by ImranR98 (GPL 3.0), in this page's Obtainium buttons only ([its licence](docs/badges/LICENSE-obtainium-logo.txt))
@@ -166,6 +167,8 @@ FFmpeg GUI is made by one person, in spare time, and will stay free and open sou
 The video effects are made by the project's own `scripts/generate-effects.py` (the punches' 3D fist and the sound of its blow by `scripts/punch3d.py`, the math formulas by `scripts/math_effect.py` with its own stroke font, the TV break's test card and tune by `scripts/tv_break.py`) and are part of FFmpeg GUI, under its licence.
 
 Each component stays under its own licence.
+
+**The AI models** are recorded one by one in [docs/MODELS.md](docs/MODELS.md): who made each, its licence, where its files come from, the SHA-256 the app checks them against and what it was trained on, and how the licences of the two models this project converts and serves itself are kept. `scripts/check-model-pins.py` checks on every push that the app, the record and the licences agree. It is a record, not legal advice.
 
 ## License
 

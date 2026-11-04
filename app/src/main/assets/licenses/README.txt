@@ -167,7 +167,15 @@ The AI models are not in the app: the user downloads them, under their
 own licences:
   Parakeet TDT 0.6B v3, by NVIDIA ......... CC-BY-4.0
   IS-Net and U2-NetP, by Xuebin Qin et al. . Apache-2.0 (ONNX by rembg, MIT)
-  SlimSAM, by Zigeng Chen et al. ........... Apache-2.0 (ONNX by Xenova)
+  BiRefNet-lite, by Zheng Peng et al. ...... MIT        (ONNX by FFmpeg GUI, from
+                                                       the author's weights)
+                                                       birefnet/LICENSE.txt,
+                                                       birefnet/NOTICE.txt
+  EdgeTAM, by Meta ......................... Apache-2.0 (ONNX by FFmpeg GUI, from
+                                                       Meta's checkpoint; the
+                                                       changes in the notice)
+                                                       edgetam/LICENSE.txt,
+                                                       edgetam/NOTICE.txt
   Opus-MT, by the University of Helsinki ... CC-BY-4.0  (ONNX by Xenova)
   Spleeter 2stems, by Deezer ............... MIT        (ONNX, int8, by sherpa-onnx,
                                                        Apache-2.0)
@@ -184,6 +192,15 @@ own licences:
   Piper voices (VITS), imported by the user  each its own licence (its
                                                        MODEL_CARD); Piper, MIT
                                                        piper/LICENSE.txt
+BiRefNet-lite and EdgeTAM are converted to ONNX by this project
+(scripts/export-birefnet.py, scripts/export-edgetam.py) and served from its
+own GitHub releases, with their licence, the notice of what the conversion
+changed and their provenance next to the files and inside them; their
+licences and notices are kept here too, as they are distributed by the same
+hands as the app. SlimSAM (Apache-2.0, ONNX by Xenova), which corrected
+cut-outs before EdgeTAM, is no longer used: the app deletes it from the phone.
+The record of every model (licences, sources, SHA-256, training data) is
+docs/MODELS.md in the source.
 The app reads their files with its own code (SentencePiece models and
 vocabularies of Opus-MT included, and Spleeter's spectrogram and masks, as
 sherpa-onnx computes them, written again in Kotlin); nothing of theirs is

@@ -335,6 +335,22 @@ selects the layer on the picture too, and the selected row opens its own
 actions (to the front, up, down, to the back, duplicate, delete); TalkBack gets
 the moves as custom actions of the row.
 
+Each row also has a lock and an eye (issue #30), as the SVG editor's layers
+(`SvgLayers.kt`, where both were already): `TextOverlay.hidden` / `locked` and
+`ImageOverlay.hidden` / `locked`, kept in projects, each switch one undo step.
+A hidden layer stays in the project and the list (dimmed, "Hidden") but is left
+out everywhere else: `StackedOverlays` does not draw it (both editors), the
+video editor's preview neither draws nor plays it (`PreviewContainer`: its
+sound, its picture look), the timeline draws it faded, and `RequestMapping`
+leaves it out of the export (`footage`, `toRequestOf`, `lookSpans`). The
+picture itself on its canvas (`PHOTO_LAYER_ID`) has no eye. A locked layer
+cannot be picked nor moved on the picture: touches go through it (its tap and
+transform gestures are not installed), and selected from the list or the
+timeline it shows a small lock cookie where its resize grip would be; its
+panels still change it, and the timeline still moves it in time (the lock is
+for its place on the picture). Each switch is a round button that morphs into
+a cookie, in the tertiary tone, while it is on; TalkBack reads it as a switch.
+
 The drawing (`ImageEdit.strokes`: free strokes, lines, arrows, boxes, ovals,
 eraser) is drawn by `StrokePainter` (`:media`) on the screen and, at export,
 into a transparent PNG (`DrawingRenderer`) that the export lays over the
@@ -800,6 +816,7 @@ the export lives in `:core`, package `preview`, and is unit tested:
 | placed sounds               | a player per sound, kept in sync with the output clock (place, trim, volume, fades, speed, pitch, repeats, equaliser, levelling) |
 | sound effects (final sound, each placed sound) | sample-exact ports of the FFmpeg filters in an `AudioProcessor` of every player; pitch as the players' pitch; the waveform view drawn from the output's outline |
 | stream copy, frame extraction | filters are ignored, exactly as the export ignores them              |
+| denoise (clip and whole)    | not live, as it works over time: a badge on the picture and a mark on the clip say it is there, and the Details panel shows it close up, made by FFmpeg with the export's own filter (see "Denoise") |
 
 Dragging the timeline asks the preview for a frame about 20 times a second.
 Plain exact seeks would each start over before the one before had shown
@@ -820,6 +837,21 @@ prewarming (`processingPlayer(..., prewarm = true)`,
 a second decoder gets the next item ready while the current one plays, and the
 two take turns. The other players (placed sounds, the clip coming in through a
 transition) play one item and do without.
+
+At the end the video starts over, like a player on repeat, but the main
+player does not repeat on its own (`REPEAT_MODE_OFF`): the output clock wraps
+and seeks it to the start at once. On repeat, the prewarming decoder got the
+first clip ready as the "next" item and the two decoders swapped on the
+surface at every loop; after a few loops the picture stayed on the last
+frame with no error (issue #32: the decoder reconnected to the surface,
+showed a few frames and stopped). Stopped at the end of its last item,
+perhaps a little before the clock (whose lengths are the editor's), the
+player is not followed: the clock runs on to the end, the last frame held,
+and wraps. A player that fails
+(`onPlayerError`) would stop on its last frame for good, since seeking does
+nothing until it is prepared again: it is prepared again where the clock is,
+up to three times within ten seconds, and the error goes to Logcat (tag
+`PreviewPlayer`).
 
 The editor's timeline is one `Canvas` drawn again on every frame while the
 preview plays (the playhead stays in the middle and everything moves under
@@ -1078,6 +1110,80 @@ opacity), so that its arm and the flash are never cut sharp. The preview draws t
 its sheet, the frame of the file at the output clock (`AlphaEffectFrames`),
 so it never drifts from the clips; the tiles draw it over their two pictures
 (`TileCompanion`). Below Android 13 the clips cross-fade under the fist.
+
+## Denoise
+
+`ColorSettings.denoise` (0..`DENOISE_MAX`, 10) is FFmpeg's `hqdn3d` with that
+as its spatial luma strength; the other three strengths follow from it as
+FFmpeg works them out. A clip has its own, first in its chain, on untouched
+frames; the whole video has one too, once the clips are joined (see
+`VideoFilters.kt`). `denoiseFilter` in `VideoFilters.kt` writes the filter for
+both, and for the comparison below, so all three run the very same filter.
+
+The live preview does not show it: `hqdn3d` also works over time, each frame
+blended with the ones before it, so no frame alone shows what it does. The
+Details tool (`app/.../DenoisePanels.kt`, a clip's or the whole video's,
+named as the photo editor's, where sharpen, blur, vignette and grain will
+join it) shows it where it matters, close up: a square of the frame under
+the playhead, at the footage's own pixels, before and after, side by side.
+
+`core/preview/DenoiseSample.kt` builds the command, run by
+`media/.../FfmpegDenoiseSampler.kt` (the `DenoiseSampler` port) into the
+cache's `denoise-samples/`, and read and deleted by the panel:
+
+- one decode and one `split`: the two halves come from the same frame and
+  leave as one PNG (`hstack`), so they cannot be two different frames (two
+  outputs of one run, each with `-frames:v 1`, were tried first: one of them
+  did not match the export);
+- over time: `hqdn3d` starts again at each clip's start and forgets older
+  frames quickly, so the run seeks to `WARM_UP_MS` (500 ms) before the frame,
+  or to the clip's start if nearer, and `trim` drops those frames only after
+  the denoise has seen them;
+- across the frame: its smoothing runs along rows and columns and fades within
+  a few pixels, so the square (`SIDE_PX`, 512) is cut out with `MARGIN_PX`
+  (32) more on every side, denoised, and the margin cut away; at the frame's
+  own edge the edge is the frame's, as in the export;
+- HDR footage that the export makes SDR is tone mapped first
+  (`toneMapFilters`), as there; footage kept HDR is denoised as it is and tone
+  mapped only to be shown, each half before `hstack` (which drops the colour
+  tags `zscale` reads).
+
+Checked with FFmpeg 6.1 on a noisy test video: the "after" half of a clip's
+denoise matched, pixel for pixel, the same square of a run over the whole
+video. The whole video's denoise is compared on the clip's own pixels, while
+the export runs it on the joined (and sized) video, so it is close rather
+than exact; the panel says so.
+
+The panel, in the PICTURE family's tone: a connected button group of levels
+(off, light 2, medium 4, strong 7) and a slider for the values in between
+(tenths, as the command writes them), a warning from 6 on (detail goes too).
+The comparison sits in a nine-sided cookie that swells into a soft burst while
+FFmpeg works and settles back on a spring with the new comparison, which a
+divider splits: dragged or tapped, read out by TalkBack as a value, it sweeps
+from the right to the middle the first time. Under it, the whole frame, a
+frame on the part compared that springs to wherever it is tapped, or is
+dragged after a long press, so that a plain swipe still scrolls the panel
+(`DenoiseSample.shownArea` and `focusFor`, the same math as the command). It
+asks FFmpeg again 350 ms after the strength, the part compared or the frame
+stop changing, and only while the playhead is still. Undo keeps the denoise
+apart from the colours (its own step key, `videoDenoise`).
+
+Since the preview does not show it, two signs say where it runs:
+
+- on the picture, among the preview's status badges (`StatusBadges` in
+  `EditorPreview.kt`), `DenoiseBadge`: a 24 dp cookie of the same dark glass
+  with the grain in it, while the clip under the playhead (or the whole
+  video) has a denoise and filters run (not with stream copy or frames
+  taken out). It springs in from a circle, says "Denoise 4.0, in the
+  export" for a moment (both strengths, "2.0 + 3.0", when the clip and the
+  whole video each have one), then folds back to the cookie; it fades while
+  the video plays. A tap opens the Details tool for that clip, or for the
+  whole video when the denoise is its. What it shows is a `derivedStateOf`
+  of the clock: it changes with the clip, not on every frame;
+- on the timeline, the clip's corner carries the same cookie, small (16 dp,
+  in the picture's tone), in place of the dot of clips with effects; the dot
+  moves beside it when the clip has other effects too. A clip narrower than
+  40 dp keeps the dot alone.
 
 ## The TV break
 
@@ -1387,6 +1493,7 @@ later ask for the notification permission at the first export.
 | clip operations (split, move, trim...)      | `core/timeline/Timeline.kt`                          |
 | the cover of an audio file                  | `core/command/CoverArt.kt`, `media/.../AndroidCoverArtist.kt`, `AudioCoverContent` in `app/.../AudioPanels.kt` |
 | background playback, media notification     | `app/.../playback/`                                  |
+| the denoise and its comparison              | `denoiseFilter` in `core/command/VideoFilters.kt`, `core/preview/DenoiseSample.kt`, `media/.../FfmpegDenoiseSampler.kt`, `app/.../DenoisePanels.kt` |
 | the colour key (green screen)               | `core/command/KeyFilters.kt`, `core/preview/ColorKeying.kt`, `app/.../preview/KeyEffect.kt`, `app/.../KeyPanels.kt` |
 | the export notification (Live Update)       | `app/.../export/`                                    |
 | sound placement, trim, cut, rows            | `core/timeline/SoundSpan.kt`, `core/preview/OutputClock.kt` |
@@ -1412,7 +1519,7 @@ Adding a setting end to end: field in `ConversionSettings` -> setter in
 `./gradlew :core:test` runs on a plain JVM (no emulator). It covers command
 generation for every mode, command-line quoting, the manual command resolver, the command studio (help parsing, suggestions, checker, recipes),
 output naming, duration math, progress parsing, the timeline operations, the
-preview math, subtitle re-timing, the project files (`ProjectJsonTest`: every
+preview math (with the denoise comparison's command, `DenoiseSampleTest`), subtitle re-timing, the project files (`ProjectJsonTest`: every
 field of every model, filled with random values, must come back from the
 JSON text) and the whole engine workflow with fake ports.
 
@@ -1423,14 +1530,16 @@ Nothing is kept in the cache longer than needed:
 - sources are copied into `cache/staging/<session>` for each conversion and the
   directory is deleted when the run ends, whatever the outcome
   (`CacheSourceStager` + `ConversionEngine`);
+- the denoise panel's comparisons go to `denoise-samples/` in the cache and are
+  deleted as soon as they are read (or when FFmpeg fails or is cancelled);
 - camera recordings go to `recordings/`, and stills (pictures, freeze frames)
   and covers of audio files to `stills/` in the cache (`CacheJanitor`); they are deleted as soon as their
   project is closed: another file is opened, the recording is cancelled, or the
   app is left for good (`ConversionViewModel`). Files only the undo history still
   refers to go with the project too;
 - at start-up `FfmpegGuiApp` sweeps what a killed process or an older version
-  left behind (orphaned working copies, old recordings, the time-stamped copies
-  earlier versions wrote straight into the cache).
+  left behind (orphaned working copies, old recordings, denoise comparisons, the
+  time-stamped copies earlier versions wrote straight into the cache).
 
 Exported files are results, not cache: they stay in the app's files directory
 (`AppOutputDirectory`) until the user removes them. Recent projects are not
@@ -1761,7 +1870,7 @@ pinned; LaMa's is published without a hash, so `FileCheck` takes an empty
 pin as "there" and the card shows what was found.
 
 **Choosing what goes** (`RefineMaskDialog`, `MaskKind.ERASE`). The cut-out's
-dialog with its two brushes: the magic one (SlimSAM) finds the whole of what
+dialog with its two brushes: the magic one (EdgeTAM) finds the whole of what
 is tapped or scribbled on, the precise one takes exactly what it covers;
 painted in raspberry, kept in green. It starts from a blank mask
 (`HdrSources.blankMask`), or from the subject the cut-out model finds.
@@ -1953,7 +2062,35 @@ the one there away (the last one taken away leaves the values of that moment).
 Once something has keyframes the panels show its values at the playhead and a
 change of a value it animates goes into the keyframe there (`keyedEdit`), made if
 there is none; the preview's drags do the same. The selected item's keyframes are
-diamonds on the timeline; a tap on one brings the playhead there. The preview
+diamonds on the timeline; a tap on one brings the playhead there, a drag moves it
+(issue #31; `KeyframeDrag` in `EditorTimeline.kt`, `Keyframes.moved`). A drag is
+picked up within 12 dp of a diamond, on a clip only along the bottom of the track
+(higher up its edges always trim it), on a text, picture or sound on its row; it
+is seen before every other gesture of the timeline once the finger moves, so a
+tap still brings the playhead and a hold still lifts the clip. A keyframe at the
+start or the end sits where the edge is grabbed too: there the edge wins, unless
+the playhead is on the keyframe (drawn filled, within 6 dp). So a drag trims at
+once, and a tap on the keyframe first, which brings the playhead onto it, makes
+the next drag move the keyframe. With the playhead on such a keyframe the edge is
+still grabbed higher up the clip, or a little outside the text, picture or sound
+(past the keyframe's 12 dp, within the edge's 24 dp).
+
+A trim can leave keyframes outside what they belong to (a clip's keyframes are
+on its file's clock, a text's, picture's or sound's from its start). They still
+count: the values head for them, in the preview and in the export. So they stay
+in view where they are, drawn after every clip and item (they may lie over the
+next one): hollow, their outline dashed and paler, tied to the edge they were
+cut off at by a dashed line. A tap brings the playhead onto one and a drag
+brings it back in (`moveBounds` always allows a keyframe its own time, so it
+never jumps when picked up). The keyframe takes its values, easing and curve with it,
+snaps to the playhead, the cuts and the edges as the other drags do, and stays
+inside what it belongs to and between its neighbours, `MIN_GAP_MS` (80 ms) from
+each (`Keyframes.moveBounds`): each keyframe's easing goes on to the next, so the
+animation keeps its order and two keyframes never share a moment. While it moves
+it is drawn larger with its time in a pill (from the start of the clip, text,
+picture or sound), the preview shows the frame there and a tick says when it
+snaps or meets a neighbour; on release it is one undo step and the playhead lands
+on it. The preview
 animates the texts and pictures (composed at their values on the clock), the
 clip's framing (a layer scaled and moved while drawing), its colours and the
 volumes (`ClipLevels.gainAt`, `PreviewSound.volumeAt`).
@@ -1965,19 +2102,77 @@ a colour: the main picture of the picture editor, its stickers, and pictures lai
 over the video (never a video, whose subject moves). Its `mask` is a PNG as large
 as the picture, white, whose alpha is how much of each pixel is the subject.
 
-**The model.** IS-Net (general use) of the DIS project (Apache 2.0), as converted
-to ONNX by rembg (MIT). Like the speech model it is downloaded by the browser
-(the app has no network access) and imported in Settings > Smart features:
-`cutout/CutoutModelStore` copies the one file, hashes it on the way and keeps it
-only when it matches the pinned SHA-256 (`CutoutModel`); it reports with the
-speech model's states, so `SmartSettings` shows both with the same card.
-`cutout/CutoutEngine` runs it through ONNX Runtime's Java API (loaded when
-needed, let go of after two idle minutes); `core/cutout/SubjectModelIo` is the
-input and output as rembg has them (1024 x 1024, divided by the largest value
-and moved by -0.5, channels first; the output stretched to 0..255).
+**The models** (`CutoutModel`, `CutoutVariant`; one chosen in the settings,
+all three can be installed): U2-NetP (fast, 320 x 320) and IS-Net (precise,
+1024 x 1024) of Xuebin Qin et al. (Apache 2.0), as converted to ONNX by rembg
+(MIT); BiRefNet-lite (finest, 1024 x 1024) of Zheng Peng et al. (MIT), as
+converted by this project (below). Like the speech model they are downloaded
+by the browser (the app has no network access) and imported in Settings >
+Smart features: `cutout/CutoutModelStore` copies the one file, hashes it on
+the way and keeps it only when it matches the pinned SHA-256; it reports with
+the speech model's states, so `SmartSettings` shows them with the same card.
+`cutout/CutoutEngine` runs the chosen one through ONNX Runtime's Java API
+(loaded when needed, let go of after two idle minutes; each model says how much
+free memory it needs, and BiRefNet runs without ONNX Runtime's memory arena,
+which keeps its peak near 2.1 GB rather than 2.5). `core/cutout/SubjectModelIo`
+is the input and output as rembg has them (`SubjectNet`: the side, the mean and
+deviation per channel after dividing by the largest value; IS-Net's and
+U2-Net's output stretched to 0..255, BiRefNet's logits through a sigmoid and
+not stretched, so that a picture with no subject stays empty).
 `cutout/SubjectCutter` squeezes the picture (decoded as FFmpeg and the preview
 read it, EXIF turn ignored, at most 4096 pixels), runs the model, stretches the
-mask back to the picture's size and keeps it in `files/cutouts`, one per picture.
+mask back to the picture's size and keeps it in `files/cutouts`, one per picture
+and model.
+
+**Correcting it, and lifting a subject** (`cutout/RefineEngine`,
+`core/cutout/PromptSegmentation`, tested). EdgeTAM (Meta, Apache 2.0), a
+Segment Anything 2 for phones, in two ONNX files: the image encoder (the
+picture stretched to 1024 x 1024 as SAM 2 does, without keeping its
+proportions; / 255, ImageNet mean and deviation), run once per picture, and
+the prompt encoder with the mask decoder (points in the square's pixels, each
+side stretched with the picture; labels 1 in, 0 out), which gives three masks
+of 256 x 256 logits over the whole picture and a score for each.
+`MaskRefiner` takes the mask that agrees with the strokes (`choose`), keeps
+what touches the stroke and brings its edge to the picture's own
+(`GuidedFilter`). `SubjectLifter`, behind the photo editor's long press
+(`LiftSubject.kt`, only on the picture itself, not on a canvas, nor while
+cropping or drawing): the picture made again at 2048 pixels with the same look
+(`PictureRenderer`), one point, `chooseForTap` (of the masks holding the point,
+the best scored that is not nearly the whole picture), the piece under the
+finger, the guided filter, then that piece alone on a transparent background,
+cut to its box, as a PNG in `files/lifted/` (older than 14 days: deleted; a
+saved project keeps its own copy). `addPlacedOverlay` lays it as a sticker
+exactly where it was (an overlay's x and y are shares of the free space around
+it), one step of undo; it rises off the picture (a spring, a halo of its
+outline, sparks) and settles.
+
+**The project's own ONNX files** (docs/MODELS.md has the whole record).
+EdgeTAM is published by Meta for PyTorch only, and BiRefNet-lite's own ONNX
+needs more than 5.7 GB at 1024 x 1024 (its deformable convolutions written as
+gathers). `scripts/export-edgetam.py` and `scripts/export-birefnet.py` convert
+them from exactly what `scripts/edgetam-onnx.lock` and
+`scripts/birefnet-onnx.lock` pin (upstream commit, weights and licence, each
+by SHA-256), with the tools of `scripts/model-export-requirements.txt`
+(`--require-hashes`): nothing trained or changed, constant folding off (the
+same bytes on every computer), BiRefNet's deformable convolutions as ONNX's
+`DeformConv` (opset 19). Each run checks the files against PyTorch (random
+inputs and real photos) and writes, next to them, the upstream `LICENSE`, the
+`NOTICE` of the changes (Apache 2.0 section 4b) and their `PROVENANCE`; the
+licence and the notice also go inside each file (`doc_string`, metadata).
+`.github/workflows/models-onnx.yml` builds them twice (two runner images, the
+second on two cores) and publishes only byte-identical files, as the
+pre-releases named by the locks' `release_tag`; the app downloads them from
+there. `scripts/check-model-pins.py` (`model-pins.yml` on every push, and
+before every release with `--online`) checks that the Kotlin pins, the locks,
+the licences and notices bundled in `assets/licenses/`, the release files and
+docs/MODELS.md all agree.
+
+**Retired models** (`cutout/RetiredModels`). A model the app no longer uses
+(SlimSAM, before EdgeTAM) is deleted at start when it is still on the phone,
+from its folder and its settings; what was deleted waits in `retired_models`
+until `RetiredModelsDialog` has said so once (which model, what replaced it,
+the space freed, a way to set up the new one). The list only grows; the pin
+check fails if a retired folder is ever one in use.
 
 ONNX Runtime comes twice, inside the sherpa-onnx AAR (1.28.2) and with its Java
 API (1.28.0): the build keeps one `libonnxruntime.so` (`pickFirsts`), which both
@@ -2228,8 +2423,9 @@ Next steps, which have to move together:
   needs them to share codec and resolution (concat demuxer).
 - The preview switches clips through the player's playlist, so a cut can show
   a short pause that the exported file does not have.
-- Stabilization, denoise, and the video's sharpen, blur, vignette and film
-  grain are implemented and tested in `:core` and have view model setters,
-  but the video editor has no controls for them yet (the photo editor has its
+- Stabilization, and the video's sharpen, blur, vignette and film grain are
+  implemented and tested in `:core` and have view model setters, but the
+  video editor has no controls for them yet (the denoise has its own tool, see
+  "Denoise") (the photo editor has its
   own sharpen, blur, vignette and grain, see "Image files"; splitting and tags
   have their panels, see "Audio files").

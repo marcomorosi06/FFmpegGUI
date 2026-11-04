@@ -2,6 +2,10 @@ name: Reproducible APK
 
 # For every v* tag:
 #   0. test: the unit tests of :core must pass, or nothing else runs;
+#      models: alongside, scripts/check-model-pins.py --online: the AI model
+#      files the app pins agree with their locks, licences and docs/MODELS.md,
+#      and the project's own conversions are published (models-onnx.yml), so
+#      that no release points its users at a download that is not there;
 #   1. build: the unsigned release APK, in the environment IzzyOnDroid's recipes
 #      provision;
 #   2. izzyondroid: IzzyOnDroid's own builder (rbtlog) rebuilds the tag from the
@@ -97,9 +101,23 @@ jobs:
       - name: Run the tests of :core
         run: ./gradlew :core:test --no-build-cache --no-configuration-cache --no-daemon
 
+  models:
+    name: Check the AI model pins and their releases
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+
+      - name: Check the pins, the licences, the record and the releases
+        run: python3 -I scripts/check-model-pins.py --online
+
   build:
     name: Build unsigned release APK
-    needs: test
+    needs: [test, models]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     # The image and JDK of IzzyOnDroid's recipe (provisioning in the recipe).

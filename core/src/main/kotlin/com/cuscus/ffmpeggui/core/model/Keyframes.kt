@@ -267,6 +267,41 @@ data class Keyframes(val frames: List<Keyframe> = emptyList()) {
         return Keyframes(frames.map { if (it === existing) it.copy(easing = easing, curve = curve ?: it.curve) else it })
     }
 
+    /**
+     * Where the keyframe at [fromMs] (within [toleranceMs]) may be moved to: inside
+     * [within] (what it belongs to: a clip's footage, a text's span...) and between
+     * the keyframes either side of it, at least [MIN_GAP_MS] from each. It does not
+     * pass them: each keyframe's easing goes on to the next, so the animation keeps
+     * its order, and two keyframes never share a moment. Null when there is no
+     * keyframe at [fromMs]; just its own time when it has no room to move. Its
+     * own time is always allowed, even when it lies outside [within] or nearer
+     * a neighbour than the gap.
+     */
+    fun moveBounds(fromMs: Long, within: LongRange, toleranceMs: Long = TOLERANCE_MS): LongRange? {
+        val moving = at(fromMs, toleranceMs) ?: return null
+        val others = frames.filter { it !== moving }
+        val before = others.filter { it.atMs <= moving.atMs }.maxOfOrNull { it.atMs }
+        val after = others.filter { it.atMs > moving.atMs }.minOfOrNull { it.atMs }
+        // Where it already is always stays allowed: keyframes set closer than the gap (with
+        // the playhead) do not jump apart when one is picked up.
+        val low = minOf(moving.atMs, maxOf(within.first, before?.let { it + MIN_GAP_MS } ?: Long.MIN_VALUE))
+        val high = maxOf(moving.atMs, minOf(within.last, after?.let { it - MIN_GAP_MS } ?: Long.MAX_VALUE))
+        return low..high
+    }
+
+    /**
+     * With the keyframe at [fromMs] moved to [toMs], as far as [moveBounds] allows:
+     * its values, easing and curve go with it. Unchanged when there is no keyframe
+     * at [fromMs].
+     */
+    fun moved(fromMs: Long, toMs: Long, within: LongRange, toleranceMs: Long = TOLERANCE_MS): Keyframes {
+        val moving = at(fromMs, toleranceMs) ?: return this
+        val bounds = moveBounds(fromMs, within, toleranceMs) ?: return this
+        val atMs = toMs.coerceIn(bounds.first, bounds.last)
+        if (atMs == moving.atMs) return this
+        return Keyframes(frames.map { if (it === moving) it.copy(atMs = atMs) else it }.sortedBy { it.atMs })
+    }
+
     /** Every time moved by [byMs] (a text, picture or sound cut at its start). */
     fun shifted(byMs: Long): Keyframes = if (byMs == 0L) this else Keyframes(frames.map { it.copy(atMs = it.atMs + byMs) })
 
@@ -285,6 +320,12 @@ data class Keyframes(val frames: List<Keyframe> = emptyList()) {
 
         /** How close to a keyframe the playhead counts as on it (about a frame). */
         const val TOLERANCE_MS = 40L
+
+        /**
+         * How close a moved keyframe may come to its neighbours: more than
+         * [TOLERANCE_MS] either way, so that the playhead is never on two at once.
+         */
+        const val MIN_GAP_MS = 2 * TOLERANCE_MS
 
         private const val EPSILON = 1e-4f
 

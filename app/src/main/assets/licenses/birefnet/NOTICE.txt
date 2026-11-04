@@ -1,0 +1,22 @@
+BiRefNet-lite (general use), ONNX file of FFmpeg GUI
+https://github.com/marcomorosi06/FFmpegGUI
+
+birefnet-lite-general.onnx is BiRefNet by Zheng Peng et al.
+(https://github.com/ZhengPeng7/BiRefNet, commit f7079632d681ecf12161fcea8905682934e59e51),
+Copyright (c) 2024 ZhengPeng, under the MIT License: see LICENSE, next to it.
+It must go together with that LICENSE wherever it is copied.
+
+What was done to it:
+- The author's weights, BiRefNet-general-bb_swin_v1_tiny-epoch_232.pth
+  (release v1 of the repository, SHA-256 6a1e050c6ec2697e5ed268455df544782b023acf8643ab771250979094875ab1),
+  were loaded as they are into the author's code (backbone Swin-T, picked in
+  config.py) and converted to ONNX, opset 19, by
+  scripts/export-birefnet.py of FFmpeg GUI.
+- Only the last, finest prediction of the model is kept as the output.
+- The deformable convolutions are written as ONNX's own DeformConv.
+- No weight was trained, fine-tuned, pruned or quantised.
+
+The author has not reviewed or endorsed this file. It comes with no warranty
+(see LICENSE). The weights were trained by the author on public datasets
+(listed in the repository's README) that have terms of their own; see
+docs/MODELS.md of FFmpeg GUI.

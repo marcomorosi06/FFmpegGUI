@@ -29,7 +29,14 @@
 # script changes the way it picks its sources, this one stops instead of
 # packing an incomplete archive: update both together.
 #
-# Usage: scripts/package-sources.sh OUTPUT.tar.xz
+# With --ffmpeg-runtime it packs only what the FFmpeg runtime (the AAR that
+# .github/workflows/ffmpeg-aar.yml publishes on a release of its own) is built
+# from: ffmpeg-gui/ (with the build script, the lock and the licences),
+# ffmpeg-kit-next/ and ffmpeg-kit-next-sources/, without sherpa-onnx. That
+# archive goes next to the AAR on its release, for the same reason: the AAR is
+# object code under the GPL-3.0 (FFmpeg with x264, x265, Xvid and vid.stab).
+#
+# Usage: scripts/package-sources.sh [--ffmpeg-runtime] OUTPUT.tar.xz
 # Needs bash, git, curl, tar, xz and sha256sum. Reads nothing outside the
 # repository and writes nothing but OUTPUT (and a temporary folder it deletes).
 
@@ -52,7 +59,12 @@ info() {
     echo "==> $*"
 }
 
-[[ $# -eq 1 ]] || die "usage: scripts/package-sources.sh OUTPUT.tar.xz"
+RUNTIME_ONLY=false
+if [[ "${1:-}" == "--ffmpeg-runtime" ]]; then
+    RUNTIME_ONLY=true
+    shift
+fi
+[[ $# -eq 1 ]] || die "usage: scripts/package-sources.sh [--ffmpeg-runtime] OUTPUT.tar.xz"
 OUT="$1"
 case "$OUT" in
     /*) ;;
@@ -174,6 +186,8 @@ done
 
 # --- sherpa-onnx ------------------------------------------------------------------
 
+# Not in the FFmpeg runtime: only in the APK's archive.
+if [[ "$RUNTIME_ONLY" == false ]]; then
 SHERPA_VERSION="$(sed -n 's/^VERSION="\([^"]*\)"$/\1/p' "$SHERPA_SCRIPT")"
 [[ -n "$SHERPA_VERSION" ]] || die "no VERSION in scripts/fetch-sherpa-onnx.sh"
 SHERPA_URL="https://github.com/k2-fsa/sherpa-onnx"
@@ -211,9 +225,41 @@ read -r url sha256 < <(tar -xzOf "$kaldi_decoder_archive" --wildcards '*/cmake/k
 info "Downloading kaldifst"
 add_archive "kaldifst-$(basename "$url")" "$url" sherpa-onnx-sources "$sha256"
 entry "sherpa-onnx-sources/kaldifst-$(basename "$url")" "$url" "kaldi-decoder cmake/kaldifst.cmake" "sha256 $sha256"
+fi
 
 # --- SOURCES.txt and the archive ----------------------------------------------------
 
+if [[ "$RUNTIME_ONLY" == true ]]; then
+{
+    cat <<EOF
+FFmpeg runtime of FFmpeg GUI ($APP_TAG) - complete source of the AAR
+=====================================================================
+
+This archive is the Corresponding Source of the FFmpeg runtime
+(ffmpeg-kit-next-*.aar) published next to it, built at FFmpeg GUI commit
+$APP_COMMIT. The AAR holds FFmpeg built with GPL libraries (x264, x265,
+Xvid, vid.stab): as a whole it is distributed under the GNU General Public
+License, version 3 (ffmpeg-gui/app/src/main/assets/licenses/
+ffmpeg-libraries/ffmpeg-kit-next-GPL-3.0.txt). Every component keeps its own
+licence: ffmpeg-gui/app/src/main/assets/licenses/README.txt, section 1, and
+the licence files inside each folder below.
+
+HOW THE AAR IS BUILT
+- ffmpeg-gui/scripts/build-ffmpeg-kit-next.sh (the scripts used to control
+  compilation, with ffmpeg-gui/scripts/ffmpeg-kit-next.lock and
+  ffmpeg-kit-next.verification-metadata.xml), with these options:
+  ${BUILD_OPTIONS[*]}
+  It runs in the Nix toolchain it pins and fetches each source itself, at the
+  commits below. To build from this archive instead, put each folder of
+  ffmpeg-kit-next-sources/ in ffmpeg-kit-next/src/ (config in
+  ffmpeg-kit-next/.tmp/source/config). See ffmpeg-gui/docs/BUILDING.md,
+  "Building FFmpeg yourself".
+
+SOURCES
+EOF
+    cat "$ENTRIES"
+} >"$STAGE/SOURCES.txt"
+else
 {
     cat <<EOF
 FFmpeg GUI $APP_TAG - complete source of the APK
@@ -257,6 +303,7 @@ SOURCES
 EOF
     cat "$ENTRIES"
 } >"$STAGE/SOURCES.txt"
+fi
 
 info "Writing $OUT"
 # Same order, owners and dates on every run: the archive depends only on its sources.

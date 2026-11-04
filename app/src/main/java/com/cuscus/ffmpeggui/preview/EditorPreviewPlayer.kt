@@ -4,11 +4,13 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
@@ -146,7 +148,11 @@ class EditorPreviewPlayer(context: Context) {
 
     /** Bind this to the surface that shows the picture. */
     val videoPlayer: ExoPlayer = processingPlayer(context, AudioEffectsProcessor({ liveAudio.stages }, liveAudio.meter), prewarm = true).apply {
-        repeatMode = Player.REPEAT_MODE_ALL
+        // It does not repeat on its own: the output clock starts the video over (see drive).
+        // On repeat, the prewarmed second decoder got the first clip ready as the "next" one
+        // and the two decoders swapped on the surface at every loop; after a few loops the
+        // picture stayed on the last frame, with no error (issue #32).
+        repeatMode = Player.REPEAT_MODE_OFF
     }
 
     /** Plays the clip coming in through a transition; bind it to a second surface. */
@@ -173,6 +179,13 @@ class EditorPreviewPlayer(context: Context) {
             ) {
                 interrupt()
             }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            // A failed player stops on its last frame and stays there (STATE_IDLE): seeking it
+            // does nothing until it is prepared again. It is, a few times, where the clock is.
+            Log.w(TAG, "The preview's player failed (${error.errorCodeName})", error)
+            recover()
         }
 
         override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) {
@@ -517,7 +530,11 @@ class EditorPreviewPlayer(context: Context) {
         // A player still loading holds the clock, so that it does not run ahead of the picture.
         val loading = !stepping && videoPlayer.playbackState == Player.STATE_BUFFERING
         if (!loading) outputClockMs += elapsedMs
-        if (outputClockMs >= timeline.outputDurationMs) outputClockMs = 0.0 // loop, like a player
+        // The end: the video starts over, like a player on repeat. The player does not repeat
+        // on its own: the clock wraps and brings it to the start at once (not after
+        // RESEEK_NANOS, during which it sat on the last frame).
+        val wrapped = outputClockMs >= timeline.outputDurationMs
+        if (wrapped) outputClockMs = 0.0
         val targetMs = timeline.mediaMsForOutput(outputClockMs.toLong())
         val target = timeline.locate(targetMs)
         // Along a speed curve the rate changes all the time: it is handed over in small steps.
@@ -556,6 +573,16 @@ class EditorPreviewPlayer(context: Context) {
         // again: the picture would never move and the sound would start over and over.
         val drift = playerOutputMs - outputClockMs
         val behind = drift < 0 && -drift <= MAX_LAG_MS && videoPlayer.playbackState == Player.STATE_READY
+        if (wrapped && abs(drift) > DRIFT_MS) {
+            lastSeekNanos = now
+            seekPlayer(target)
+            return targetMs
+        }
+        // At the end of the last clip the player has stopped (it does not repeat), maybe a
+        // little before the clock, whose lengths come from the editor: the clock runs on to
+        // the end on its own, the last frame held, and then wraps. Following the stopped
+        // player would hold the clock there for good.
+        if (videoPlayer.playbackState == Player.STATE_ENDED) return targetMs
         return if (abs(drift) <= DRIFT_MS || behind) {
             outputClockMs = playerOutputMs
             playerMs
@@ -769,6 +796,32 @@ class EditorPreviewPlayer(context: Context) {
         outputClockMs = timeline.outputMs(timeline.mediaMs(if (point.offsetMs < head) point.copy(offsetMs = head) else point)).toDouble()
     }
 
+    /** When the player last failed and was prepared again, and how many times in a row. */
+    private var lastRecoveryNanos = 0L
+    private var recoveries = 0
+
+    /**
+     * Prepares the main player again after a failure and puts it back where the
+     * preview is. At most [MAX_RECOVERIES] times within [RECOVERY_WINDOW_NANOS]: a file
+     * that fails at once every time is left alone rather than tried forever.
+     */
+    private fun recover() {
+        if (clips.isEmpty()) return
+        val now = System.nanoTime()
+        if (now - lastRecoveryNanos > RECOVERY_WINDOW_NANOS) recoveries = 0
+        if (recoveries >= MAX_RECOVERIES) {
+            Log.w(TAG, "The preview's player keeps failing: it is left stopped")
+            return
+        }
+        recoveries++
+        lastRecoveryNanos = now
+        val mediaMs = currentMediaMs()
+        videoPlayer.prepare()
+        seekToMedia(mediaMs)
+        lastSeekNanos = now
+        if (!playing) videoPlayer.playWhenReady = false
+    }
+
     /** The system paused the player: the preview pauses where it is and the editor is told. */
     private fun interrupt() {
         if (!playing) return
@@ -786,6 +839,14 @@ class EditorPreviewPlayer(context: Context) {
     }
 
     private companion object {
+        const val TAG = "PreviewPlayer"
+
+        /** How many times in a row a failed player is prepared again (see recover). */
+        const val MAX_RECOVERIES = 3
+
+        /** Failures further apart than this are not in a row. */
+        const val RECOVERY_WINDOW_NANOS = 10_000_000_000L
+
         /** Shortest clip the player is asked to show when the trim handles cross. */
         const val MIN_CLIP_MS = 500L
 

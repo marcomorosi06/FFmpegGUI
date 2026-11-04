@@ -50,6 +50,11 @@ import androidx.compose.material.icons.rounded.FlipToFront
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.LockOpen
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material3.Button
@@ -126,6 +131,11 @@ import kotlin.math.abs
  * the back, duplicate, delete). The rows are a Material 3 Expressive grouped
  * list: they touch, very round at the group's ends; the selected and the
  * dragged one round off whole and stand out.
+ *
+ * Each row has a lock and an eye (issue #30), as the SVG editor's layers: a
+ * hidden layer is kept but neither shown nor exported, a locked one cannot be
+ * picked nor moved on the picture (it is chosen here). Each toggle is a round
+ * button that morphs into a cookie while it is on.
  */
 
 /** One text or sticker of the picture, as the list shows it. */
@@ -136,7 +146,13 @@ internal class LayerEntry(
     val text: TextOverlay?,
     /** The picture laid over, for a sticker. */
     val sticker: ImageOverlay?,
-)
+) {
+    val hidden: Boolean get() = text?.hidden ?: sticker?.hidden ?: false
+    val locked: Boolean get() = text?.locked ?: sticker?.locked ?: false
+
+    /** The picture itself on its canvas cannot be hidden: without it there is nothing to edit. */
+    val hideable: Boolean get() = sticker?.isPhoto != true
+}
 
 /** The texts and stickers of the picture, the one in front first (the reverse of stackOrder). */
 internal fun layerEntries(
@@ -180,6 +196,10 @@ internal fun ImageLayersPanel(
     onArrange: (String, LayerMove) -> Unit,
     onDuplicate: (String) -> Unit,
     onDelete: (String) -> Unit,
+    /** The eye of a row: the layer hidden or shown again. */
+    onToggleHidden: (String) -> Unit,
+    /** The lock of a row: the layer locked on the picture or freed. */
+    onToggleLocked: (String) -> Unit,
     onAddText: () -> Unit,
     onAddSticker: () -> Unit,
     onAddShape: () -> Unit,
@@ -212,6 +232,8 @@ internal fun ImageLayersPanel(
                 onArrange = onArrange,
                 onDuplicate = onDuplicate,
                 onDelete = onDelete,
+                onToggleHidden = onToggleHidden,
+                onToggleLocked = onToggleLocked,
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -360,6 +382,8 @@ private fun LayerList(
     onArrange: (String, LayerMove) -> Unit,
     onDuplicate: (String) -> Unit,
     onDelete: (String) -> Unit,
+    onToggleHidden: (String) -> Unit,
+    onToggleLocked: (String) -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -471,6 +495,8 @@ private fun LayerList(
                     onArrange = { move -> onArrange(entry.id, move) },
                     onDuplicate = { onDuplicate(entry.id) },
                     onDelete = { onDelete(entry.id) },
+                    onToggleHidden = { onToggleHidden(entry.id) },
+                    onToggleLocked = { onToggleLocked(entry.id) },
                 )
             }
         }
@@ -530,11 +556,15 @@ private fun LayerRow(
     onArrange: (LayerMove) -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
+    onToggleHidden: () -> Unit,
+    onToggleLocked: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
     val motion = MaterialTheme.motionScheme
     val colors = MaterialTheme.colorScheme
     val density = LocalDensity.current
+    // A hidden layer's row is dimmed (its toggles stay clear, to show it again).
+    val dim by animateFloatAsState(if (entry.hidden) HIDDEN_ALPHA else 1f, motion.defaultEffectsSpec(), label = "layerHidden")
 
     // The grouped list's corners: very round at its ends, barely between; the chosen
     // and the lifted row round off whole, springing there.
@@ -572,7 +602,11 @@ private fun LayerRow(
             else -> R.string.layers_kind_sticker
         },
     )
-    val place = stringResource(R.string.layers_place, kind, position, count)
+    val placeOnly = stringResource(R.string.layers_place, kind, position, count)
+    // What it is, after where it is: hidden, locked, or both.
+    val hiddenWord = stringResource(R.string.layers_hidden)
+    val lockedWord = stringResource(R.string.layers_locked)
+    val place = listOfNotNull(placeOnly, hiddenWord.takeIf { entry.hidden }, lockedWord.takeIf { entry.locked }).joinToString(" \u00B7 ")
     val selectedState = stringResource(R.string.layers_selected)
     val dragLabel = stringResource(R.string.layers_drag, entry.name)
     val upLabel = stringResource(R.string.overlay_layer_forward)
@@ -627,9 +661,11 @@ private fun LayerRow(
                 }
                 .padding(start = 10.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         ) {
-            LayerBadge(entry = entry, chosen = whole, interaction = interaction)
+            Box(modifier = Modifier.graphicsLayer { alpha = dim }) {
+                LayerBadge(entry = entry, chosen = whole, interaction = interaction)
+            }
             Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f).graphicsLayer { alpha = dim }) {
                 Text(
                     text = entry.name,
                     style = MaterialTheme.typography.titleMediumEmphasized,
@@ -653,6 +689,27 @@ private fun LayerRow(
                         EndPill(front = atFront)
                     }
                 }
+            }
+            // Its lock and its eye, as in the SVG editor's layers.
+            LayerToggle(
+                on = entry.locked,
+                onIcon = Icons.Rounded.Lock,
+                offIcon = Icons.Rounded.LockOpen,
+                label = stringResource(if (entry.locked) R.string.layers_unlock else R.string.layers_lock),
+                enabled = enabled,
+                content = onContainer,
+                onToggle = onToggleLocked,
+            )
+            if (entry.hideable) {
+                LayerToggle(
+                    on = entry.hidden,
+                    onIcon = Icons.Rounded.VisibilityOff,
+                    offIcon = Icons.Rounded.Visibility,
+                    label = stringResource(if (entry.hidden) R.string.layers_show else R.string.layers_hide),
+                    enabled = enabled,
+                    content = onContainer,
+                    onToggle = onToggleHidden,
+                )
             }
             // The handle: a drag here moves the layer through the stack.
             Box(
@@ -709,6 +766,65 @@ private fun LayerRow(
         }
     }
 }
+
+/**
+ * A layer's lock or eye: a round button that morphs into a cookie, filled with
+ * the tertiary tone, while it is [on] (locked, hidden), and squishes under the
+ * finger. Read out as a switch, named by what a tap does ([label]).
+ */
+@Composable
+private fun LayerToggle(
+    on: Boolean,
+    onIcon: ImageVector,
+    offIcon: ImageVector,
+    label: String,
+    enabled: Boolean,
+    content: Color,
+    onToggle: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val haptic = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(44.dp)
+            .springPress(interaction, pressedScale = 0.85f)
+            .toggleable(
+                value = on,
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                role = Role.Switch,
+            ) {
+                haptic.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+                onToggle()
+            }
+            .semantics { contentDescription = label },
+    ) {
+        MorphingContainer(
+            from = MaterialShapes.Circle,
+            to = MaterialShapes.Cookie4Sided,
+            morphed = on,
+            color = if (on) colors.tertiaryContainer else Color.Transparent,
+            modifier = Modifier.size(36.dp),
+        ) {
+            Icon(
+                imageVector = if (on) onIcon else offIcon,
+                contentDescription = null,
+                tint = when {
+                    on -> colors.onTertiaryContainer
+                    enabled -> content.copy(alpha = 0.6f)
+                    else -> content.copy(alpha = 0.3f)
+                },
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+/** A row of a hidden layer, its badge and its words, dimmed this much. */
+private const val HIDDEN_ALPHA = 0.45f
 
 /** A small pill saying the row is the front or the back of the stack. */
 @Composable

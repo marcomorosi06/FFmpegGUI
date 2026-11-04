@@ -42,4 +42,28 @@ class SubjectModelIoTest {
         assertArrayEquals(intArrayOf(0, 128, 255), SubjectModelIo.mask(floatArrayOf(-2f, 0.5f, 3f)))
         assertArrayEquals(intArrayOf(0, 0), SubjectModelIo.mask(floatArrayOf(1f, 1f)))
     }
+
+    @Test
+    fun `BiRefNet takes the ImageNet statistics on a large picture`() {
+        val side = SubjectNet.BIREFNET.side
+        assertEquals(1024, side)
+        val pixels = IntArray(side * side) { 0xFF000000.toInt() }
+        pixels[0] = 0xFF_FF_80_00.toInt()
+        val input = SubjectModelIo.input(pixels, SubjectNet.BIREFNET)
+        val n = side * side
+        assertEquals(((1.0 - 0.485) / 0.229).toFloat(), input[0], 1e-5f)
+        assertEquals(((128.0 / 255 - 0.456) / 0.224).toFloat(), input[n], 1e-5f)
+        assertEquals(((0.0 - 0.406) / 0.225).toFloat(), input[2 * n], 1e-5f)
+    }
+
+    @Test
+    fun `BiRefNet's logits go through a sigmoid and are not stretched`() {
+        assertArrayEquals(intArrayOf(0, 128, 255), SubjectModelIo.mask(floatArrayOf(-80f, 0f, 80f), SubjectNet.BIREFNET))
+        // Nothing there: faint everywhere, and it stays faint.
+        assertArrayEquals(intArrayOf(0, 1), SubjectModelIo.mask(floatArrayOf(-9f, -5.5f), SubjectNet.BIREFNET))
+        // Overflow at either end is no harm.
+        assertArrayEquals(intArrayOf(0, 255), SubjectModelIo.probabilities(floatArrayOf(-1e30f, 1e30f)))
+        // The others are still stretched.
+        assertArrayEquals(intArrayOf(0, 255), SubjectModelIo.mask(floatArrayOf(-9f, -5.5f), SubjectNet.ISNET))
+    }
 }

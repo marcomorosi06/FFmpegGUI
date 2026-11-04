@@ -111,4 +111,51 @@ class KeyframesTest {
         // Never past its nodes between two of them (monotone).
         for (i in 0..100) assertTrue(curve.at(i / 100.0) in -1e-9..1.0 + 1e-9)
     }
+
+    // -- Moving a keyframe (dragged on the timeline) ------------------------------------
+
+    @Test
+    fun `a moved keyframe takes its values and easing with it`() {
+        val moved = path.moved(3_000, 2_200, 0L..10_000L)
+        assertEquals(listOf(1_000L, 2_200L, 5_000L), moved.frames.map { it.atMs })
+        val frame = moved.frames[1]
+        assertEquals(mapOf(KeyProperty.X to 1f), frame.values)
+        assertEquals(KeyEasing.SMOOTH, frame.easing)
+        // The curve now peaks where the keyframe went.
+        assertEquals(1f, moved.valueAt(KeyProperty.X, 2_200L, 9f), 1e-6f)
+    }
+
+    @Test
+    fun `it stops short of its neighbours, so the order and every moment stay its own`() {
+        val gap = Keyframes.MIN_GAP_MS
+        assertEquals((1_000L + gap)..(5_000L - gap), path.moveBounds(3_000, 0L..10_000L))
+        assertEquals(listOf(1_000L, 5_000L - gap, 5_000L), path.moved(3_000, 9_000, 0L..10_000L).frames.map { it.atMs })
+        assertEquals(listOf(1_000L, 1_000L + gap, 5_000L), path.moved(3_000, 0, 0L..10_000L).frames.map { it.atMs })
+    }
+
+    @Test
+    fun `the first and last stop at the ends of what they belong to`() {
+        assertEquals(listOf(200L, 3_000L, 5_000L), path.moved(1_000, -500, 200L..6_000L).frames.map { it.atMs })
+        assertEquals(listOf(1_000L, 3_000L, 6_000L), path.moved(5_000, 8_000, 200L..6_000L).frames.map { it.atMs })
+    }
+
+    @Test
+    fun `a keyframe is found within the tolerance, and nothing else moves`() {
+        // 3 030 is within a frame of 3 000.
+        assertEquals(listOf(1_000L, 2_500L, 5_000L), path.moved(3_030, 2_500, 0L..10_000L).frames.map { it.atMs })
+        // No keyframe there: unchanged, and no bounds.
+        assertTrue(path.moved(4_000, 2_000, 0L..10_000L) === path)
+        assertNull(path.moveBounds(4_000, 0L..10_000L))
+    }
+
+    @Test
+    fun `with no room to move it stays where it is`() {
+        // Set 50 ms apart with the playhead: closer than the gap on both sides.
+        val tight = Keyframes(listOf(Keyframe(0, mapOf(KeyProperty.X to 0f)), Keyframe(50, mapOf(KeyProperty.X to 1f)), Keyframe(100, mapOf(KeyProperty.X to 0f))))
+        assertEquals(50L..50L, tight.moveBounds(50, 0L..1_000L))
+        assertTrue(tight.moved(50, 90, 0L..1_000L) === tight)
+        // Nearer one neighbour than the gap: it may still move away from it, not jump.
+        val near = Keyframes(listOf(Keyframe(0, mapOf(KeyProperty.X to 0f)), Keyframe(50, mapOf(KeyProperty.X to 1f)), Keyframe(1_000, mapOf(KeyProperty.X to 0f))))
+        assertEquals(50L..920L, near.moveBounds(50, 0L..1_000L))
+    }
 }

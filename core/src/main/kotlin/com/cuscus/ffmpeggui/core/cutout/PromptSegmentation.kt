@@ -1,23 +1,23 @@
 package com.cuscus.ffmpeggui.core.cutout
 
-import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 
 /**
- * What goes into a Segment Anything model and what comes out of it, as the
- * Hugging Face processor prepares it (SlimSAM, converted for transformers.js):
+ * What goes into a Segment Anything 2 model and what comes out of it, as
+ * SAM 2's image predictor prepares it (EdgeTAM, exported to ONNX by
+ * scripts/export-edgetam.py, which writes this same interface):
  *
- *  - the picture, its longer side brought to [SIDE] pixels (the shorter in
- *    proportion), its values divided by 255, moved by [MEAN] and divided by
- *    [DEVIATION] (red, green, blue), channels first, then padded with zeros on
- *    the right and at the bottom to a [SIDE] x [SIDE] square;
- *  - points on the picture, in the pixels of that resized picture, each with a
- *    label: 1 for "this is part of it", 0 for "this is not";
+ *  - the picture stretched to a [SIDE] x [SIDE] square (SAM 2 does not keep
+ *    its proportions, it resizes to the square), its values divided by 255,
+ *    moved by [MEAN] and divided by [DEVIATION] (red, green, blue), channels
+ *    first;
+ *  - points on the picture, in the pixels of that square, each with a label:
+ *    1 for "this is part of it", 0 for "this is not";
  *  - out come three masks of [MASK_SIDE] x [MASK_SIDE] values (logits, the
- *    padded square seen four times smaller; above 0 is in), each with how good
- *    the model thinks it is.
+ *    square seen four times smaller; above 0 is in), each with how good the
+ *    model thinks it is.
  */
 object PromptSegmentation {
 
@@ -36,46 +36,33 @@ object PromptSegmentation {
     /** Label of a point on what is not. */
     const val OUTSIDE = 0L
 
-    /** The size a picture of [width] x [height] is brought to: its longer side [SIDE], as the processor rounds it. */
-    fun resizedSize(width: Int, height: Int): Pair<Int, Int> {
-        require(width > 0 && height > 0) { "Empty picture" }
-        val scale = SIDE.toDouble() / max(width, height)
-        val w = floor(width * scale + 0.5).toInt().coerceIn(1, SIDE)
-        val h = floor(height * scale + 0.5).toInt().coerceIn(1, SIDE)
-        return w to h
-    }
-
     /**
-     * [argb] (0xAARRGGBB, row by row) of the picture already brought to
-     * [width] x [height] (see [resizedSize]) as the model's input: three planes
-     * of [SIDE] x [SIDE], normalised, padded with zeros.
+     * [argb] (0xAARRGGBB, row by row) of the picture already stretched to
+     * [SIDE] x [SIDE] as the model's input: three normalised planes.
      */
-    fun input(argb: IntArray, width: Int, height: Int): FloatArray {
-        require(width in 1..SIDE && height in 1..SIDE) { "Bring the picture to $SIDE pixels first" }
-        require(argb.size == width * height) { "Expected ${width * height} pixels" }
+    fun input(argb: IntArray): FloatArray {
         val plane = SIDE * SIDE
+        require(argb.size == plane) { "Stretch the picture to $SIDE x $SIDE first" }
         val out = FloatArray(3 * plane)
-        for (y in 0 until height) {
-            for (x in 0 until width) {
-                val p = argb[y * width + x]
-                val i = y * SIDE + x
-                out[i] = ((((p shr 16) and 0xFF) / 255f) - MEAN[0]) / DEVIATION[0]
-                out[plane + i] = ((((p shr 8) and 0xFF) / 255f) - MEAN[1]) / DEVIATION[1]
-                out[2 * plane + i] = (((p and 0xFF) / 255f) - MEAN[2]) / DEVIATION[2]
-            }
+        for (i in 0 until plane) {
+            val p = argb[i]
+            out[i] = ((((p shr 16) and 0xFF) / 255f) - MEAN[0]) / DEVIATION[0]
+            out[plane + i] = ((((p shr 8) and 0xFF) / 255f) - MEAN[1]) / DEVIATION[1]
+            out[2 * plane + i] = (((p and 0xFF) / 255f) - MEAN[2]) / DEVIATION[2]
         }
         return out
     }
 
     /**
      * The points [xs], [ys] (in pixels of a picture [width] x [height]) as the
-     * model takes them: x, y pairs in the pixels of the resized picture.
+     * model takes them: x, y pairs in the pixels of the square, each side
+     * stretched on its own as the picture is.
      */
     fun points(xs: FloatArray, ys: FloatArray, width: Int, height: Int): FloatArray {
         require(xs.size == ys.size) { "As many x as y" }
-        val (rw, rh) = resizedSize(width, height)
-        val sx = rw.toFloat() / width
-        val sy = rh.toFloat() / height
+        require(width > 0 && height > 0) { "Empty picture" }
+        val sx = SIDE.toFloat() / width
+        val sy = SIDE.toFloat() / height
         val out = FloatArray(xs.size * 2)
         for (i in xs.indices) {
             out[2 * i] = xs[i] * sx
@@ -87,28 +74,26 @@ object PromptSegmentation {
     /**
      * The logit of mask [index] of [logits] (masks of [MASK_SIDE] x [MASK_SIDE],
      * one after the other) at pixel [x], [y] of a picture of [width] x
-     * [height]: read where the pixel's centre falls once the picture is resized
-     * and padded (the square's top-left part), between the four nearest values.
-     * Above 0, the model counts the pixel in.
+     * [height]: read where the pixel's centre falls on the mask, which covers
+     * the whole picture, between the four nearest values. Above 0, the model
+     * counts the pixel in.
      */
     fun logitAt(logits: FloatArray, index: Int, x: Int, y: Int, width: Int, height: Int): Float {
         val count = MASK_SIDE * MASK_SIDE
         require(logits.size >= (index + 1) * count) { "Missing mask $index" }
-        val (rw, rh) = resizedSize(width, height)
-        return sample(logits, index * count, x, y, rw.toFloat() / width * MASK_SIDE / SIDE, rh.toFloat() / height * MASK_SIDE / SIDE)
+        return sample(logits, index * count, x, y, MASK_SIDE.toFloat() / width, MASK_SIDE.toFloat() / height)
     }
 
     /**
      * Which pixels of a picture of [width] x [height] mask [index] holds (its
      * logit, read as [logitAt] reads it, above 0): the masks' coarse grid
-     * becomes smooth edges, as the processor's own resizing makes them.
+     * becomes smooth edges, as SAM 2's own upscaling makes them.
      */
     fun region(logits: FloatArray, index: Int, width: Int, height: Int): BooleanArray {
         val count = MASK_SIDE * MASK_SIDE
         require(logits.size >= (index + 1) * count) { "Missing mask $index" }
-        val (rw, rh) = resizedSize(width, height)
-        val toMaskX = rw.toFloat() / width * MASK_SIDE / SIDE
-        val toMaskY = rh.toFloat() / height * MASK_SIDE / SIDE
+        val toMaskX = MASK_SIDE.toFloat() / width
+        val toMaskY = MASK_SIDE.toFloat() / height
         val offset = index * count
         val out = BooleanArray(width * height)
         for (y in 0 until height) {
@@ -165,10 +150,36 @@ object PromptSegmentation {
         return Choice(index, agreements[index])
     }
 
+    /**
+     * For a single tap (a subject lifted off the picture): of the masks that
+     * hold the tapped point, the one the model scores best, unless it covers
+     * nearly the whole picture (the background rather than a thing on it), when
+     * the best of the others is taken. Null when no mask holds the point.
+     */
+    fun chooseForTap(logits: FloatArray, scores: FloatArray, count: Int, x: Float, y: Float, width: Int, height: Int): Int? {
+        require(count >= 1 && scores.size >= count) { "A score for each mask" }
+        val px = pixel(x, width)
+        val py = pixel(y, height)
+        val holding = (0 until count).filter { logitAt(logits, it, px, py, width, height) > 0f }
+        if (holding.isEmpty()) return null
+        val plane = MASK_SIDE * MASK_SIDE
+        fun share(index: Int): Float {
+            var inside = 0
+            val offset = index * plane
+            for (i in 0 until plane) if (logits[offset + i] > 0f) inside++
+            return inside.toFloat() / plane
+        }
+        val things = holding.filter { share(it) < MAX_TAP_SHARE }
+        return (things.ifEmpty { holding }).maxBy { scores[it] }
+    }
+
     private fun pixel(v: Float, size: Int): Int = v.toInt().coerceIn(0, size - 1)
 
     /** The share of the points a mask must agree with to be taken (see [choose]). */
     private const val AGREEMENT = 0.8f
+
+    /** A mask covering more of the picture than this is its background, not a thing on it (see [chooseForTap]). */
+    const val MAX_TAP_SHARE = 0.92f
 }
 
 /**

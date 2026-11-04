@@ -54,8 +54,16 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.graphics.shapes.toPath
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.asComposePath
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.material.icons.rounded.Grain
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -66,6 +74,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -210,6 +219,12 @@ fun EditorTimeline(
     onJunction: ((String) -> Unit)? = null,
     /** A text, picture or sound was tapped. */
     onSelectItem: (LaneKind, String) -> Unit,
+    /**
+     * A keyframe of the selected clip, text, picture or sound was dragged from
+     * its time to another (both on its owner's own clock, see Keyframes), as one
+     * change. Null: keyframes cannot be dragged.
+     */
+    onMoveKeyframe: ((KeyframeOwner, Long, Long) -> Unit)? = null,
     /** A sound was moved or one of its edges dragged: its new span, as one change. */
     onEditSound: (String, SoundSpan) -> Unit,
     /**
@@ -368,6 +383,7 @@ fun EditorTimeline(
     val currentOnMoveClip by rememberUpdatedState(onMoveClip)
     val currentSources by rememberUpdatedState(sourcesById)
     val currentOnJunction by rememberUpdatedState(onJunction)
+    val currentOnMoveKeyframe by rememberUpdatedState(onMoveKeyframe)
 
     // While an edge or an item is dragged the view holds still (the preview shows the
     // edge, not the playhead), and it moves by itself while the finger rests near a side.
@@ -552,6 +568,94 @@ fun EditorTimeline(
         return targets
     }
 
+    // A keyframe of what is selected, dragged along it; drawn where the finger takes it, saved on release.
+    var keyframeDrag by remember { mutableStateOf<KeyframeDrag?>(null) }
+    val keyframeGrabPx = with(density) { KEYFRAME_DRAG_GRAB.toPx() }
+    val keyframeBandPx = with(density) { KEYFRAME_BAND.toPx() }
+    val keyframeOnPlayheadPx = with(density) { KEYFRAME_ON_PLAYHEAD.toPx() }
+
+    /**
+     * Where the keyframe of [state] is as the finger has it now, on its owner's
+     * clock; whether it snapped (to the playhead, a cut, an edge), and whether it
+     * is held at the edge of where it may go (see Keyframes.moveBounds).
+     */
+    fun draggedKeyframe(state: KeyframeDrag): Triple<Long, Boolean, Boolean> {
+        val at = state.timelineFrom + state.dxPx.floatValue / pxPerMs
+        val target = SoundSpan.snap(at, state.targets, (snapPx / pxPerMs).toDouble())
+        val wanted = state.toOwnClock(target ?: at)
+        val ms = wanted.coerceIn(state.bounds.first, state.bounds.last)
+        return Triple(ms, target != null && ms == wanted, ms != wanted)
+    }
+
+    /** True when the playhead is on the keyframe at [timelineMs]: it is drawn filled. */
+    fun onPlayhead(timelineMs: Double): Boolean = abs(timelineMs - position()) * pxPerMs < keyframeOnPlayheadPx
+
+    /**
+     * The keyframe of the selected clip, text, picture or sound under [at] (a
+     * canvas [width] wide), ready to be dragged; null when there is none. On the
+     * clip, only along the bottom of the track, where the diamonds are (higher up
+     * its edges always trim it); on a text, picture or sound, on its row.
+     *
+     * Where an edge can be grabbed too (a keyframe at the start or the end), the
+     * edge wins, unless the playhead is on the keyframe: a tap on it first (which
+     * brings the playhead there and fills it) picks the keyframe instead. So both
+     * stay at hand: drag at once to trim, tap then drag to move the keyframe.
+     */
+    fun keyframeAt(at: Offset, width: Float): KeyframeDrag? {
+        val index = currentSelectedClip?.let { currentTimeline.indexOf(it) } ?: -1
+        if (index >= 0) {
+            val bottom = trackTop + trackHeight
+            if (at.y < bottom - keyframeBandPx || at.y > bottom + handleGrabPx / 3f) return null
+            val clip = currentTimeline.clips[index]
+            // A clip still waiting for its length has no room for them to move in.
+            if (clip.endMs == null) return null
+            val start = currentStarts.getOrNull(index) ?: return null
+            fun timelineOf(ms: Long): Double = (start + ms - clip.startMs).toDouble()
+            // Those left outside the clip by a trim too: dragged back in, they count again.
+            val frame = clip.effects.keyframes.frames
+                .minByOrNull { abs(xOf(timelineOf(it.atMs), width) - at.x) }
+                ?: return null
+            if (abs(xOf(timelineOf(frame.atMs), width) - at.x) > keyframeGrabPx) return null
+            // Where the trim handler would take it (see the selected clip's edges above).
+            val onEdge = abs(at.x - xOf(start.toDouble(), width)) <= handleGrabPx ||
+                abs(at.x - xOf((start + clip.lengthMs).toDouble(), width)) <= handleGrabPx
+            if (onEdge && !onPlayhead(timelineOf(frame.atMs))) return null
+            val bounds = clip.effects.keyframes.moveBounds(frame.atMs, clip.startMs..(clip.startMs + clip.lengthMs), toleranceMs = 0L)
+                ?: return null
+            return KeyframeDrag(
+                owner = KeyframeOwner.OfClip(clip.id),
+                fromMs = frame.atMs,
+                bounds = bounds,
+                timelineFrom = timelineOf(frame.atMs),
+                targets = snapTargets(""),
+                toOwnClock = { timelineMs -> clip.startMs + Math.round(timelineMs - start) },
+                toTimeline = ::timelineOf,
+            )
+        }
+        val item = currentItems.firstOrNull { it.id == currentSelectedItem } ?: return null
+        val top = lanesTop - laneScroll + currentLanes.top(item.kind, item.row)
+        if (at.y < max(top, lanesTop) || at.y > top + currentLanes.height(item.kind)) return null
+        val (left, right) = edges(item.span)
+        val span = item.span
+        val clock = currentClock
+        fun timelineOf(ms: Long): Double = clock.timelineMs(span.startMs + ms)
+        val frame = item.keyframes.frames.minByOrNull { abs(xOf(timelineOf(it.atMs), width) - at.x) } ?: return null
+        if (abs(xOf(timelineOf(frame.atMs), width) - at.x) > keyframeGrabPx) return null
+        // Where the item handler would trim it (its edges, as wide as there).
+        val onEdge = abs(at.x - xOf(left, width)) <= handleGrabPx || abs(at.x - xOf(right, width)) <= handleGrabPx
+        if (onEdge && !onPlayhead(timelineOf(frame.atMs))) return null
+        val bounds = item.keyframes.moveBounds(frame.atMs, 0L..(span.endMs - span.startMs), toleranceMs = 0L) ?: return null
+        return KeyframeDrag(
+            owner = KeyframeOwner.OfItem(item.kind, item.id),
+            fromMs = frame.atMs,
+            bounds = bounds,
+            timelineFrom = timelineOf(frame.atMs),
+            targets = snapTargets(""),
+            toOwnClock = { timelineMs -> clock.outputMs(timelineMs) - span.startMs },
+            toTimeline = ::timelineOf,
+        )
+    }
+
     val addLabels = mapOf(
         LaneKind.EFFECT to stringResource(R.string.lane_effect),
         LaneKind.TEXT to stringResource(R.string.lane_text),
@@ -596,6 +700,9 @@ fun EditorTimeline(
         )
     }
     val badgeStyle = remember { TextStyle(fontSize = 10.sp, color = Color.White) }
+    // The mark of a clip with a denoise of its own: the preview's badge, small (see DenoiseBadge).
+    val denoiseMark = remember { unitCookie() }
+    val grainPainter = rememberVectorPainter(Icons.Rounded.Grain)
     val onPrimary = colors.onPrimary
     val trimBadgeStyle = remember(onPrimary) { TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold, color = onPrimary) }
     val clipShape = remember { Path() }
@@ -927,6 +1034,64 @@ fun EditorTimeline(
                             currentOnMoveClip?.invoke(clip.id, target - index)
                         }
                     }
+                }
+                // A keyframe of what is selected, dragged along it (issue #31). Seen first of
+                // all: on a diamond, a drag moves the keyframe before the item's own drag, a trim
+                // or the scroll take it. A tap still brings the playhead onto it (the tap handler,
+                // as nothing is consumed until the finger moves), a hold still lifts the clip.
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        if (pxPerMs <= 0f || currentOnMoveKeyframe == null) return@awaitEachGesture
+                        val state = keyframeAt(down.position, size.width.toFloat()) ?: return@awaitEachGesture
+                        var overSlop = 0f
+                        val moved = awaitHorizontalTouchSlopOrCancellation(down.id) { change, over ->
+                            change.consume()
+                            overSlop = over
+                        } ?: return@awaitEachGesture
+                        holdView()
+                        state.dxPx.floatValue = overSlop
+                        keyframeDrag = state
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        var lastSnapped = false
+                        var lastHeld = false
+                        var lastScrub = 0L
+                        var fingerX = moved.position.x
+                        // Felt: a tick as it snaps, another as it meets a neighbour or an end. Seen:
+                        // the preview shows the frame where it is.
+                        fun follow() {
+                            val (ms, snapped, held) = draggedKeyframe(state)
+                            if ((snapped && !lastSnapped) || (held && !lastHeld)) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            lastSnapped = snapped
+                            lastHeld = held
+                            val now = System.nanoTime()
+                            if (now - lastScrub >= SCRUB_INTERVAL_NANOS) {
+                                lastScrub = now
+                                currentOnScrub(Math.round(state.toTimeline(ms)).coerceAtLeast(0L))
+                            }
+                        }
+                        // Near a side the timeline moves on by itself, the keyframe with it.
+                        val autoScroll = edgeScroll(fingerX = { fingerX }, maxMs = { currentTotal.toFloat() }) { shift ->
+                            state.dxPx.floatValue += shift
+                            follow()
+                        }
+                        val finished = horizontalDrag(moved.id) { change ->
+                            state.dxPx.floatValue += change.positionChange().x
+                            fingerX = change.position.x
+                            change.consume()
+                            follow()
+                        }
+                        autoScroll.cancel()
+                        val (ms, _, _) = draggedKeyframe(state)
+                        keyframeDrag = null
+                        val committed = finished && ms != state.fromMs
+                        // The playhead lands on the keyframe, where it now is.
+                        releaseView(state.toTimeline(if (committed) ms else state.fromMs).toFloat().coerceAtLeast(0f))
+                        if (committed) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            currentOnMoveKeyframe?.invoke(state.owner, state.fromMs, ms)
+                        }
+                    }
                 },
         ) {
             if (pxPerMs <= 0f) return@Canvas
@@ -941,6 +1106,8 @@ fun EditorTimeline(
             val gap = 2.dp.toPx()
             val corner = CornerRadius(12.dp.toPx())
             val trimming = clipDrag
+            // The selected clip's keyframes, drawn over all the clips (see below).
+            var clipKeyframes: (() -> Unit)? = null
             // The clips next to an edge being dragged go with it, like everything beyond
             // them: an end pushes (or pulls) the clips after it, a start the clips before
             // it, so that clips never overlap nor leave a gap while the finger moves.
@@ -979,7 +1146,10 @@ fun EditorTimeline(
                 }
                 val left = x((start + shift).toFloat())
                 val right = x((start + shift + clip.lengthMs).toFloat()).coerceAtLeast(left + MIN_CLIP_WIDTH_DP.dp.toPx())
-                if (right < 0f || left > size.width) return@forEach
+                // Off screen it is not drawn, unless it is the selected clip with keyframes:
+                // those left outside it may still be on screen (with the line to its edge).
+                val keepsKeyframes = clip.id == selectedClipId && !clip.effects.keyframes.isEmpty
+                if ((right < 0f || left > size.width) && !keepsKeyframes) return@forEach
                 // The clip held is lifted a little off the track, on its shadow.
                 val lift = if (held) 3.dp.toPx() else 0f
                 val rect = RoundRect(left + gap / 2, trackTop - lift, right - gap / 2, trackTop + trackHeight - lift, corner)
@@ -1032,7 +1202,24 @@ fun EditorTimeline(
                     }
                 }
                 // A clip with effects of its own carries a dot; a clip at another speed says so.
-                if (!clip.effects.isNeutral) {
+                // A denoise, which the preview cannot show, has a mark of its own in that corner
+                // (where the clip is wide enough), and the dot moves beside it for the rest.
+                val denoiseMarked = clip.effects.color.denoise > 0f && rect.width > DENOISE_MARK_MIN_CLIP.toPx()
+                if (denoiseMarked) {
+                    val side = DENOISE_MARK_SIZE.toPx()
+                    val centre = Offset(rect.right - 6.dp.toPx() - side / 2f, rect.top + 6.dp.toPx() + side / 2f)
+                    translate(centre.x - side / 2f, centre.y - side / 2f) {
+                        scale(side, side, pivot = Offset.Zero) { drawPath(denoiseMark, primary) }
+                    }
+                    val icon = side * DENOISE_MARK_ICON_SHARE
+                    translate(centre.x - icon / 2f, centre.y - icon / 2f) {
+                        with(grainPainter) { draw(Size(icon, icon), colorFilter = ColorFilter.tint(onPrimary)) }
+                    }
+                    val rest = clip.effects.copy(color = clip.effects.color.copy(denoise = 0f))
+                    if (!rest.isNeutral) {
+                        drawCircle(primary, radius = 4.dp.toPx(), center = Offset(centre.x - side / 2f - 8.dp.toPx(), centre.y))
+                    }
+                } else if (!clip.effects.isNeutral) {
                     drawCircle(primary, radius = 4.dp.toPx(), center = Offset(rect.right - 8.dp.toPx(), rect.top + 8.dp.toPx()))
                 }
                 // A speed curve is drawn along the clip (fast up, slow down; in playing order).
@@ -1066,12 +1253,27 @@ fun EditorTimeline(
                         active = trimming?.takeIf { it.clipId == clip.id }?.edge,
                         handles = clip.endMs != null,
                     )
-                    // Its keyframes, where they are in its footage.
-                    clip.effects.keyframes.frames.forEach { frame ->
-                        val inClip = frame.atMs - clip.startMs
-                        if (inClip in 0..clip.lengthMs) {
+                    // Its keyframes, where they are in its footage (the one being dragged where
+                    // the finger has it, lifted, with its time in the clip above it). One left
+                    // outside the clip by a trim still counts (the values head for it), so it
+                    // stays in view where it is: hollow, tied to the clip's edge by a dashed line.
+                    // Drawn once every clip is: those outside lie over the clips beside it.
+                    clipKeyframes = {
+                        val draggedHere = keyframeDrag?.takeIf { it.owner == KeyframeOwner.OfClip(clip.id) }
+                        val draggedMs = draggedHere?.let { draggedKeyframe(it).first }
+                        clip.effects.keyframes.frames.forEach { frame ->
+                            val lifted = draggedHere != null && frame.atMs == draggedHere.fromMs
+                            val inClip = (if (lifted && draggedMs != null) draggedMs else frame.atMs) - clip.startMs
+                            val outside = inClip !in 0..clip.lengthMs
                             val at = x((start + shift + inClip).toFloat())
-                            drawKeyframe(Offset(at, rect.bottom - 9.dp.toPx()), 6.dp.toPx(), abs(start + shift + inClip - positionMs) * pxPerMs < 6.dp.toPx(), primary)
+                            val centre = Offset(at, rect.bottom - 9.dp.toPx())
+                            if (outside) drawGhostLink(if (inClip < 0) rect.left else rect.right, centre, primary)
+                            if (lifted) {
+                                drawKeyframe(centre, 8.dp.toPx(), current = true, accent = primary)
+                                drawKeyframeTime(textMeasurer, inClip, centre.x, rect.top + 4.dp.toPx(), trimBadgeStyle, primary)
+                            } else {
+                                drawKeyframe(centre, 6.dp.toPx(), abs(start + shift + inClip - positionMs) * pxPerMs < keyframeOnPlayheadPx, primary, ghost = outside)
+                            }
                         }
                     }
                     // While an edge moves, how long the clip will be.
@@ -1090,6 +1292,7 @@ fun EditorTimeline(
                     drawPath(clipShape, Color.Black.copy(alpha = 0.4f), style = Stroke(width = 1.dp.toPx()))
                 }
             }
+            clipKeyframes?.invoke()
 
             // The joins between clips, each a button: a line for a plain cut, a bow tie for a
             // transition (filled in the accent).
@@ -1182,13 +1385,19 @@ fun EditorTimeline(
 
                 val videoEndX = x(currentClock.timelineMs(currentClock.outputDurationMs).toFloat())
                 val dragging = itemDrag
+                // The selected item's keyframes, drawn over all the items (those outside it may
+                // lie over the next one on its row).
+                var itemKeyframes: (() -> Unit)? = null
                 items.forEach { item ->
                     val selected = item.id == selectedItemId
                     val span = if (dragging != null && dragging.id == item.id) draggedSpan(dragging).first else item.span
                     val (leftMs, rightMs) = edges(span)
                     val left = x(leftMs.toFloat())
                     val right = max(x(rightMs.toFloat()), left + MIN_CLIP_WIDTH_DP.dp.toPx())
-                    if (right < 0f || left > size.width) return@forEach
+                    // Off screen it is not drawn, unless it is selected with keyframes: those left
+                    // outside it may still be on screen (with the line to its edge).
+                    val keepsKeyframes = selected && !item.keyframes.isEmpty
+                    if ((right < 0f || left > size.width) && !keepsKeyframes) return@forEach
                     val top = origin + layout.top(item.kind, item.row)
                     val height = layout.height(item.kind)
                     val sound = if (item.kind == LaneKind.SOUND) soundsById[item.id] else null
@@ -1205,7 +1414,7 @@ fun EditorTimeline(
                             height = height,
                             positionMs = positionMs,
                             pxPerMs = pxPerMs,
-                            fill = if (selected) selectedColors.getValue(item.kind) else itemColors.getValue(item.kind),
+                            fill = (if (selected) selectedColors.getValue(item.kind) else itemColors.getValue(item.kind)).faded(item.hidden),
                             wave = if (selected) selectedSoundWave else soundWave,
                             selected = selected,
                             handleColor = primary,
@@ -1219,7 +1428,7 @@ fun EditorTimeline(
                             right = right,
                             top = top,
                             height = height,
-                            fill = if (selected) selectedColors.getValue(item.kind) else itemColors.getValue(item.kind),
+                            fill = (if (selected) selectedColors.getValue(item.kind) else itemColors.getValue(item.kind)).faded(item.hidden),
                             lengthMs = span.endMs - span.startMs,
                             fadeInSeconds = item.fadeInSeconds,
                             fadeOutSeconds = item.fadeOutSeconds,
@@ -1239,12 +1448,24 @@ fun EditorTimeline(
                         style = if (selected) selectedStyles.getValue(item.kind) else itemStyle,
                     )
                     // The selected one's keyframes, where they are on the video.
-                    if (selected) {
+                    if (selected) itemKeyframes = {
+                        val draggedHere = keyframeDrag?.takeIf { it.owner == KeyframeOwner.OfItem(item.kind, item.id) }
+                        val draggedMs = draggedHere?.let { draggedKeyframe(it).first }
                         item.keyframes.frames.forEach { frame ->
-                            val atMs = currentClock.timelineMs(span.startMs + frame.atMs)
+                            val lifted = draggedHere != null && frame.atMs == draggedHere.fromMs
+                            val ownMs = if (lifted && draggedMs != null) draggedMs else frame.atMs
+                            val atMs = currentClock.timelineMs(span.startMs + ownMs)
                             val at = x(atMs.toFloat())
-                            if (at in left..right) {
-                                drawKeyframe(Offset(at, top + height / 2f), 5.dp.toPx(), abs(atMs - positionMs) * pxPerMs < 6.dp.toPx(), primary)
+                            // Left outside by a trim, it stays in view where it is, as on a clip.
+                            val outside = at < left || at > right
+                            val centre = Offset(at, top + height / 2f)
+                            if (outside) drawGhostLink(if (at < left) left else right, centre, primary)
+                            if (lifted) {
+                                drawKeyframe(centre, 7.dp.toPx(), current = true, accent = primary)
+                                // Its time from the start of what it belongs to, above the block.
+                                drawKeyframeTime(textMeasurer, ownMs, centre.x, top - 2.dp.toPx(), trimBadgeStyle, primary, above = true)
+                            } else {
+                                drawKeyframe(centre, 5.dp.toPx(), abs(atMs - positionMs) * pxPerMs < keyframeOnPlayheadPx, primary, ghost = outside)
                             }
                         }
                     }
@@ -1259,6 +1480,7 @@ fun EditorTimeline(
                         )
                     }
                 }
+                itemKeyframes?.invoke()
             }
 
             // -- Playhead ---------------------------------------------------------------
@@ -1316,6 +1538,8 @@ private class LaneEntry(
     val fadeOutSeconds: Float,
     /** Its keyframes (times from its start), drawn as diamonds while it is selected. */
     val keyframes: Keyframes = Keyframes.NONE,
+    /** Hidden from the layers list (its eye): drawn faded, as it is not in the video. */
+    val hidden: Boolean = false,
 )
 
 /** Every item placed on the video, with the rows their overlaps need (per kind). */
@@ -1340,13 +1564,13 @@ private fun laneItems(
     val soundRows = TimeSpan.rows(sounds.map { it.span })
     return effects.mapIndexed { i, e ->
         // An effect is marked with a sparkle.
-        LaneEntry(LaneKind.EFFECT, e.id, e.laneSpan, effectRows[i], "\u2726 " + effectName(e.effect.orEmpty()), e.fadeInSeconds, e.fadeOutSeconds, e.keyframes)
+        LaneEntry(LaneKind.EFFECT, e.id, e.laneSpan, effectRows[i], "\u2726 " + effectName(e.effect.orEmpty()), e.fadeInSeconds, e.fadeOutSeconds, e.keyframes, e.hidden)
     } + freeTexts.mapIndexed { i, t ->
-        LaneEntry(LaneKind.TEXT, t.id, t.span, textRows[i], t.text.ifBlank { untitledText }, t.fadeInSeconds, t.fadeOutSeconds, t.keyframes)
+        LaneEntry(LaneKind.TEXT, t.id, t.span, textRows[i], t.text.ifBlank { untitledText }, t.fadeInSeconds, t.fadeOutSeconds, t.keyframes, t.hidden)
     } + freePictures.mapIndexed { i, p ->
         // A video is marked with a play sign; trimming it trims the part of its file it plays.
         val name = p.shape?.let { shapeNames[it.kind] } ?: p.fileName.ifBlank { untitledImage }
-        LaneEntry(LaneKind.IMAGE, p.id, p.laneSpan, pictureRows[i], if (p.isVideo) "\u25B6 $name" else name, p.fadeInSeconds, p.fadeOutSeconds, p.keyframes)
+        LaneEntry(LaneKind.IMAGE, p.id, p.laneSpan, pictureRows[i], if (p.isVideo) "\u25B6 $name" else name, p.fadeInSeconds, p.fadeOutSeconds, p.keyframes, p.hidden)
     } + sounds.mapIndexed { i, s ->
         LaneEntry(LaneKind.SOUND, s.id, s.span, soundRows[i], s.name, s.fadeInSeconds, s.fadeOutSeconds, s.keyframes)
     }
@@ -1382,6 +1606,62 @@ private fun DrawScope.drawOverlayItem(
 /** How close to a keyframe's diamond a tap moves the playhead onto it. */
 private val KEYFRAME_GRAB = 14.dp
 
+/** How close to a keyframe's diamond a drag picks it up (a little less: an item's own edges are near). */
+private val KEYFRAME_DRAG_GRAB = 12.dp
+
+/** How near the playhead a keyframe is on it: drawn filled, and picked up before an edge. */
+private val KEYFRAME_ON_PLAYHEAD = 6.dp
+
+/** The band along the bottom of the clip track where its keyframes are picked up. */
+private val KEYFRAME_BAND = 24.dp
+
+/** What owns a keyframe dragged on the timeline: a clip, or a text, picture or sound. */
+sealed interface KeyframeOwner {
+    data class OfClip(val clipId: String) : KeyframeOwner
+    data class OfItem(val kind: LaneKind, val id: String) : KeyframeOwner
+}
+
+/**
+ * A keyframe being dragged: its owner and time when the finger came down (on the
+ * owner's own clock), where it may go, where it was drawn (timeline milliseconds),
+ * what it snaps to, how the two clocks map, and how far the finger has gone since
+ * (state, so the drawing follows).
+ */
+private class KeyframeDrag(
+    val owner: KeyframeOwner,
+    val fromMs: Long,
+    val bounds: LongRange,
+    val timelineFrom: Double,
+    val targets: List<Double>,
+    val toOwnClock: (Double) -> Long,
+    val toTimeline: (Long) -> Double,
+) {
+    val dxPx = mutableFloatStateOf(0f)
+}
+
+/**
+ * The time of a keyframe being dragged ([ms], from the start of what it belongs
+ * to) in a pill centred on [centerX]: its top at [y], or its bottom when [above].
+ */
+private fun DrawScope.drawKeyframeTime(
+    textMeasurer: TextMeasurer,
+    ms: Long,
+    centerX: Float,
+    y: Float,
+    style: TextStyle,
+    color: Color,
+    above: Boolean = false,
+) {
+    val measured = textMeasurer.measure(String.format(Locale.US, "%.2f s", ms / 1000f), style)
+    val padH = 8.dp.toPx()
+    val padV = 3.dp.toPx()
+    val pill = Size(measured.size.width + padH * 2f, measured.size.height + padV * 2f)
+    val pillLeft = (centerX - pill.width / 2f).coerceIn(0f, max(0f, size.width - pill.width))
+    val pillTop = (if (above) y - pill.height else y).coerceAtLeast(0f)
+    drawRoundRect(color, Offset(pillLeft, pillTop), pill, CornerRadius(pill.height / 2f))
+    drawText(measured, topLeft = Offset(pillLeft + padH, pillTop + padV))
+}
+
 /** Where the keyframes of the selected clip, or of the selected text, picture or sound, are on the timeline. */
 private fun selectedKeyframes(
     timeline: Timeline,
@@ -1395,7 +1675,8 @@ private fun selectedKeyframes(
     if (index >= 0) {
         val clip = timeline.clips[index]
         val start = starts.getOrNull(index) ?: return emptyList()
-        return clip.effects.keyframes.frames.map { it.atMs - clip.startMs }.filter { it in 0..clip.lengthMs }.map { start + it }
+        // Those left outside it by a trim too: a tap brings the playhead there, to pick it up.
+        return clip.effects.keyframes.frames.map { start + it.atMs - clip.startMs }
     }
     val item = items.firstOrNull { it.id == itemId } ?: return emptyList()
     return item.keyframes.frames.map { Math.round(clock.timelineMs(item.span.startMs + it.atMs)) }
@@ -1403,9 +1684,10 @@ private fun selectedKeyframes(
 
 /**
  * A keyframe: a small white diamond outlined in [accent], filled with it when
- * the playhead is on it ([current]).
+ * the playhead is on it ([current]). A [ghost] (left outside what it belongs
+ * to by a trim) is hollow, its outline dashed and paler, unless it is current.
  */
-private fun DrawScope.drawKeyframe(center: Offset, radius: Float, current: Boolean, accent: Color) {
+private fun DrawScope.drawKeyframe(center: Offset, radius: Float, current: Boolean, accent: Color, ghost: Boolean = false) {
     val diamond = Path().apply {
         moveTo(center.x, center.y - radius)
         lineTo(center.x + radius, center.y)
@@ -1413,9 +1695,35 @@ private fun DrawScope.drawKeyframe(center: Offset, radius: Float, current: Boole
         lineTo(center.x - radius, center.y)
         close()
     }
+    if (ghost && !current) {
+        drawPath(diamond, Color.White.copy(alpha = GHOST_FILL_ALPHA))
+        val dash = 2.dp.toPx()
+        drawPath(
+            diamond,
+            accent.copy(alpha = GHOST_ALPHA),
+            style = Stroke(width = 1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(dash, dash))),
+        )
+        return
+    }
     drawPath(diamond, if (current) accent else Color.White)
     drawPath(diamond, if (current) Color.White else accent, style = Stroke(width = 1.5.dp.toPx()))
 }
+
+/** The dashed line that ties a keyframe left outside (at [to]) to the edge it was cut off at ([edgeX]). */
+private fun DrawScope.drawGhostLink(edgeX: Float, to: Offset, accent: Color) {
+    val dash = 3.dp.toPx()
+    drawLine(
+        color = accent.copy(alpha = GHOST_ALPHA),
+        start = Offset(edgeX, to.y),
+        end = to,
+        strokeWidth = 1.5.dp.toPx(),
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(dash, dash)),
+    )
+}
+
+/** How strong a keyframe left outside is drawn: there, but plainly not inside. */
+private const val GHOST_ALPHA = 0.6f
+private const val GHOST_FILL_ALPHA = 0.35f
 
 /**
  * A clip's speed curve, drawn along it: normal speed across the middle of the
@@ -2346,3 +2654,32 @@ private const val HANDOVER_TOLERANCE_MS = 80L
 
 private val RULER_STEPS_MS = listOf(500L, 1_000L, 2_000L, 5_000L, 10_000L, 15_000L, 30_000L, 60_000L, 120_000L, 300_000L, 600_000L)
 private val FRAME_STEPS_MS = listOf(250L, 500L, 1_000L, 2_000L, 5_000L, 10_000L, 30_000L, 60_000L)
+
+/** Side of a clip's denoise mark on the timeline. */
+private val DENOISE_MARK_SIZE = 16.dp
+
+/** A clip narrower than this has no room for the mark: it keeps the dot. */
+private val DENOISE_MARK_MIN_CLIP = 40.dp
+
+/** The grain in the mark, as a share of its side. */
+private const val DENOISE_MARK_ICON_SHARE = 0.68f
+
+/** Material's nine-sided cookie as a path filling the unit square, to scale into a mark. */
+private fun unitCookie(): Path {
+    val polygon = MaterialShapes.Cookie9Sided
+    val bounds = polygon.calculateBounds()
+    val path = polygon.toPath()
+    val matrix = android.graphics.Matrix()
+    matrix.setTranslate(-bounds[0], -bounds[1])
+    matrix.postScale(1f / (bounds[2] - bounds[0]).coerceAtLeast(MIN_COOKIE_EXTENT), 1f / (bounds[3] - bounds[1]).coerceAtLeast(MIN_COOKIE_EXTENT))
+    path.transform(matrix)
+    return path.asComposePath()
+}
+
+private const val MIN_COOKIE_EXTENT = 0.0001f
+
+/** [this] colour faded for an item hidden from the layers list (it is not in the video). */
+private fun Color.faded(hidden: Boolean): Color = if (hidden) copy(alpha = alpha * HIDDEN_LANE_ALPHA) else this
+
+/** How strong a hidden item is drawn on its lane. */
+private const val HIDDEN_LANE_ALPHA = 0.35f

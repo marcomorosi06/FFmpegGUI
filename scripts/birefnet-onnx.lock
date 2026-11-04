@@ -1,0 +1,33 @@
+# What scripts/export-birefnet.py exports BiRefNet-lite from, and with what.
+# The ONNX file the app pins (app/.../cutout/CutoutModel.kt, FINEST) is made
+# from exactly these (see docs/MODELS.md, "BiRefNet-lite: our ONNX file").
+
+# BiRefNet, by Zheng Peng et al. MIT (its LICENSE, pinned below). The weights
+# are the author's own, from the repository's release v1.
+repository          https://github.com/ZhengPeng7/BiRefNet
+commit              f7079632d681ecf12161fcea8905682934e59e51
+licence             LICENSE
+licence_sha256      92a7089e0915fc32bc40067560b398f1e6a7a5958abd7d04eda393629a5acefb
+weights_url         https://github.com/ZhengPeng7/BiRefNet/releases/download/v1/BiRefNet-general-bb_swin_v1_tiny-epoch_232.pth
+weights_sha256      6a1e050c6ec2697e5ed268455df544782b023acf8643ab771250979094875ab1
+# The author's ONNX of the same weights (opset 17), to compare with.
+author_onnx_url     https://github.com/ZhengPeng7/BiRefNet/releases/download/v1/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx
+author_onnx_sha256  5600024376f572a557870a5eb0afb1e5961636bef4e1e22132025467d0f03333
+
+# The lite model: config.py's backbone list, entry 6 (Swin-T).
+backbone            swin_v1_t
+backbone_index      6
+
+file                birefnet-lite-general.onnx
+opset               19
+
+# What it comes out as, byte for byte: the SHA-256 and size the app pins
+# (scripts/check-model-pins.py checks that the two agree), and the release of
+# this repository that serves it (.github/workflows/models-onnx.yml makes it).
+file_sha256         8b75d639b11e984fc7d3a6c0818a2dd2f62df0b19997e4e822099e72f8d9b774
+file_bytes          180240681
+release_tag         birefnet-lite-onnx-1
+
+# The tools that write it: the same as EdgeTAM's (Python 3.13, CPU only),
+# installed with --require-hashes from scripts/model-export-requirements.txt.
+python              3.13

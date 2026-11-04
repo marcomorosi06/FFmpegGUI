@@ -216,6 +216,31 @@
     <string name="color_contrast">Contrast</string>
     <string name="color_saturation">Saturation</string>
 
+    <!-- Editor: details (denoise) -->
+    <string name="details_denoise">Denoise</string>
+    <string name="denoise_off">Off</string>
+    <string name="denoise_light">Light</string>
+    <string name="denoise_medium">Medium</string>
+    <string name="denoise_strong">Strong</string>
+    <string name="denoise_strength">Strength</string>
+    <string name="denoise_strong_hint">This strong, fine detail goes too: skin, hair, grass. Compare before you choose.</string>
+    <string name="denoise_compare_title">Before and after</string>
+    <string name="denoise_before">Before</string>
+    <string name="denoise_after">After</string>
+    <string name="denoise_compare_description">A part of the frame at its own pixels: before the denoise on the left of the divider, after it on the right</string>
+    <string name="denoise_split_description">Divider between before and after</string>
+    <string name="denoise_focus_title">Part compared</string>
+    <string name="denoise_focus_description">The whole frame: tap to choose the part compared, or touch and hold to drag it</string>
+    <string name="denoise_waiting">Stop the playhead on a frame to compare it.</string>
+    <string name="denoise_failed">This frame could not be read.</string>
+    <string name="denoise_badge">Denoise %1$s, in the export</string>
+    <string name="denoise_badge_open">Open Details</string>
+    <string name="denoise_hint_clip">This clip only. The whole video can have a denoise of its own as well, in its tools.</string>
+    <string name="denoise_hint_whole">The whole video, once its clips are joined and sized. The comparison runs it on the clip\'s own pixels: close to the export, not always exact. A clip that needs more can have its own: select it.</string>
+    <string name="denoise_with_whole">The whole video has a denoise too (%1$s): the comparison runs both, as the export does.</string>
+    <string name="denoise_with_clip">This clip has a denoise of its own too (%1$s): the comparison runs both, as the export does.</string>
+    <string name="denoise_compare_hint">The preview does not show the denoise, as it also works over time, from frame to frame. The comparison is made by FFmpeg with the very filter of the export, at the footage\'s own pixels. Stop the playhead elsewhere to compare another frame.</string>
+
     <!-- Editor: text -->
     <string name="text_content">Text content</string>
     <string name="text_color">Color</string>
@@ -567,7 +592,7 @@
     <string name="export_failed_title">Export failed</string>
     <string name="export_failed_text">%1$s could not be made: open the app to see why</string>
     <string name="tool_add_sound">Add sound</string>
-    <string name="tool_key">Chroma key</string>
+    <string name="tool_key">Cut out</string>
     <string name="key_title">Cut out a colour</string>
     <string name="key_subtitle">Green screen, blue screen or a flat background</string>
     <string name="key_pick_hint">Touch or drag on the picture: the loupe shows the colour that goes. Hold the compare button to see the original.</string>
@@ -1526,7 +1551,12 @@
     <string name="about_licence_cc_by">Creative Commons Attribution 4.0</string>
     <string name="about_licence_opus_mt">Opus-MT, by the University of Helsinki (the translation models, downloaded by you), as converted to ONNX by Xenova</string>
     <string name="about_licence_spleeter">Spleeter 2stems, by Deezer (the voice model, downloaded by you), as converted to ONNX and quantised by sherpa-onnx (Apache 2.0)</string>
-    <string name="about_licence_slimsam">SlimSAM, by Zigeng Chen et al. (the cut-out correction model, downloaded by you), as converted to ONNX by Xenova</string>
+    <string name="about_licence_edgetam">EdgeTAM, by Meta (the model that corrects cut-outs and lifts subjects, downloaded by you), converted to ONNX by FFmpeg GUI</string>
+    <string name="about_licence_ours_apache">Apache License 2.0, with the notice of the changes</string>
+    <string name="about_licence_birefnet">BiRefNet-lite, by Zheng Peng et al. (the finest cut-out model, downloaded by you), converted to ONNX by FFmpeg GUI</string>
+    <string name="about_licence_ours_mit">MIT License, with the notice of the conversion</string>
+    <string name="about_licence_models_record">Record of the AI models</string>
+    <string name="about_licence_models_record_summary">Every model the app can use: its licence, where it comes from, its SHA-256 and what it was trained on</string>
     <string name="about_licence_effects">The video effects, drawn by FFmpeg GUI\'s own script (scripts/generate-effects.py)</string>
     <string name="about_licence_effects_summary">Part of FFmpeg GUI, under its licence</string>
     <string name="about_licence_anti_vocale">anti-vocale, by RisorseArtificiali</string>
@@ -1546,7 +1576,7 @@
     <string name="smart_section_speech">Subtitles from speech</string>
     <string name="smart_speech_intro">Writes what is said in a video or an audio file, word by word and in time.</string>
     <string name="smart_section_cutout">Subject cut-out</string>
-    <string name="cutout_intro">Finds the subject of a photo, a sticker or a picture laid over the video and cuts it out, whatever is behind it (the Key tool): no green screen needed.</string>
+    <string name="cutout_intro">Finds the subject of a photo, a sticker or a picture laid over the video and cuts it out, whatever is behind it (the Cut out tool, which also does the chroma key): no green screen needed.</string>
     <string name="cutout_model_importing">Copying and checking the model\u2026</string>
     <string name="cutout_step_download_text">%1$s, from the releases of the rembg project on GitHub. The link opens in your browser.</string>
     <string name="cutout_step_import_text">Pick the downloaded file, %1$s. It is checked against its SHA-256.</string>
@@ -1594,15 +1624,16 @@
     <string name="smart_variant_missing">Not installed</string>
     <string name="smart_variant_importing">Importing\u2026</string>
     <string name="smart_variant_problem">Did not pass its check</string>
-    <string name="smart_variant_hint">Both can be on the phone: the chosen one is used, and the card below is about it.</string>
+    <string name="smart_variant_hint">Each can be on the phone: the chosen one is used, and the card below is about it.</string>
     <string name="smart_model_title_of">Speech model, %1$s</string>
     <string name="refine_section">Correct a cut-out</string>
-    <string name="refine_intro">Tap or paint green on what should stay and red on what should go: the model finds the whole thing, edges included. A precise brush and zoom do the fine parts. Optional, about 40 MB.</string>
+    <string name="refine_intro">Tap or paint green on what should stay and red on what should go: the model finds the whole thing, edges included. A precise brush and zoom do the fine parts. In the photo editor, a long press on a subject lifts it off the picture as a sticker. Optional, about 37 MB.</string>
     <string name="refine_model_title">Correcting model, %1$s</string>
     <string name="refine_problem_not_model">Those files are not the correcting model. Pick the downloaded files together: %1$s.</string>
     <string name="refine_delete_title">Delete the correcting model?</string>
     <string name="refine_delete_text">%1$s are freed. Cut-outs already corrected stay so in your projects; to correct new ones, import the model again.</string>
-    <string name="refine_model_summary">%1$s, a light Segment Anything that finds what a stroke points at. %2$s</string>
+    <string name="refine_model_summary">By %1$s: a Segment Anything 2 made for phones, which finds what a stroke or a tap points at. Converted to ONNX by FFmpeg GUI. Licence: %2$s.</string>
+    <string name="refine_step_download_text">%1$d files, about %2$s in all, from FFmpeg GUI\'s own releases on GitHub: Meta\'s model, converted to ONNX by this project, with its licence and the notice of the changes. Each link opens in your browser.</string>
     <string name="refine_open">Correct with brushes</string>
     <string name="refine_setup">Set up correcting with brushes</string>
     <string name="refine_title">Correct the cut-out</string>
@@ -1642,6 +1673,31 @@
     <string name="cutout_variant_fast_text">%1$s, %2$s. Several times quicker and light on memory; rougher edges around hair and fine details.</string>
     <string name="cutout_variant_precise">Precise</string>
     <string name="cutout_variant_precise_text">%1$s, %2$s. Clean edges and fine details; slower, and it needs about a gigabyte of memory while it works.</string>
+    <string name="cutout_variant_finest">Finest</string>
+    <string name="cutout_variant_finest_tag">Best edges</string>
+    <string name="cutout_variant_finest_text">%1$s, %2$s. Hair, fur and thin parts come out whole, and it keeps to the main subject. The slowest of the three, and it needs about 2.5 GB of memory while it works: for phones with 8 GB or more.</string>
+    <string name="cutout_step_download_ours_text">%1$s, from FFmpeg GUI\'s own releases on GitHub: the author\'s model, converted to ONNX by this project, with its licence and the notice of the conversion. The link opens in your browser.</string>
+    <string name="cutout_model_ours_summary">By %1$s. Any subject, on any background, with the finest edges. Converted to ONNX by FFmpeg GUI from the author\'s weights. Licence: %2$s.</string>
+    <string name="models_conversions_title">Models converted by FFmpeg GUI</string>
+    <string name="models_conversions_summary">%1$s and %2$s: made from the authors\' own weights, nothing trained or changed, built twice to the same bytes, with the licence, the notice of the changes and the provenance next to every file. The record of every model: docs/MODELS.md.</string>
+
+    <!-- Old models deleted from the phone (RetiredModels) -->
+    <string name="retired_title">Old models cleared away</string>
+    <string name="retired_text">This version uses better models. The ones they replace were still on your phone and would never be used again, so they have been deleted.</string>
+    <string name="retired_reason_superseded">Replaced by a better model</string>
+    <string name="retired_freed">%1$s freed</string>
+    <string name="retired_next">To keep doing what they did, import %1$s once in Smart features: the links and the steps are there.</string>
+    <string name="retired_set_up">Set up %1$s</string>
+    <string name="retired_ok">Got it</string>
+
+    <!-- Photo editor: a long press lifts the subject off the picture (SubjectLifter) -->
+    <string name="lift_sticker_name">Lifted subject</string>
+    <string name="lift_tip">Long-press a subject to lift it off the picture as a sticker</string>
+    <string name="lift_needs_model">Lifting a subject needs EdgeTAM, the correcting model</string>
+    <string name="lift_set_up">Set up</string>
+    <string name="lift_nothing">Nothing clear there: press in the middle of the subject</string>
+    <string name="lift_memory">Not enough free memory: close other apps and try again</string>
+    <string name="lift_failed">The subject could not be lifted. Try again</string>
     <string name="smart_step_download_files_text">%1$d files, about %2$s in all, from Hugging Face. Each link opens in your browser.</string>
     <string name="smart_step_download_archive">Or the whole archive from sherpa-onnx on GitHub, %1$s: slower to import (it has to be unpacked, which takes minutes), but it also holds the recordings for the speed test.</string>
     <string name="smart_download_archive">Download the archive instead</string>
@@ -2608,6 +2664,13 @@
     <string name="svg_symmetry_layer">Symmetry</string>
     <string name="svg_lock">Lock</string>
     <string name="svg_unlock">Unlock</string>
+    <!-- Layers of the picture and video editors (issue #30) -->
+    <string name="layers_hide">Hide</string>
+    <string name="layers_show">Show</string>
+    <string name="layers_hidden">Hidden</string>
+    <string name="layers_lock">Lock</string>
+    <string name="layers_unlock">Unlock</string>
+    <string name="layers_locked">Locked</string>
     <string name="svg_align_to_page">On the page</string>
     <string name="svg_mirror_copy_across">Mirrored copy, across</string>
     <string name="svg_mirror_copy_down">Mirrored copy, down</string>

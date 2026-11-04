@@ -315,4 +315,6 @@ internal object ProjectLinks {
     const val SHERPA_ONNX = "https://github.com/k2-fsa/sherpa-onnx"
     /** The script that draws the video effects, in the repository. */
     const val EFFECTS_SCRIPT = "https://github.com/marcomorosi06/FFmpegGUI/blob/master/scripts/generate-effects.py"
+    /** The record of every model the app can use: licences, sources, hashes, training data (docs/MODELS.md). */
+    const val MODELS_RECORD = "https://github.com/marcomorosi06/FFmpegGUI/blob/master/docs/MODELS.md"
 }

@@ -6,6 +6,12 @@ name: FFmpeg runtime (AAR)
 # AAR published, as an asset of a pre-release named after its SHA-256, and pinned:
 # this workflow commits its URL, SHA-256 and inputs to scripts/ffmpeg-kit-next-aar.txt.
 #
+# The AAR is object code under the GPL-3.0 (FFmpeg with x264, x265, Xvid and vid.stab):
+# its release also carries its complete Corresponding Source, the GPL-3.0 and a notice
+# of what it holds (scripts/ffmpeg-aar-release-files.sh), so that the source stays
+# next to the binary even if a third-party repository disappears (GPL-3.0 section 6).
+# The "sources" job adds them to the pinned release when it was published without them.
+#
 # It runs by itself after a push to master that changes what the AAR is built from
 # (scripts/ffmpeg-kit-next-inputs.sh lists it), and does nothing when the pin is
 # already current. It takes hours: the second build on two cores can take up to
@@ -20,6 +26,8 @@ on:
       - scripts/build-ffmpeg-kit-next.sh
       - scripts/ffmpeg-kit-next.verification-metadata.xml
       - scripts/ffmpeg-kit-next-inputs.sh
+      - scripts/package-sources.sh
+      - scripts/ffmpeg-aar-release-files.sh
       - .github/workflows/ffmpeg-aar.yml
   workflow_dispatch:
     inputs:
@@ -144,6 +152,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: source
+
       - name: Download both AARs
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -205,6 +219,8 @@ jobs:
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             echo "Release $tag already exists (same SHA-256 prefix): not published again."
           else
+            # Its source, its licence and its notice go out with it (GPL-3.0 sections 4 and 6).
+            bash source/scripts/ffmpeg-aar-release-files.sh "$version" extras
             {
               echo "FFmpeg runtime of FFmpeg GUI: FFmpegKitNext ${version}, built from the sources pinned in"
               echo "\`scripts/ffmpeg-kit-next.lock\` at ${GITHUB_SHA}, twice (ubuntu-24.04; ubuntu-26.04 on two cores),"
@@ -213,11 +229,16 @@ jobs:
               echo "SHA-256: \`${SHA256}\`"
               echo
               echo "Rebuild it with \`FFMPEG_KIT_WORKDIR=/var/tmp/ffmpeg-kit-next scripts/build-ffmpeg-kit-next.sh\`."
+              echo
+              echo "The AAR holds FFmpeg built with GPL libraries: as a whole it is distributed under the"
+              echo "GNU GPL v3 (\`COPYING-GPL-3.0.txt\`), each component under its own licence (\`NOTICE.txt\`)."
+              echo "Its complete Corresponding Source, every component at the commits it was built from with"
+              echo "the scripts that build it: \`ffmpeg-kit-next-${version}-source.tar.xz\`, on this page."
             } > notes.md
             gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
               --title "FFmpeg runtime ${version} (${SHA256:0:12})" --notes-file notes.md \
               --prerelease --latest=false \
-              "$AAR" aars/aar-*/*.provenance.txt
+              "$AAR" aars/aar-*/*.provenance.txt extras/*
           fi
           {
             echo "### Published: \`${tag}\`"
@@ -292,3 +313,85 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit 1
+
+  sources:
+    name: Source and licences next to the pinned AAR
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Is anything missing from its release?
+        id: missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          url=$(awk '$1 == "url" { print $2 }' scripts/ffmpeg-kit-next-aar.txt)
+          if [ -z "$url" ] || [ "$url" = "-" ]; then
+            echo "No AAR is pinned yet."
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tag=$(basename "$(dirname "$url")")
+          name=$(basename "$url")
+          version=${name#ffmpeg-kit-next-}
+          version=${version%.aar}
+          assets=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          missing=""
+          for want in "ffmpeg-kit-next-${version}-source.tar.xz" COPYING-GPL-3.0.txt NOTICE.txt; do
+            grep -qx "$want" <<< "$assets" || missing="$missing $want"
+          done
+          if [ -z "$missing" ]; then
+            echo "### \`${tag}\` already has its source and licences" >> "$GITHUB_STEP_SUMMARY"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Missing from ${tag}:${missing}"
+            {
+              echo "tag=$tag"
+              echo "version=$version"
+              echo "inputs=$(awk '$1 == "inputs" { print $2 }' scripts/ffmpeg-kit-next-aar.txt)"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      # The commit the AAR was built from: the release's own tag.
+      - name: Check out the commit the AAR was built from
+        if: steps.missing.outputs.tag != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ steps.missing.outputs.tag }}
+          persist-credentials: false
+          path: built
+
+      - name: Pack its source, licence and notice, and attach them
+        if: steps.missing.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.missing.outputs.tag }}
+          VERSION: ${{ steps.missing.outputs.version }}
+          INPUTS: ${{ steps.missing.outputs.inputs }}
+        run: |
+          # That commit must hold the very inputs the AAR was built from (the pin's).
+          got=$(bash built/scripts/ffmpeg-kit-next-inputs.sh)
+          if [ "$got" != "$INPUTS" ]; then
+            echo "::error::${TAG} points at a commit whose inputs are ${got}, not the pinned ${INPUTS}: its source cannot be packed from it."
+            exit 1
+          fi
+          # Today's scripts, run on that commit: what they pack (its lock, its build
+          # script, its licences; ffmpeg-gui/ is "git archive" of that commit) is
+          # exactly what the AAR was built from. A release older than these scripts
+          # gets its source too.
+          cp scripts/ffmpeg-aar-release-files.sh scripts/package-sources.sh built/scripts/
+          bash built/scripts/ffmpeg-aar-release-files.sh "$VERSION" extras
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" extras/*
+          {
+            echo "### Added to \`${TAG}\`"
+            echo
+            echo '```'
+            (cd extras && sha256sum -- *)
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -417,6 +417,8 @@ object ModelJson {
         put("layer", t.layer)
         if (!t.look.isPlain) put("look", write(t.look))
         put("fontFile", t.fontFile)
+        put("hidden", t.hidden)
+        put("locked", t.locked)
         putKeyframes(t.keyframes)
     }
 
@@ -467,6 +469,8 @@ object ModelJson {
             layer = o.int("layer", d.layer),
             look = o.objOrNull("look", d.look, ::textLook) ?: d.look,
             fontFile = o.stringOrNull("fontFile", d.fontFile),
+            hidden = o.bool("hidden", d.hidden),
+            locked = o.bool("locked", d.locked),
         )
     }
 

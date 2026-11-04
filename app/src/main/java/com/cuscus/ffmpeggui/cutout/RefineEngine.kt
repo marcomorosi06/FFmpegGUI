@@ -29,19 +29,20 @@ import java.nio.FloatBuffer
 import java.nio.LongBuffer
 
 /**
- * Runs SlimSAM ([RefineModel]) through ONNX Runtime, on the processor: [study]
- * reads a picture once (the image encoder, a second or two), [find] then gives
+ * Runs EdgeTAM ([RefineModel]) through ONNX Runtime, on the processor: [study]
+ * reads a picture once (the image encoder, about a second), [find] then gives
  * the masks of what some points show (the mask decoder, a fraction of a
- * second), once per stroke.
+ * second), once per stroke or tap.
  *
  * The model is loaded the first time it is needed and let go of
  * [IDLE_UNLOAD_MS] after its last use. One call at a time.
  *
- * The tensors are found by name, as transformers.js names them: the encoder
- * gives "image_embeddings" and "image_positional_embeddings", the decoder takes
- * those with "input_points" (float, 1 x 1 x points x 2) and "input_labels"
- * (int64, 1 x 1 x points) and gives "iou_scores" and "pred_masks" (1 x 1 x 3 x
- * 256 x 256 logits).
+ * The tensors are as scripts/export-edgetam.py names them: the encoder takes
+ * "image" (the picture stretched to 1024 x 1024, see PromptSegmentation) and
+ * gives "image_embed", "high_res_feats_0" and "high_res_feats_1"; the decoder
+ * takes those with "point_coords" (float, 1 x points x 2) and "point_labels"
+ * (int64, 1 x points) and gives "masks" (1 x 3 x 256 x 256 logits) and
+ * "iou_predictions" (1 x 3).
  */
 class RefineEngine(context: Context, private val store: SpeechModelStore) {
 
@@ -84,13 +85,14 @@ class RefineEngine(context: Context, private val store: SpeechModelStore) {
         mutex.withLock {
             val model = use()
             try {
-                val (rw, rh) = PromptSegmentation.resizedSize(picture.width, picture.height)
-                val resized = Bitmap.createScaledBitmap(picture, rw, rh, true)
-                val argb = IntArray(rw * rh)
-                resized.getPixels(argb, 0, rw, 0, 0, rw, rh)
+                // SAM 2 stretches the picture to the square, whatever its proportions.
+                val sideInt = PromptSegmentation.SIDE
+                val resized = Bitmap.createScaledBitmap(picture, sideInt, sideInt, true)
+                val argb = IntArray(sideInt * sideInt)
+                resized.getPixels(argb, 0, sideInt, 0, 0, sideInt, sideInt)
                 if (resized !== picture) resized.recycle()
-                val input = PromptSegmentation.input(argb, rw, rh)
-                val side = PromptSegmentation.SIDE.toLong()
+                val input = PromptSegmentation.input(argb)
+                val side = sideInt.toLong()
                 val inputName = model.encoder.inputNames.firstOrNull() ?: throw IOException("The encoder has no input")
                 val outputs = OnnxTensor.createTensor(model.environment, FloatBuffer.wrap(input), longArrayOf(1, 3, side, side)).use { tensor ->
                     model.encoder.run(mapOf(inputName to tensor)).use { result ->
@@ -135,8 +137,8 @@ class RefineEngine(context: Context, private val store: SpeechModelStore) {
                     for (name in model.decoder.inputNames) {
                         val lower = name.lowercase()
                         tensors[name] = when {
-                            "point" in lower -> OnnxTensor.createTensor(env, FloatBuffer.wrap(scaled), longArrayOf(1, 1, count, 2))
-                            "label" in lower -> OnnxTensor.createTensor(env, LongBuffer.wrap(labels), longArrayOf(1, 1, count))
+                            "point_coords" == lower -> OnnxTensor.createTensor(env, FloatBuffer.wrap(scaled), longArrayOf(1, count, 2))
+                            "point_labels" == lower -> OnnxTensor.createTensor(env, LongBuffer.wrap(labels), longArrayOf(1, count))
                             else -> {
                                 val (values, shape) = studied.outputs[name] ?: throw IOException("The decoder wants $name, which the encoder does not give")
                                 OnnxTensor.createTensor(env, FloatBuffer.wrap(values), shape)
@@ -150,8 +152,8 @@ class RefineEngine(context: Context, private val store: SpeechModelStore) {
                             val buffer = (value as? OnnxTensor)?.floatBuffer ?: continue
                             val values = FloatArray(buffer.remaining()).also { buffer.get(it) }
                             when {
-                                "mask" in name.lowercase() -> logits = values
-                                "iou" in name.lowercase() || "score" in name.lowercase() -> scores = values
+                                name == "masks" -> logits = values
+                                name == "iou_predictions" -> scores = values
                             }
                         }
                         val maskLogits = logits ?: throw IOException("The decoder gave no mask")

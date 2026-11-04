@@ -343,8 +343,23 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
                     }
                 },
                 { shape ->
-                    LicenceRow(shape, stringResource(R.string.about_licence_slimsam), stringResource(R.string.about_licence_apache)) {
-                        openLink(context, com.cuscus.ffmpeggui.cutout.RefineModel.MODEL_PAGE_URL)
+                    // Converted to ONNX by this project and served from its releases: the licence
+                    // and the notice of the changes go with the files, and come with the app too.
+                    val name = stringResource(R.string.about_licence_edgetam)
+                    LicenceRow(shape, name, stringResource(R.string.about_licence_ours_apache), local = true) {
+                        licenceFile = LicenceFile(name, "edgetam/NOTICE.txt")
+                    }
+                },
+                { shape ->
+                    val name = stringResource(R.string.about_licence_birefnet)
+                    LicenceRow(shape, name, stringResource(R.string.about_licence_ours_mit), local = true) {
+                        licenceFile = LicenceFile(name, "birefnet/NOTICE.txt")
+                    }
+                },
+                { shape ->
+                    // Every model in one record: licences, sources, hashes, what they were trained on.
+                    LicenceRow(shape, stringResource(R.string.about_licence_models_record), stringResource(R.string.about_licence_models_record_summary)) {
+                        openLink(context, ProjectLinks.MODELS_RECORD)
                     }
                 },
                 { shape ->

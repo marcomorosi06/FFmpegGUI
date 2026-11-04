@@ -73,7 +73,8 @@ internal fun ConversionSettings.footage(): EditFootage {
     // A picture of a clip that the whole-video trim has cut away is not drawn.
     // (The picture itself laid on its canvas is a layer of the picture editor, not a file laid over.)
     // A picture look has no file: it is not laid, it changes the picture (see lookSpans).
-    val pictures = imageOverlays.filter { it.uri != null && !it.isPhoto && it.pictureLook == null && (it.clipId == null || it.clipId in clipIds) } +
+    // A hidden one (the layers list's eye) is kept in the project only: not laid, not heard.
+    val pictures = imageOverlays.filter { !it.hidden && it.uri != null && !it.isPhoto && it.pictureLook == null && (it.clipId == null || it.clipId in clipIds) } +
         // The effects laid over the cuts that an effect transition joins.
         transitionEffects(clips, wholeEffects)
     return EditFootage(files, segments, pictures)
@@ -184,7 +185,8 @@ private fun ConversionSettings.toRequestOf(
             fadeOutSeconds = overlay.fadeOutSeconds,
         )
     },
-    textOverlays = textOverlays.filter { it.clipId == null || it.clipId in footage.clipIds },
+    // A hidden caption (the layers list's eye) is kept in the project only.
+    textOverlays = textOverlays.filter { !it.hidden && (it.clipId == null || it.clipId in footage.clipIds) },
     imageOverlays = footage.pictures.map { it.toPlacement() },
     looks = if (format.isImage) emptyList() else lookSpans(),
     // The picture on its canvas: placed as its layer says.
@@ -289,7 +291,7 @@ private fun EditorSource.stagedName(): String {
  */
 internal fun ConversionSettings.lookSpans(): List<LookSpan> = imageOverlays.mapNotNull { overlay ->
     val look = overlay.pictureLook ?: return@mapNotNull null
-    if (overlay.clipId != null) return@mapNotNull null
+    if (overlay.clipId != null || overlay.hidden) return@mapNotNull null
     val span = overlay.span
     LookSpan(
         look = look,

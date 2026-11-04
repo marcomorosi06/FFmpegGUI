@@ -1,0 +1,23 @@
+EdgeTAM, ONNX files of FFmpeg GUI
+https://github.com/marcomorosi06/FFmpegGUI
+
+edgetam-image-encoder.onnx and edgetam-mask-decoder.onnx are a Derivative
+Work of EdgeTAM (https://github.com/facebookresearch/EdgeTAM, commit
+7711e012a30a2402c4eaab637bdb00a521302c91), Copyright (c) Meta Platforms, Inc. and affiliates,
+licensed under the Apache License, Version 2.0: see LICENSE, next to them.
+They are distributed under that same licence.
+
+Changes made (Apache License 2.0, section 4(b)):
+- The PyTorch model (configs/edgetam.yaml with checkpoints/edgetam.pt,
+  SHA-256 ed2d4850b8792c239689b043c47046ec239b6e808a3d9b6ae676c803fd8780df) was converted
+  to ONNX, opset 17, by scripts/export-edgetam.py of FFmpeg GUI.
+- It was cut in two where SAM 2's image predictor cuts it: the image encoder
+  (set_image) and the prompt encoder with the mask decoder (predict, three
+  masks, the low-resolution masks before they are upscaled).
+- The ImageNet weights the backbone would fetch through timm were not used:
+  every weight comes from the checkpoint above, loaded strictly.
+- No weight was trained, fine-tuned, pruned or quantised.
+
+The EdgeTAM repository has no NOTICE file of its own. Meta has not reviewed
+or endorsed these files. They come with no warranty (see LICENSE). See
+docs/MODELS.md of FFmpeg GUI for what the model was trained on.

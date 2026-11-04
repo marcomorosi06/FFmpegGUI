@@ -669,6 +669,8 @@ class ConversionViewModel(
             before.speedCurve != after.speedCurve -> "speedCurve"
             before.crop != after.crop -> "crop"
             before.motion != after.motion -> "motion"
+            // The denoise is a slider of its own: it groups apart from the colours.
+            before.color.denoise != after.color.denoise -> "videoDenoise"
             before.color != after.color -> "color"
             before.speed != after.speed -> "speed"
             before.fadeInSeconds != after.fadeInSeconds -> "fadeIn"
@@ -1146,6 +1148,16 @@ class ConversionViewModel(
             }
             onAdded(overlays.first().id)
         }
+    }
+
+    /**
+     * Lays [overlay] as it is, its place and size already set (a subject lifted
+     * off the picture, laid back exactly where it was), on top of everything:
+     * one step of undo. [onAdded] gets its id.
+     */
+    fun addPlacedOverlay(overlay: ImageOverlay, onAdded: (String) -> Unit = {}) {
+        mutate { settings -> settings.copy(imageOverlays = settings.imageOverlays + overlay.copy(layer = settings.topLayer(null))) }
+        onAdded(overlay.id)
     }
 
     /**

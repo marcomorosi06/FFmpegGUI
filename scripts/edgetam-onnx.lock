@@ -1,0 +1,34 @@
+# What scripts/export-edgetam.py exports EdgeTAM from, and with what.
+# The EdgeTAM ONNX files the app pins (app/.../cutout/RefineModel.kt) are made
+# from exactly these: change one line and the files change, so the app's pins
+# and the release that serves them have to be made again (see
+# docs/MODELS.md, "EdgeTAM: our ONNX files").
+
+# EdgeTAM, by Meta (facebookresearch). "The EdgeTAM model checkpoints and code
+# are licensed under Apache 2.0" (its README); its LICENSE is pinned below.
+repository          https://github.com/facebookresearch/EdgeTAM
+commit              7711e012a30a2402c4eaab637bdb00a521302c91
+checkpoint          checkpoints/edgetam.pt
+checkpoint_sha256   ed2d4850b8792c239689b043c47046ec239b6e808a3d9b6ae676c803fd8780df
+licence             LICENSE
+licence_sha256      c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4
+config              configs/edgetam.yaml
+
+# The files made, and the ONNX opset they are written for (ONNX Runtime 1.28,
+# the app's, runs it).
+encoder_file        edgetam-image-encoder.onnx
+decoder_file        edgetam-mask-decoder.onnx
+opset               17
+
+# What they come out as, byte for byte: the SHA-256 and size the app pins
+# (scripts/check-model-pins.py checks that the two agree), and the release of
+# this repository that serves them (.github/workflows/models-onnx.yml makes it).
+encoder_sha256      692c9365d13fbbd8fd5b32bdd0c7bd0377696bb0b20fa7d97f8a3a3c1e776f0d
+encoder_bytes       20164359
+decoder_sha256      df71726f03f1eb11ab0fda4648ad024569fbbe26ddd69e2a16354432158035a2
+decoder_bytes       16574577
+release_tag         edgetam-onnx-1
+
+# The tools that write them (Python 3.13, CPU only). Installed with
+# --require-hashes from scripts/model-export-requirements.txt.
+python              3.13

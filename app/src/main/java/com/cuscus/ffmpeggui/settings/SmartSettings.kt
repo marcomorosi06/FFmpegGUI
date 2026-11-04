@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Brush
 import androidx.compose.material.icons.rounded.CenterFocusStrong
+import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentCut
 import androidx.compose.material.icons.rounded.Delete
@@ -337,6 +338,15 @@ internal fun CutoutSection(smart: SmartFeaturesUi) {
                 selected = cutout.variant == CutoutVariant.PRECISE,
                 onSelect = { cutout.onChoose(CutoutVariant.PRECISE) },
             ),
+            VariantOption(
+                title = stringResource(R.string.cutout_variant_finest),
+                tag = stringResource(R.string.cutout_variant_finest_tag),
+                text = stringResource(R.string.cutout_variant_finest_text, CutoutModel.FINEST.name, Formatter.formatShortFileSize(context, CutoutModel.FINEST.bytes)),
+                icon = Icons.Rounded.AutoAwesome,
+                state = cutout.variants[CutoutVariant.FINEST],
+                selected = cutout.variant == CutoutVariant.FINEST,
+                onSelect = { cutout.onChoose(CutoutVariant.FINEST) },
+            ),
         ),
         enabled = cutout.idle,
     )
@@ -344,7 +354,10 @@ internal fun CutoutSection(smart: SmartFeaturesUi) {
         spec = ModelSpec(
             title = stringResource(R.string.cutout_model_title_of, cutter.name),
             importing = stringResource(R.string.cutout_model_importing),
-            downloadText = stringResource(R.string.cutout_step_download_text, Formatter.formatShortFileSize(context, cutter.bytes)),
+            downloadText = when (cutter.host) {
+                CutoutModel.Host.REMBG -> stringResource(R.string.cutout_step_download_text, Formatter.formatShortFileSize(context, cutter.bytes))
+                CutoutModel.Host.THIS_PROJECT -> stringResource(R.string.cutout_step_download_ours_text, Formatter.formatShortFileSize(context, cutter.bytes))
+            },
             downloads = listOf(cutter.fileName to cutter.downloadUrl),
             importText = stringResource(R.string.cutout_step_import_text, cutter.fileName),
             installedBytes = cutter.bytes,
@@ -366,7 +379,8 @@ internal fun CutoutSection(smart: SmartFeaturesUi) {
     )
     if (cutout.model is SpeechModelStore.State.Ready) CutoutTestCard(cutout)
 
-    // Correcting a cut-out with the finger: keep and remove brushes, read by SlimSAM.
+    // Correcting a cut-out with the finger (keep and remove brushes) and lifting a subject
+    // off a photo with a long press: both read by EdgeTAM.
     val refine = cutout.refine
     SectionTitle(stringResource(R.string.refine_section), stringResource(R.string.refine_intro))
     val refineFiles = RefineModel.FILES.files.joinToString(", ") { it.name }
@@ -374,7 +388,7 @@ internal fun CutoutSection(smart: SmartFeaturesUi) {
         spec = ModelSpec(
             title = stringResource(R.string.refine_model_title, RefineModel.NAME),
             importing = stringResource(R.string.cutout_model_importing),
-            downloadText = stringResource(R.string.smart_step_download_files_text, RefineModel.FILES.downloads.size, Formatter.formatShortFileSize(context, RefineModel.FILES.installedBytes)),
+            downloadText = stringResource(R.string.refine_step_download_text, RefineModel.FILES.downloads.size, Formatter.formatShortFileSize(context, RefineModel.FILES.installedBytes)),
             downloads = RefineModel.FILES.downloads.map { it.file to it.url },
             importText = stringResource(R.string.smart_step_import_files_text, refineFiles),
             installedBytes = RefineModel.FILES.installedBytes,
@@ -459,9 +473,20 @@ internal fun AboutModelsSection() {
             { shape ->
                 SettingsRow(
                     shape = shape,
+                    icon = Icons.Rounded.AutoAwesome,
+                    title = CutoutModel.FINEST.name,
+                    summary = stringResource(R.string.cutout_model_ours_summary, CutoutModel.FINEST.maker, CutoutModel.FINEST.licence),
+                    badge = MaterialShapes.Sunny,
+                    onClick = { openLink(context, CutoutModel.FINEST.modelPageUrl) },
+                    trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
+                )
+            },
+            { shape ->
+                SettingsRow(
+                    shape = shape,
                     icon = Icons.Rounded.ContentCut,
                     title = CutoutModel.PRECISE.name,
-                    summary = stringResource(R.string.cutout_model_summary, CutoutModel.PRECISE.maker, CutoutModel.LICENCE),
+                    summary = stringResource(R.string.cutout_model_summary, CutoutModel.PRECISE.maker, CutoutModel.PRECISE.licence),
                     badge = MaterialShapes.Clover4Leaf,
                     onClick = { openLink(context, CutoutModel.PRECISE.modelPageUrl) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
@@ -472,7 +497,7 @@ internal fun AboutModelsSection() {
                     shape = shape,
                     icon = Icons.Rounded.Speed,
                     title = CutoutModel.FAST.name,
-                    summary = stringResource(R.string.cutout_model_summary, CutoutModel.FAST.maker, CutoutModel.LICENCE),
+                    summary = stringResource(R.string.cutout_model_summary, CutoutModel.FAST.maker, CutoutModel.FAST.licence),
                     badge = MaterialShapes.Clover8Leaf,
                     onClick = { openLink(context, CutoutModel.FAST.modelPageUrl) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
@@ -541,6 +566,17 @@ internal fun AboutModelsSection() {
                     summary = stringResource(R.string.refine_model_summary, RefineModel.MAKER, RefineModel.LICENCE),
                     badge = MaterialShapes.SoftBurst,
                     onClick = { openLink(context, RefineModel.MODEL_PAGE_URL) },
+                    trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
+                )
+            },
+            { shape ->
+                SettingsRow(
+                    shape = shape,
+                    icon = Icons.Rounded.Gavel,
+                    title = stringResource(R.string.models_conversions_title),
+                    summary = stringResource(R.string.models_conversions_summary, RefineModel.NAME, CutoutModel.FINEST.name),
+                    badge = MaterialShapes.Cookie4Sided,
+                    onClick = { openLink(context, ProjectLinks.MODELS_RECORD) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
             },

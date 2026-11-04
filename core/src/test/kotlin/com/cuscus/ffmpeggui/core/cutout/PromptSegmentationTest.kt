@@ -3,6 +3,7 @@ package com.cuscus.ffmpeggui.core.cutout
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -12,45 +13,45 @@ class PromptSegmentationTest {
     private val maskSide = PromptSegmentation.MASK_SIDE
 
     @Test
-    fun `the longer side becomes 1024, the shorter in proportion as the processor rounds it`() {
-        assertEquals(1024 to 768, PromptSegmentation.resizedSize(4000, 3000))
-        assertEquals(576 to 1024, PromptSegmentation.resizedSize(1080, 1920))
-        assertEquals(1024 to 1024, PromptSegmentation.resizedSize(10, 10))
-        // 1000 x 333: 333 * 1.024 = 340.99 -> 341.
-        assertEquals(1024 to 341, PromptSegmentation.resizedSize(1000, 333))
-    }
-
-    @Test
-    fun `the input is normalised, channels first, and padded with zeros`() {
-        val pixels = IntArray(2 * 1) { 0xFF_FF_80_00.toInt() }
-        val input = PromptSegmentation.input(pixels, 2, 1)
+    fun `the input is the stretched square, normalised, channels first`() {
+        val pixels = IntArray(side * side) { 0xFF_FF_80_00.toInt() }
+        pixels[side * side - 1] = 0xFF_00_00_FF.toInt()
+        val input = PromptSegmentation.input(pixels)
         val plane = side * side
         assertEquals(3 * plane, input.size)
         assertEquals((1f - 0.485f) / 0.229f, input[0], 1e-5f)
         assertEquals((128 / 255f - 0.456f) / 0.224f, input[plane + 1], 1e-5f)
         assertEquals((0f - 0.406f) / 0.225f, input[2 * plane], 1e-5f)
-        // Padding, past the picture.
-        assertEquals(0f, input[2], 0f)
-        assertEquals(0f, input[side], 0f)
+        // Not divided by the largest value (as SAM 2 does it, unlike rembg): the last pixel is pure blue.
+        assertEquals((0f - 0.485f) / 0.229f, input[plane - 1], 1e-5f)
+        assertEquals((1f - 0.406f) / 0.225f, input[3 * plane - 1], 1e-5f)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `a picture not yet stretched to the square is refused`() {
+        PromptSegmentation.input(IntArray(4000 * 3))
     }
 
     @Test
-    fun `points are moved into the resized picture`() {
-        val points = PromptSegmentation.points(floatArrayOf(2000f, 0f), floatArrayOf(1500f, 3000f), 4000, 3000)
-        assertArrayEquals(floatArrayOf(512f, 384f, 0f, 768f), points, 1e-3f)
+    fun `points are stretched with the picture, each side on its own`() {
+        val points = PromptSegmentation.points(floatArrayOf(2000f, 0f, 4000f), floatArrayOf(1500f, 3000f, 0f), 4000, 3000)
+        assertArrayEquals(floatArrayOf(512f, 512f, 0f, 1024f, 1024f, 0f), points, 1e-3f)
+        // A tall picture: x is stretched more than y.
+        val tall = PromptSegmentation.points(floatArrayOf(540f), floatArrayOf(960f), 1080, 1920)
+        assertArrayEquals(floatArrayOf(512f, 512f), tall, 1e-3f)
     }
 
     @Test
-    fun `a mask is read from the top left of the padded square, between its values`() {
-        // The left half of the resized picture (512 of 1024 wide, 768 high) is in: in the
-        // mask, columns 0..127 of rows 0..191.
+    fun `a mask covers the whole picture and is read between its values`() {
+        // The left half of the mask is in: on a picture of 400 x 300, its left half.
         val logits = FloatArray(3 * maskSide * maskSide) { -10f }
-        for (y in 0 until 192) for (x in 0 until 128) logits[maskSide * maskSide + y * maskSide + x] = 10f
+        for (y in 0 until maskSide) for (x in 0 until maskSide / 2) logits[maskSide * maskSide + y * maskSide + x] = 10f
         val region = PromptSegmentation.region(logits, 1, 400, 300)
         assertEquals(400 * 300, region.size)
         assertTrue(region[150 * 400 + 50])
+        assertTrue(region[299 * 400 + 50])
         assertFalse(region[150 * 400 + 350])
-        // The edge falls half way, between the last column in and the first out.
+        // The edge falls half way across, between the last column in and the first out.
         assertTrue(region[150 * 400 + 198])
         assertFalse(region[150 * 400 + 202])
         assertTrue(PromptSegmentation.logitAt(logits, 1, 50, 150, 400, 300) > 9f)
@@ -75,6 +76,26 @@ class PromptSegmentationTest {
         val wrong = PromptSegmentation.choose(logits, floatArrayOf(0.9f, 0.6f, 0.95f), 3, outRight, inLeft, 1024, 1024)
         assertEquals(0.5f, wrong.agreement, 0f)
         assertEquals(2, wrong.index)
+    }
+
+    @Test
+    fun `a tap takes the best scored thing under the finger, not the background`() {
+        // A picture of 1024 x 1024: mask 0 all in (the background with it), mask 1 the
+        // left half, mask 2 nothing.
+        val plane = maskSide * maskSide
+        val logits = FloatArray(3 * plane) { -5f }
+        for (i in 0 until plane) logits[i] = 5f
+        for (y in 0 until maskSide) for (x in 0 until maskSide / 2) logits[plane + y * maskSide + x] = 5f
+        val scores = floatArrayOf(0.99f, 0.7f, 0.95f)
+        // On the left: mask 0 scores higher, but it is the whole picture.
+        assertEquals(1, PromptSegmentation.chooseForTap(logits, scores, 3, 100f, 500f, 1024, 1024))
+        // On the right only mask 0 holds the point: better than nothing.
+        assertEquals(0, PromptSegmentation.chooseForTap(logits, scores, 3, 900f, 500f, 1024, 1024))
+        // Out of the picture's bounds, the nearest pixel is read.
+        assertEquals(1, PromptSegmentation.chooseForTap(logits, scores, 3, -20f, 2000f, 1024, 1024))
+        // No mask under the finger.
+        val empty = FloatArray(3 * plane) { -5f }
+        assertNull(PromptSegmentation.chooseForTap(empty, scores, 3, 100f, 500f, 1024, 1024))
     }
 
     @Test

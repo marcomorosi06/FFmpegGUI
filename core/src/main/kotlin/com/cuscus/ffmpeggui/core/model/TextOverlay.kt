@@ -24,6 +24,10 @@ import kotlin.math.roundToInt
  *
  * [look] gives it an outline, a shadow and a box behind it; [fontFile] draws
  * it with a font the user added instead of [font].
+ *
+ * A [hidden] caption is kept in the project but neither shown nor exported; a
+ * [locked] one cannot be picked or moved on the picture (it is chosen from the
+ * layers list, and its panels still change it), as in the SVG editor.
  */
 data class TextOverlay(
     val id: String = UUID.randomUUID().toString(),
@@ -59,6 +63,10 @@ data class TextOverlay(
      * Such a font has no bold of its own: [isBold] does not change it.
      */
     val fontFile: String? = null,
+    /** Left out of the picture and of the export, kept in the project (the layers list's eye). */
+    val hidden: Boolean = false,
+    /** Not picked nor moved by hand on the picture (the layers list's lock). */
+    val locked: Boolean = false,
 )
 
 /**

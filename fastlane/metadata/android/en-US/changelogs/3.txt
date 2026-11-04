@@ -1,0 +1,5 @@
+* Video denoise, for a clip or the whole video
+* Denoise compared before and after, close up
+* Cut out tool (was Chroma key), with a finest cut-out: BiRefNet-lite
+* Photo editor: long-press a subject to lift it off as a sticker
+* EdgeTAM corrects cut-outs; the old SlimSAM model is deleted

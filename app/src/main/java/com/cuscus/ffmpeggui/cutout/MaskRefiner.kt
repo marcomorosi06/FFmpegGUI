@@ -22,7 +22,7 @@ import kotlin.math.max
  * each stroke changes the mask once, and later strokes never undo what an
  * earlier one did (only Undo does), so every correction stays where it was put.
  *
- *  - [Tool.MAGIC]: a tap or a rough stroke on something; SlimSAM ([RefineEngine])
+ *  - [Tool.MAGIC]: a tap or a rough stroke on something; EdgeTAM ([RefineEngine])
  *    finds the whole of it. Only what touches the stroke is taken (nothing
  *    elsewhere in the picture), its edge is brought to the picture's own edges
  *    (GuidedFilter, the model's mask being four times coarser) and it is put on

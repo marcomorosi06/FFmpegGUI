@@ -605,6 +605,28 @@ fun ConfigScreen(
         }
     }
 
+    /**
+     * Moves the keyframe of [owner] at [fromMs] to [toMs] (both on the owner's own
+     * clock), within what it belongs to: a clip's footage, or a text's, picture's
+     * or sound's span. Straight to the model, not through the keyframe at the
+     * playhead (keyedEdit): the keyframe itself moves, as one undo step.
+     */
+    fun moveKeyframe(owner: KeyframeOwner, fromMs: Long, toMs: Long) {
+        fun Keyframes.movedWithin(span: LaneSpan<*>) = moved(fromMs, toMs, 0L..(span.endMs - span.startMs), toleranceMs = 0L)
+        when (owner) {
+            is KeyframeOwner.OfClip -> {
+                val clip = timeline.clips.firstOrNull { it.id == owner.clipId } ?: return
+                val within = clip.startMs..(clip.startMs + clip.lengthMs)
+                onUpdateEffects(clip.id) { it.copy(keyframes = it.keyframes.moved(fromMs, toMs, within, toleranceMs = 0L)) }
+            }
+            is KeyframeOwner.OfItem -> when (owner.kind) {
+                LaneKind.TEXT -> onUpdateText(owner.id, null) { it.copy(keyframes = it.keyframes.movedWithin(it.span)) }
+                LaneKind.IMAGE, LaneKind.EFFECT -> onUpdateImage(owner.id, null) { it.copy(keyframes = it.keyframes.movedWithin(it.laneSpan)) }
+                LaneKind.SOUND -> onUpdateAudioClip(owner.id, null) { it.copy(keyframes = it.keyframes.movedWithin(it.span)) }
+            }
+        }
+    }
+
     /** Where caption or picture [id] lies among those of clip [clipId] (null: the whole video), bottom first, and how many there are. */
     fun stackPosition(id: String, clipId: String?): Pair<Int, Int> {
         val texts = textOverlays.filter { it.clipId == clipId }
@@ -786,6 +808,30 @@ fun ConfigScreen(
     // While the panel is open and the look on, the window asks for HDR: the sample shines.
     com.cuscus.ffmpeggui.hdr.HdrWindow(on = hdrToolOpen && wholeEffects.hdrLook != null, headroom = HDR_VIDEO_HEADROOM)
     val hdrHeadroom = if (hdrToolOpen) com.cuscus.ffmpeggui.hdr.rememberHdrHeadroom() else null
+
+    // -- Denoise comparison frame ----------------------------------------------------------
+    // The frame the denoise panel compares, once the playhead stops: of the selected clip
+    // (its first frame when the playhead is on another one), or of the clip there for the
+    // whole video. Its strengths are read where the panel is drawn, so that moving them
+    // does not look for the frame again.
+    val denoiseToolOpen = selectedTool == EditorTool.DETAILS
+    // The export keeps HDR footage HDR (see CommandBuilder.keptHdr): the denoise works on it as it is.
+    val denoiseHdrKept = denoiseToolOpen && keepHdr && (format == OutputFormat.MP4 || format == OutputFormat.MKV) &&
+        footageHdr(timeline, sources).let { it != null && it != VideoHdr.NONE }
+    val latestDenoiseHdrKept by rememberUpdatedState(denoiseHdrKept)
+    val denoiseFrame by produceState<DenoiseFrame?>(initialValue = null, denoiseToolOpen, scopeClipId) {
+        if (!denoiseToolOpen) {
+            value = null
+            return@produceState
+        }
+        snapshotFlow { if (playback.isPlaying.value) null else playback.snapshot.value }
+            .filterNotNull()
+            .distinctUntilChanged { old, new -> old.segment == new.segment && old.clipFileMs == new.clipFileMs }
+            .collectLatest { now ->
+                delay(DENOISE_FRAME_SETTLE_MS)
+                denoiseFrameAt(latestPlayingClips, latestSources, now, scopeClipId, latestDenoiseHdrKept)?.let { value = it }
+            }
+    }
 
     // Back closes the open panel, then the clip or sound selection, then the editor.
     androidx.activity.compose.BackHandler(
@@ -976,6 +1022,7 @@ fun ConfigScreen(
         },
         item(EditorTool.LAYERS, null),
         item(EditorTool.COLOR, null),
+        item(EditorTool.DETAILS, null),
         item(EditorTool.KEY, null),
         // A GIF holds no HDR.
         if (gifMode) null else item(EditorTool.HDR, null),
@@ -1012,6 +1059,7 @@ fun ConfigScreen(
             item(EditorTool.TRANSFORM, clip.id),
             item(EditorTool.FRAMING, clip.id),
             item(EditorTool.COLOR, clip.id),
+            item(EditorTool.DETAILS, clip.id),
             item(EditorTool.KEY, clip.id),
             item(EditorTool.FADE, clip.id),
             item(EditorTool.TRANSITION, clip.id),
@@ -1242,6 +1290,8 @@ fun ConfigScreen(
                 waveformOf = { timelineState.waveform(it) },
                 audioCard = audioCard,
                 nowPlaying = nowPlaying,
+                // The denoise badge opens its tool, for the clip whose denoise it is.
+                onOpenDenoise = if (isManualMode || previewFullscreen) null else { clipId -> openTool(EditorTool.DETAILS, clipId) },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -1362,6 +1412,9 @@ fun ConfigScreen(
                 onSelectItem = { kind, id -> if (kind == LaneKind.SOUND) selectSound(id) else selectOverlay(id) },
                 onEditSound = { id, span -> updateSound(id, null) { it.copy(span = span, keyframes = it.keyframes.respanned(it.span.startMs, it.span.endMs, span.startMs, span.endMs)) } },
                 onEditOverlay = onSetOverlaySpan,
+                // A keyframe dragged along what it belongs to: one undo step, its values and
+                // easing kept (see Keyframes.moved).
+                onMoveKeyframe = if (isManualMode) null else { owner, fromMs, toMs -> moveKeyframe(owner, fromMs, toMs) },
                 onScrub = scrubTimeline,
                 onAddClip = { clipPicker.launch(if (audioMode) arrayOf("audio/*", "video/*") else arrayOf("video/*", "image/*")) },
                 onAdd = { kind ->
@@ -1666,6 +1719,21 @@ fun ConfigScreen(
                     onContrast = { value -> updateScope { it.copy(color = it.color.copy(contrast = value)) } },
                     onSaturation = { value -> updateScope { it.copy(color = it.color.copy(saturation = value)) } },
                 )
+                EditorTool.DETAILS -> {
+                    val frame = denoiseFrame
+                    // The clip at the frame compared, and its denoise: the export runs it, then the whole video's.
+                    val frameClipDenoise = frame?.let { at -> playingClips.firstOrNull { it.id == at.clipId } }?.effects?.color?.denoise ?: 0f
+                    val wholeDenoise = wholeEffects.color.denoise
+                    DenoisePanel(
+                        strength = scopeEffects.color.denoise,
+                        onStrength = { value -> updateScope { it.copy(color = it.color.copy(denoise = value)) } },
+                        clipScope = selectedClip != null,
+                        otherStrength = if (selectedClip != null) wholeDenoise else frameClipDenoise,
+                        frame = frame,
+                        strengths = listOf(frameClipDenoise, wholeDenoise),
+                        enabled = !isManualMode,
+                    )
+                }
                 EditorTool.KEY -> ColorKeyContent(
                     key = scopeEffects.key,
                     onKey = { _, change -> updateScope { it.copy(key = change(it.key)) } },
@@ -1774,6 +1842,13 @@ fun ConfigScreen(
                     onDelete = { id ->
                         if (textOverlays.any { it.id == id }) onRemoveTextOverlay(id) else onRemoveImageOverlay(id)
                         if (selectedOverlayId == id) selectOverlay(null)
+                    },
+                    // Each its own undo step, straight to the layer (not through a keyframe).
+                    onToggleHidden = { id ->
+                        if (textOverlays.any { it.id == id }) onUpdateText(id, null) { it.copy(hidden = !it.hidden) } else onUpdateImage(id, null) { it.copy(hidden = !it.hidden) }
+                    },
+                    onToggleLocked = { id ->
+                        if (textOverlays.any { it.id == id }) onUpdateText(id, null) { it.copy(locked = !it.locked) } else onUpdateImage(id, null) { it.copy(locked = !it.locked) }
                     },
                     onAddText = addText,
                     onAddSticker = addImage,
@@ -2143,6 +2218,9 @@ private const val SELECTION_GRACE_MS = 300L
 
 /** The HDR panel's frame is read this long after the playhead stops. */
 private const val HDR_SAMPLE_SETTLE_MS = 150L
+
+/** The denoise panel looks for the frame under the playhead this long after it stops. */
+private const val DENOISE_FRAME_SETTLE_MS = 250L
 
 /** The headroom the window asks for while the HDR look's frame shows: what an HLG video shows at most. */
 private const val HDR_VIDEO_HEADROOM = 5f

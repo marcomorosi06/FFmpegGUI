@@ -62,7 +62,7 @@ import androidx.compose.material.icons.rounded.FormatColorFill
 import androidx.compose.material.icons.rounded.Crop
 import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material.icons.rounded.Album
-import androidx.compose.material.icons.rounded.Colorize
+import androidx.compose.material.icons.rounded.ContentCut
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoAwesomeMotion
@@ -88,6 +88,7 @@ import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.CropRotate
+import androidx.compose.material.icons.rounded.Details
 import androidx.compose.material.icons.rounded.Gif
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Gradient
@@ -161,7 +162,7 @@ enum class EditorTool(@StringRes val labelRes: Int, val icon: ImageVector, val f
     OVERLAY_TIMING(R.string.tool_timing, Icons.Rounded.Schedule, ToolFamily.OVERLAY),
     OVERLAY_ROTATE(R.string.tool_rotate, Icons.Rounded.RotateRight, ToolFamily.OVERLAY),
     OVERLAY_ADJUST(R.string.tool_adjust, Icons.Rounded.Tune, ToolFamily.OVERLAY),
-    OVERLAY_KEY(R.string.tool_key, Icons.Rounded.Colorize, ToolFamily.OVERLAY),
+    OVERLAY_KEY(R.string.tool_key, Icons.Rounded.ContentCut, ToolFamily.OVERLAY),
     // What is painted over a picture goes, filled in with what should be behind it.
     OVERLAY_ERASE(R.string.tool_magic_erase, Icons.Rounded.AutoFixHigh, ToolFamily.OVERLAY),
     OVERLAY_VOLUME(R.string.tool_volume, Icons.Rounded.VolumeUp, ToolFamily.OVERLAY),
@@ -195,7 +196,10 @@ enum class EditorTool(@StringRes val labelRes: Int, val icon: ImageVector, val f
     // Tool of a selected still clip.
     MOTION(R.string.tool_motion, Icons.Rounded.ZoomIn, ToolFamily.PICTURE),
     COLOR(R.string.tool_color, Icons.Rounded.Palette, ToolFamily.PICTURE),
-    KEY(R.string.tool_key, Icons.Rounded.Colorize, ToolFamily.PICTURE),
+    // The fine detail of the picture, as the photo editor's Details: for now its
+    // denoise (hqdn3d), compared before and after.
+    DETAILS(R.string.image_tool_details, Icons.Rounded.Details, ToolFamily.PICTURE),
+    KEY(R.string.tool_key, Icons.Rounded.ContentCut, ToolFamily.PICTURE),
     // The HDR look of the whole video.
     HDR(R.string.tool_hdr, Icons.Rounded.HdrOn, ToolFamily.PICTURE),
     TRANSFORM(R.string.tool_transform, Icons.Rounded.CropRotate, ToolFamily.PICTURE),

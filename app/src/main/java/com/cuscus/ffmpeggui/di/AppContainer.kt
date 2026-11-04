@@ -77,6 +77,11 @@ class AppContainer(
 
     val loudnessMeter: LoudnessMeter by lazy { FfmpegLoudnessMeter(appContext, ffmpegExecutor) }
 
+    /** The video editor's denoise comparison, drawn by FFmpeg with the export's own filter. */
+    val denoiseSampler: com.cuscus.ffmpeggui.core.engine.DenoiseSampler by lazy {
+        com.cuscus.ffmpeggui.media.FfmpegDenoiseSampler(appContext, ffmpegExecutor)
+    }
+
     val conversionMessages: ConversionMessages by lazy { ConversionMessages(appContext.resources) }
 
     private val cacheJanitor: CacheJanitor by lazy { CacheJanitor(appContext) }

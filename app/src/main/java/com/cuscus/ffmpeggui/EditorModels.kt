@@ -76,6 +76,10 @@ data class EditorSource(
  *
  * [clipId] attaches a picture to one clip instead (for the whole clip); the
  * editor places everything new freely.
+ *
+ * A [hidden] one is kept in the project but neither shown, heard nor
+ * exported; a [locked] one cannot be picked or moved on the picture (see
+ * TextOverlay).
  */
 data class ImageOverlay(
     val id: String = UUID.randomUUID().toString(),
@@ -129,6 +133,10 @@ data class ImageOverlay(
     val lookSpeed: Float = 1f,
     /** How much a picture look does, 1 as made (see LookSpan.amount). */
     val lookAmount: Float = 1f,
+    /** Left out of the picture, the sound and the export, kept in the project (the layers list's eye). */
+    val hidden: Boolean = false,
+    /** Not picked nor moved by hand on the picture (the layers list's lock). */
+    val locked: Boolean = false,
 ) {
     val isVideo: Boolean get() = video != null
 

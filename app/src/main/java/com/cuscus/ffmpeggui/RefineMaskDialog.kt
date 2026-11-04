@@ -179,7 +179,7 @@ private enum class MaskView {
 internal fun RefineMaskDialog(
     uri: Uri,
     maskPath: String,
-    /** SlimSAM, for the magic tool; null when it is not set up (the precise brush only). */
+    /** EdgeTAM, for the magic tool; null when it is not set up (the precise brush only). */
     engine: RefineEngine?,
     onDone: (String) -> Unit,
     onDismiss: () -> Unit,

@@ -163,6 +163,7 @@ class MainActivity : ComponentActivity() {
                     LocalExportFonts provides container.subtitleFonts,
                     LocalSystemBars provides systemBars,
                     LocalStillGainMaps provides container.stillGainMaps,
+                    LocalDenoiseSampler provides container.denoiseSampler,
                 ) {
                 // The window as the screens get it (inside the system bars and a camera's
                 // notch at the side), measured once for all of them (see WindowLayout).
@@ -340,6 +341,18 @@ class MainActivity : ComponentActivity() {
                         onRemember = studioStore::remember,
                         onForget = studioStore::forget,
                         onFavourite = studioStore::setFavourite,
+                    )
+
+                    // Old models deleted from the phone (RetiredModels): said once, with a way to the new ones.
+                    val retiredModels by container.smartFeatures.retiredModels.collectAsState()
+                    com.cuscus.ffmpeggui.cutout.RetiredModelsDialog(
+                        removed = retiredModels,
+                        onSetUp = {
+                            container.smartFeatures.acknowledgeRetiredModels()
+                            com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.CUTOUT
+                            navController.navigate(Screen.settingsCategory(SettingsCategory.SMART))
+                        },
+                        onDismiss = container.smartFeatures::acknowledgeRetiredModels,
                     )
 
                     CompositionLocalProvider(
@@ -641,6 +654,7 @@ class MainActivity : ComponentActivity() {
                                     onRemoveTextOverlay = vm::removeTextOverlay,
                                     onUpdateText = vm::updateText,
                                     onAddOverlays = { files, onAdded -> vm.addOverlays(files, 0L, oneAfterAnother = false, onAdded = onAdded) },
+                                    onAddPlacedSticker = { overlay, onAdded -> vm.addPlacedOverlay(overlay, onAdded) },
                                     onReplaceOverlay = vm::replaceOverlay,
                                     onRemoveImageOverlay = vm::removeImageOverlay,
                                     onUpdateImage = vm::updateImage,

@@ -19,7 +19,13 @@ import androidx.compose.ui.unit.IntSize
 import android.graphics.Bitmap
 import com.cuscus.ffmpeggui.core.model.GifSettings
 import android.view.TextureView
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,10 +50,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MaterialShapes
+import com.cuscus.ffmpeggui.ui.expressive.PolygonShape
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,6 +78,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
@@ -296,6 +308,8 @@ fun PreviewContainer(
      * background; null for a preview that has no sound to keep playing (a GIF).
      */
     nowPlaying: NowPlaying? = null,
+    /** A tap on the denoise badge: opens the Details tool for that clip (null: the whole video); null when it cannot. */
+    onOpenDenoise: ((String?) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -353,7 +367,10 @@ fun PreviewContainer(
     // With the effects laid over the cuts of the effect transitions, as the export lays them (a TV
     // break's parts have their own sound).
     val cutEffects = remember(shownClips, whole) { transitionEffects(shownClips, whole) }
-    val sounds = remember(audioClips, imageOverlays, cutEffects, stemSounds) { previewSounds(audioClips, imageOverlays + cutEffects) + stemSounds }
+    // What the layers list hides (its eye) is kept in the project only: neither seen nor heard.
+    val shownTexts = remember(textOverlays) { textOverlays.filterNot { it.hidden } }
+    val shownImages = remember(imageOverlays) { imageOverlays.filterNot { it.hidden } }
+    val sounds = remember(audioClips, shownImages, cutEffects, stemSounds) { previewSounds(audioClips, shownImages + cutEffects) + stemSounds }
 
     // -- Player -----------------------------------------------------------------------
     val player = remember { EditorPreviewPlayer(context) }
@@ -526,9 +543,9 @@ fun PreviewContainer(
     // Captions and pictures of the whole video show during their own windows of the output.
     val outputNow: () -> Long = remember(snapshot) { { snapshot.value.outputMs } }
     val clipId = onScreen?.id
-    val clipTexts = if (filtersApply && clipId != null) textOverlays.filter { it.clipId == clipId } else emptyList()
-    val clipImages = if (filtersApply && clipId != null) imageOverlays.filter { it.clipId == clipId } else emptyList()
-    val wholeTexts = if (filtersApply) textOverlays.filter { it.clipId == null } else emptyList()
+    val clipTexts = if (filtersApply && clipId != null) shownTexts.filter { it.clipId == clipId } else emptyList()
+    val clipImages = if (filtersApply && clipId != null) shownImages.filter { it.clipId == clipId } else emptyList()
+    val wholeTexts = if (filtersApply) shownTexts.filter { it.clipId == null } else emptyList()
 
     // -- A transition -------------------------------------------------------------------
     // Read through derivedStateOf: only its start and end recompose, not every tick.
@@ -547,12 +564,12 @@ fun PreviewContainer(
             ratio = croppedRatio(turnedRatio(sourceRatio(clip), effects.rotation), crop),
             key = effects.key?.overVideo(),
             still = source?.takeIf { it.isStill },
-            texts = if (filtersApply) textOverlays.filter { it.clipId == clip.id } else emptyList(),
-            images = if (filtersApply) imageOverlays.filter { it.clipId == clip.id } else emptyList(),
+            texts = if (filtersApply) shownTexts.filter { it.clipId == clip.id } else emptyList(),
+            images = if (filtersApply) shownImages.filter { it.clipId == clip.id } else emptyList(),
             overlays = true,
         )
     }
-    val wholeImages = if (filtersApply) imageOverlays.filter { it.clipId == null } + cutEffects else emptyList()
+    val wholeImages = if (filtersApply) shownImages.filter { it.clipId == null } + cutEffects else emptyList()
     // The picture looks (black and white, a glitch...): over the picture with its captions and pictures.
     val wholeLooks = remember(wholeImages) { wholeImages.filter { it.pictureLook != null } }
 
@@ -829,11 +846,20 @@ fun PreviewContainer(
                 }
             }
 
+            // Read from the clock only as far as the badge changes: not on every frame.
+            val denoiseShown by remember(clips, whole.color.denoise, filtersApply) {
+                derivedStateOf(structuralEqualityPolicy()) {
+                    denoiseShownAt(clips, snapshot.value.segment, whole.color.denoise, filtersApply)
+                }
+            }
             StatusBadges(
                 clipCount = if (clips.size > 1) clips.size else 0,
                 useStreamCopy = useStreamCopy,
                 extractingFrames = extractingFrames,
                 modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
+                denoise = denoiseShown,
+                playing = isPlaying,
+                onOpenDenoise = onOpenDenoise,
             )
         }
     }
@@ -1001,11 +1027,14 @@ internal fun BoxScope.StackedOverlays(
     /** Pictures drawn from these bitmaps rather than from their files, by id (the picture editor's own picture on its canvas). */
     pictures: Map<String, android.graphics.Bitmap> = emptyMap(),
 ) {
-    val runs = remember(texts, images) {
-        val order = stackOrder(texts.map { it.layer }, images.map { it.layer })
+    // What the layers list hides (its eye) is not drawn, in either editor.
+    val shownTexts = remember(texts) { texts.filterNot { it.hidden } }
+    val shownImages = remember(images) { images.filterNot { it.hidden } }
+    val runs = remember(shownTexts, shownImages) {
+        val order = stackOrder(shownTexts.map { it.layer }, shownImages.map { it.layer })
         val grouped = mutableListOf<Pair<Boolean, MutableList<Int>>>()
         // An effect never shares a run with pictures: it is drawn by a layer of its own.
-        fun effect(slot: StackSlot) = !slot.isText && images.getOrNull(slot.index)?.isEffect == true
+        fun effect(slot: StackSlot) = !slot.isText && shownImages.getOrNull(slot.index)?.isEffect == true
         var lastEffect = false
         for (slot in order) {
             val last = grouped.lastOrNull()
@@ -1017,10 +1046,10 @@ internal fun BoxScope.StackedOverlays(
     }
     for ((isText, indices) in runs) {
         // Kept by what it holds, so that a move up or down keeps each one's state.
-        key(isText, indices.firstOrNull()?.let { if (isText) texts.getOrNull(it)?.id else images.getOrNull(it)?.id }) {
+        key(isText, indices.firstOrNull()?.let { if (isText) shownTexts.getOrNull(it)?.id else shownImages.getOrNull(it)?.id }) {
             if (isText) {
                 TextOverlaysLayer(
-                    overlays = indices.mapNotNull { texts.getOrNull(it) },
+                    overlays = indices.mapNotNull { shownTexts.getOrNull(it) },
                     editableId = selectedOverlayId,
                     canvasWidth = canvasWidth,
                     canvasHeight = canvasHeight,
@@ -1031,11 +1060,11 @@ internal fun BoxScope.StackedOverlays(
                     clipMs = clipMs,
                     scene = scene,
                 )
-            } else if (indices.firstOrNull()?.let { images.getOrNull(it)?.isEffect } == true) {
+            } else if (indices.firstOrNull()?.let { shownImages.getOrNull(it)?.isEffect } == true) {
                 // The app's own effects: screened over what lies under them, never touched here.
                 if (outputMs != null) {
                     EffectsLayer(
-                        effects = indices.mapNotNull { images.getOrNull(it) },
+                        effects = indices.mapNotNull { shownImages.getOrNull(it) },
                         outputMs = outputMs,
                         playing = playing,
                         colorMatrix = colorMatrix,
@@ -1043,7 +1072,7 @@ internal fun BoxScope.StackedOverlays(
                 }
             } else {
                 ImageOverlaysLayer(
-                    overlays = indices.mapNotNull { images.getOrNull(it) },
+                    overlays = indices.mapNotNull { shownImages.getOrNull(it) },
                     editableId = selectedOverlayId,
                     canvasWidth = canvasWidth,
                     canvasHeight = canvasHeight,
@@ -1476,15 +1505,18 @@ internal fun BoxScope.TextOverlaysLayer(
                             textWidth = it.width.toFloat()
                             textHeight = it.height.toFloat()
                         }
-                        // A touch selects it; a drag moves it, selecting it first if needed.
-                        .pointerInput(overlay.id) {
+                        // A touch selects it; a drag moves it, selecting it first if needed. A locked
+                        // one (the layers list's lock) takes neither: touches go through it.
+                        .pointerInput(overlay.id, overlay.locked) {
+                            if (overlay.locked) return@pointerInput
                             detectTapGestures {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 currentOnSelect(current.id)
                             }
                         }
                         // One finger moves it, two also resize it; it sticks to the guides (SnapScene).
-                        .pointerInput(overlay.id) {
+                        .pointerInput(overlay.id, overlay.locked) {
+                            if (overlay.locked) return@pointerInput
                             var startX = 0f
                             var startY = 0f
                             var startSize = 0f
@@ -1611,7 +1643,9 @@ internal fun BoxScope.TextOverlaysLayer(
                         )
                     }
 
-                    if (editable) {
+                    // Locked, its corner says so instead of offering the grip.
+                    if (editable && overlay.locked) LockedBadge()
+                    if (editable && !overlay.locked) {
                         ResizeHandle(
                             dragKey = overlay.id,
                             onDragStart = {
@@ -1854,9 +1888,10 @@ internal fun BoxScope.ImageOverlaysLayer(
                                 // Mixed with what lies under it as the export mixes it (see LayerBlend).
                                 blendMode = current.blend.composeMode()
                             }
-                            // A touch selects it; a drag moves it, selecting it first if needed.
-                            .pointerInput(overlay.id, touchable) {
-                                if (!touchable) return@pointerInput
+                            // A touch selects it; a drag moves it, selecting it first if needed. A locked
+                            // one (the layers list's lock) takes neither: touches go through it.
+                            .pointerInput(overlay.id, touchable, overlay.locked) {
+                                if (!touchable || overlay.locked) return@pointerInput
                                 detectTapGestures {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     currentOnSelect(current.id)
@@ -1864,8 +1899,8 @@ internal fun BoxScope.ImageOverlaysLayer(
                             }
                             // One finger moves it, two also resize and turn it; it sticks to the guides
                             // (SnapScene) and its turn to whole steps.
-                            .pointerInput(overlay.id, touchable) {
-                                if (!touchable) return@pointerInput
+                            .pointerInput(overlay.id, touchable, overlay.locked) {
+                                if (!touchable || overlay.locked) return@pointerInput
                                 var startX = 0f
                                 var startY = 0f
                                 var startScale = 0f
@@ -1991,7 +2026,9 @@ internal fun BoxScope.ImageOverlaysLayer(
                                 }
                             }
                         }
-                        if (editable) {
+                        // Locked, its corner says so instead of offering the grip.
+                        if (editable && overlay.locked) LockedBadge()
+                        if (editable && !overlay.locked) {
                             ResizeHandle(
                                 dragKey = overlay.id,
                                 onDragStart = {
@@ -2194,6 +2231,35 @@ private const val LOOK_SETTLE_MS = 120L
 private class MadeLook(val bitmap: android.graphics.Bitmap, val madeFor: List<Any?>)
 
 /**
+ * In the corner of a selected layer that is locked (the layers list's lock), in
+ * place of its grip: a small cookie with a lock, popped in on the theme's spring.
+ */
+@Composable
+private fun BoxScope.LockedBadge() {
+    val scheme = MaterialTheme.colorScheme
+    val description = stringResource(R.string.layers_locked)
+    val grown = remember { Animatable(0f) }
+    val spring = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+    LaunchedEffect(Unit) { grown.animateTo(1f, spring) }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .offset(x = 8.dp, y = 8.dp)
+            .size(22.dp)
+            .graphicsLayer {
+                scaleX = grown.value
+                scaleY = grown.value
+            }
+            .clip(PolygonShape(MaterialShapes.Cookie9Sided))
+            .background(scheme.primary)
+            .semantics { contentDescription = description },
+    ) {
+        Icon(Icons.Rounded.Lock, contentDescription = null, tint = scheme.onPrimary, modifier = Modifier.size(12.dp))
+    }
+}
+
+/**
  * Round grip in the bottom-right corner of an overlay. [onDrag] receives the
  * distance travelled since the drag started, in pixels.
  */
@@ -2243,6 +2309,10 @@ private fun StatusBadges(
     useStreamCopy: Boolean,
     extractingFrames: Boolean,
     modifier: Modifier = Modifier,
+    /** The denoise under the playhead, which the preview cannot show (see DenoiseBadge). */
+    denoise: DenoiseShown? = null,
+    playing: Boolean = false,
+    onOpenDenoise: ((String?) -> Unit)? = null,
 ) {
     val clipsLabel = stringResource(R.string.badge_clips, clipCount)
     val streamCopyLabel = stringResource(R.string.badge_stream_copy)
@@ -2252,7 +2322,6 @@ private fun StatusBadges(
     if (clipCount > 0) badges += Icons.Rounded.VideoLibrary to clipsLabel
     if (useStreamCopy) badges += Icons.Rounded.Sync to streamCopyLabel
     if (extractingFrames) badges += Icons.Rounded.PhotoCamera to framesLabel
-    if (badges.isEmpty()) return
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         badges.forEach { (icon, label) ->
@@ -2279,6 +2348,14 @@ private fun StatusBadges(
                     )
                 }
             }
+        }
+        val motion = MaterialTheme.motionScheme
+        AnimatedVisibility(
+            visible = denoise != null,
+            enter = scaleIn(motion.fastSpatialSpec()) + fadeIn(motion.fastEffectsSpec()),
+            exit = scaleOut(motion.fastSpatialSpec()) + fadeOut(motion.fastEffectsSpec()),
+        ) {
+            DenoiseBadge(shown = denoise, playing = playing, onOpen = onOpenDenoise)
         }
     }
 }

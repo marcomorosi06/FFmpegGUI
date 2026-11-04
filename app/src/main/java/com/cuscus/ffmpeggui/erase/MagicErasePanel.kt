@@ -102,7 +102,7 @@ class MagicEraseUi(
     val ready: Map<EraseVariant, Boolean>,
     val onChoose: (EraseVariant) -> Unit,
     val status: EraseStatus,
-    /** SlimSAM, for the magic brush; null while it is not set up (the precise brush only). */
+    /** EdgeTAM, for the magic brush; null while it is not set up (the precise brush only). */
     val refine: RefineEngine?,
     /** Fills in what the mask marks on the picture; the callback gets the new picture. */
     val onErase: (Uri, String, (Uri) -> Unit) -> Unit,

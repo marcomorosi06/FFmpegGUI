@@ -1,25 +1,36 @@
 package com.cuscus.ffmpeggui.core.cutout
 
+import kotlin.math.exp
 import kotlin.math.roundToInt
 
 /**
  * The kinds of cut-out model, by what they take in, as rembg runs them: a
  * square picture of [side] pixels, its values divided by the largest of them,
  * then each channel moved by [mean] and divided by [deviation] (red, green,
- * blue), channels first.
+ * blue), channels first. [logits]: the model gives logits (a sigmoid makes
+ * them shares of the subject) rather than a map already between 0 and 1.
  */
-enum class SubjectNet(val side: Int, val mean: DoubleArray, val deviation: DoubleArray) {
+enum class SubjectNet(val side: Int, val mean: DoubleArray, val deviation: DoubleArray, val logits: Boolean = false) {
     /** IS-Net (general use): large, slow, precise. */
     ISNET(1024, doubleArrayOf(0.5, 0.5, 0.5), doubleArrayOf(1.0, 1.0, 1.0)),
 
     /** U2-Net and its small sibling: the ImageNet statistics, a small picture; quick. */
     U2NET(320, doubleArrayOf(0.485, 0.456, 0.406), doubleArrayOf(0.229, 0.224, 0.225)),
+
+    /**
+     * BiRefNet-lite (general use): the ImageNet statistics on a large picture,
+     * logits out; the finest edges of the three, and the slowest.
+     */
+    BIREFNET(1024, doubleArrayOf(0.485, 0.456, 0.406), doubleArrayOf(0.229, 0.224, 0.225), logits = true),
 }
 
 /**
  * What goes into a cut-out model and what comes out of it (see [SubjectNet]):
- * out comes one map of the same size, stretched between its lowest and highest
- * value to 0..255, how much of each pixel is the subject.
+ * out comes one map of the same size, how much of each pixel is the subject,
+ * as 0..255. IS-Net's and U2-Net's are stretched between their lowest and
+ * highest value, as rembg does; BiRefNet's logits go through a sigmoid and
+ * are kept as they are (a picture with no subject stays empty rather than
+ * having its faintest guess stretched into one).
  */
 object SubjectModelIo {
 
@@ -50,6 +61,17 @@ object SubjectModelIo {
             out[2 * count + i] = (((p and 0xFF) * scale - mb) / db).toFloat()
         }
         return out
+    }
+
+    /** The model's output map as 0..255 per pixel, as [net] gives it (see [SubjectModelIo]). */
+    fun mask(output: FloatArray, net: SubjectNet): IntArray =
+        if (net.logits) probabilities(output) else mask(output)
+
+    /** Logits as 0..255 per pixel: their sigmoid. */
+    fun probabilities(logits: FloatArray): IntArray = IntArray(logits.size) { i ->
+        val v = logits[i]
+        // exp of a large argument overflows to infinity, and 1 / (1 + inf) is 0: no guard needed.
+        ((1f / (1f + exp(-v))) * 255f).roundToInt().coerceIn(0, 255)
     }
 
     /** The model's output map as 0..255 per pixel, stretched between its lowest and highest value. */

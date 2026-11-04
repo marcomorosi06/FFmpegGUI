@@ -179,6 +179,19 @@ fun interface LoudnessMeter {
     suspend fun integratedLufs(sourceUri: String): Double?
 }
 
+/**
+ * Draws the video editor's denoise comparison (see
+ * [com.cuscus.ffmpeggui.core.preview.DenoiseSample]) with FFmpeg.
+ */
+fun interface DenoiseSampler {
+    /**
+     * The comparison [request] asks for, written as a PNG: the path of a new
+     * file the caller deletes, or null when it cannot be made. Cancelling the
+     * calling coroutine stops FFmpeg.
+     */
+    suspend fun sample(request: com.cuscus.ffmpeggui.core.preview.DenoiseSampleRequest): String?
+}
+
 /** Reads small text sources such as subtitle files. */
 fun interface TextSourceReader {
     /** Content decoded as UTF-8, or null when unreadable or larger than [maxBytes]. */

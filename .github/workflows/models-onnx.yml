@@ -1,0 +1,242 @@
+name: AI model files (ONNX)
+
+# The ONNX files this project converts and serves itself (docs/MODELS.md):
+# EdgeTAM (Meta, Apache 2.0) for the cut-out correction and the photo editor's
+# "lift the subject", BiRefNet-lite (Zheng Peng et al., MIT) for the finest
+# cut-out. For each:
+#
+#   1. build: scripts/export-edgetam.py / export-birefnet.py, from exactly what
+#      scripts/edgetam-onnx.lock / birefnet-onnx.lock pin (upstream commit,
+#      weights, licence: every hash checked), with the tools pinned in
+#      scripts/model-export-requirements.txt (--require-hashes), twice and
+#      independently: on two runner images, the second on two CPU cores only.
+#      Each build checks its files against the PyTorch model on random inputs
+#      and on real photos, then scripts/check-model-pins.py checks them against
+#      the app's pins, the licence and the NOTICE inside and next to them;
+#   2. publish: only when both builds are byte-identical, the files go out with
+#      the upstream LICENSE, the NOTICE of the changes (Apache 2.0 section 4b)
+#      and their PROVENANCE, as a pre-release named by the lock's release_tag
+#      (never "latest": the app's own releases stay apart). The app downloads
+#      them from there.
+#
+# Run it by hand (Actions > AI model files > Run workflow) before the first
+# app release that pins new files. After a push that changes what the files
+# are made from it runs by itself, and only checks. A release that already
+# exists is never replaced: it is checked against the pins instead.
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - scripts/export-edgetam.py
+      - scripts/export-birefnet.py
+      - scripts/edgetam-onnx.lock
+      - scripts/birefnet-onnx.lock
+      - scripts/model-export-requirements.txt
+      - scripts/check-model-pins.py
+      - .github/workflows/models-onnx.yml
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the releases that do not exist yet"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: models-onnx-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.model }} on ${{ matrix.runner }}${{ matrix.cpus && ' (2 cores)' || '' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - edgetam
+          - birefnet
+        runner:
+          - ubuntu-24.04
+          - ubuntu-26.04
+        include:
+          - runner: ubuntu-26.04
+            cpus: "0,1"
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Make room on the disk
+        run: |
+          # PyTorch's wheels are large; toolchains the export does not use go.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
+          df -h /
+
+      - name: Read the lock
+        id: lock
+        env:
+          MODEL: ${{ matrix.model }}
+        run: |
+          lock="scripts/${MODEL}-onnx.lock"
+          value() { awk -v k="$1" '$1 == k { print $2 }' "$lock"; }
+          {
+            echo "lock=$lock"
+            echo "python=$(value python)"
+            echo "repository=$(value repository)"
+            echo "commit=$(value commit)"
+            echo "weights_url=$(value weights_url)"
+            echo "weights_sha256=$(value weights_sha256)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ steps.lock.outputs.python }}
+
+      - name: Install the pinned tools
+        run: |
+          python -m pip install --disable-pip-version-check --require-hashes --no-deps \
+            -r scripts/model-export-requirements.txt
+          python -m pip check || true
+
+      - name: Get the upstream code and weights at the pinned commit
+        env:
+          MODEL: ${{ matrix.model }}
+          REPOSITORY: ${{ steps.lock.outputs.repository }}
+          COMMIT: ${{ steps.lock.outputs.commit }}
+          WEIGHTS_URL: ${{ steps.lock.outputs.weights_url }}
+          WEIGHTS_SHA256: ${{ steps.lock.outputs.weights_sha256 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/upstream"
+          git clone --quiet --filter=blob:none --no-checkout "$REPOSITORY" "$RUNNER_TEMP/upstream/code"
+          git -C "$RUNNER_TEMP/upstream/code" -c advice.detachedHead=false checkout --quiet "$COMMIT"
+          if [ "$MODEL" = birefnet ]; then
+            curl --fail --location --silent --show-error --retry 3 -o "$RUNNER_TEMP/upstream/weights.pth" "$WEIGHTS_URL"
+            echo "$WEIGHTS_SHA256  $RUNNER_TEMP/upstream/weights.pth" | sha256sum --check
+            # The photos the masks are checked on: EdgeTAM's own examples, at its pinned commit.
+            edgetam_commit=$(awk '$1 == "commit" { print $2 }' scripts/edgetam-onnx.lock)
+            git clone --quiet --filter=blob:none --no-checkout --sparse https://github.com/facebookresearch/EdgeTAM "$RUNNER_TEMP/upstream/pictures"
+            git -C "$RUNNER_TEMP/upstream/pictures" sparse-checkout set notebooks/images
+            git -C "$RUNNER_TEMP/upstream/pictures" -c advice.detachedHead=false checkout --quiet "$edgetam_commit"
+            echo "PICTURES=$RUNNER_TEMP/upstream/pictures/notebooks/images" >> "$GITHUB_ENV"
+          else
+            echo "PICTURES=$RUNNER_TEMP/upstream/code/notebooks/images" >> "$GITHUB_ENV"
+          fi
+
+      - name: Export and check
+        env:
+          MODEL: ${{ matrix.model }}
+          CPUS: ${{ matrix.cpus }}
+        run: |
+          out="$RUNNER_TEMP/out"
+          if [ "$MODEL" = edgetam ]; then
+            set -- scripts/export-edgetam.py --edgetam "$RUNNER_TEMP/upstream/code"
+          else
+            set -- scripts/export-birefnet.py --birefnet "$RUNNER_TEMP/upstream/code" --weights "$RUNNER_TEMP/upstream/weights.pth"
+          fi
+          run() { if [ -n "$CPUS" ]; then taskset -c "$CPUS" "$@"; else "$@"; fi; }
+          run python -I "$@" --out "$out" --pictures "$PICTURES"/truck.jpg "$PICTURES"/groceries.jpg "$PICTURES"/cars.jpg
+          {
+            echo "### ${MODEL} on ${{ matrix.runner }}${CPUS:+ (CPUs $CPUS)}"
+            echo
+            echo '```'
+            cat "$out/SHA256SUMS"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          python -I scripts/check-model-pins.py --release-dir "$MODEL=$out"
+
+      - name: Upload the files
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.model }}-${{ matrix.runner }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: ignore
+
+  publish:
+    name: Compare and publish
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download every build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: builds
+
+      - name: Compare the two builds of each model
+        run: |
+          status=0
+          for model in edgetam birefnet; do
+            a="builds/${model}-ubuntu-24.04/SHA256SUMS"
+            b="builds/${model}-ubuntu-26.04/SHA256SUMS"
+            if cmp -s "$a" "$b"; then
+              echo "### ${model}: both builds byte-identical" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::error::The two builds of ${model} differ: nothing of it is published."
+              diff "$a" "$b" || true
+              status=1
+            fi
+          done
+          exit "$status"
+
+      - name: Publish what is not published yet
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for model in edgetam birefnet; do
+            lock="scripts/${model}-onnx.lock"
+            tag=$(awk '$1 == "release_tag" { print $2 }' "$lock")
+            dir="builds/${model}-ubuntu-24.04"
+            cp "builds/${model}-ubuntu-26.04/PROVENANCE" "$dir/PROVENANCE.second-build"
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+              echo "Release $tag exists: checking it rather than replacing it."
+              mkdir -p "published/$model"
+              gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "published/$model"
+              python -I scripts/check-model-pins.py --release-dir "$model=published/$model"
+              echo "### ${tag}: already published, and as pinned" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            {
+              case "$model" in
+                edgetam) echo "EdgeTAM by Meta (Apache License 2.0), converted to ONNX by FFmpeg GUI for its cut-out correction and its \"lift the subject\" gesture." ;;
+                birefnet) echo "BiRefNet-lite (general use) by Zheng Peng et al. (MIT License), converted to ONNX by FFmpeg GUI for its finest subject cut-out." ;;
+              esac
+              echo
+              echo "Made from the upstream code, weights and licence pinned in \`${lock}\` at ${GITHUB_SHA},"
+              echo "twice (ubuntu-24.04; ubuntu-26.04 on two cores), with byte-identical results. Nothing was"
+              echo "trained or changed: see NOTICE for what the conversion does, PROVENANCE for everything the"
+              echo "files were made from. The licence and the notice are also inside each ONNX file (its metadata)."
+              echo
+              echo '```'
+              cat "$dir/SHA256SUMS"
+              echo '```'
+              echo
+              echo "The record of every model the app can use: docs/MODELS.md. This is not legal advice."
+            } > notes.md
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "$tag" --notes-file notes.md --prerelease --latest=false \
+              "$dir"/*.onnx "$dir/LICENSE" "$dir/NOTICE" "$dir/PROVENANCE" "$dir/PROVENANCE.second-build" \
+              "$dir/SHA256SUMS" "$dir/check.json"
+            echo "### Published: \`${tag}\`" >> "$GITHUB_STEP_SUMMARY"
+          done

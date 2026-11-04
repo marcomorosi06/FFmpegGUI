@@ -190,9 +190,18 @@ data class ColorSettings(
     val vignette: Boolean = false,
     /** Noise strength 0..60, 0 = off. */
     val filmGrain: Float = 0f,
-    /** Spatial denoise strength 0..10, 0 = off. */
+    /**
+     * Denoise strength 0..[DENOISE_MAX], 0 = off: FFmpeg's hqdn3d with this as
+     * its spatial luma strength (the other three follow from it), so it works
+     * across each frame and over time, from frame to frame.
+     */
     val denoise: Float = 0f,
-)
+) {
+    companion object {
+        /** The strongest denoise: beyond it hqdn3d smears detail away. */
+        const val DENOISE_MAX = 10f
+    }
+}
 
 /** The ways a camera can move over a still picture. */
 enum class MotionKind { ZOOM_IN, ZOOM_OUT, PAN_LEFT, PAN_RIGHT, PAN_UP, PAN_DOWN }

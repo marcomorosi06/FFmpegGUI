@@ -164,7 +164,7 @@ private val COLOR_MODES = listOf(KeyMode.CHROMA, KeyMode.COLOR)
  */
 internal class SubjectCut(
     val ready: Boolean,
-    /** SlimSAM, to correct a cut-out with brushes; null while it is not set up. */
+    /** EdgeTAM, to correct a cut-out with brushes and lift a subject off a photo; null while it is not set up. */
     val refine: com.cuscus.ffmpeggui.cutout.RefineEngine? = null,
     val status: CutoutStatus,
     /** Cuts the picture at the uri out; the callback gets the mask's path. */

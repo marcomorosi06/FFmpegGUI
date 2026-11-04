@@ -9,6 +9,7 @@ import com.cuscus.ffmpeggui.cutout.CutoutModelStore
 import com.cuscus.ffmpeggui.cutout.CutoutVariant
 import com.cuscus.ffmpeggui.cutout.RefineEngine
 import com.cuscus.ffmpeggui.cutout.RefineModel
+import com.cuscus.ffmpeggui.cutout.RetiredModels
 import com.cuscus.ffmpeggui.cutout.SubjectCutter
 import com.cuscus.ffmpeggui.R
 import com.cuscus.ffmpeggui.translate.TranslationEngine
@@ -99,7 +100,7 @@ class SmartFeatures(
 
     private val _cutoutVariant = MutableStateFlow(
         choices.getString(KEY_CUTOUT, null)?.let { name -> CutoutVariant.entries.firstOrNull { it.name == name } }
-            ?: firstInstalled(listOf(CutoutVariant.PRECISE, CutoutVariant.FAST)) { cutoutStores.getValue(it).state.value }
+            ?: firstInstalled(listOf(CutoutVariant.FINEST, CutoutVariant.PRECISE, CutoutVariant.FAST)) { cutoutStores.getValue(it).state.value }
             ?: CutoutVariant.PRECISE,
     )
 
@@ -117,8 +118,19 @@ class SmartFeatures(
     val cutoutEngine = CutoutEngine(context) { cutoutStore }
     val cutter = SubjectCutter(context, cutoutEngine)
 
-    /** SlimSAM, which corrects a cut-out where the finger points (optional, see RefineModel). */
+    /** EdgeTAM, which corrects a cut-out where the finger points and lifts a subject off a photo (optional, see RefineModel). */
     val refineStore = SpeechModelStore(context, RefineModel.FILES)
+
+    private val _retired = MutableStateFlow<List<RetiredModels.Removed>>(emptyList())
+
+    /** Models the app no longer uses that were deleted from the phone, not yet shown to the user. */
+    val retiredModels: StateFlow<List<RetiredModels.Removed>> = _retired.asStateFlow()
+
+    /** The user has seen which old models were deleted. */
+    fun acknowledgeRetiredModels() {
+        _retired.value = emptyList()
+        scope.launch(Dispatchers.IO) { RetiredModels.acknowledge(app) }
+    }
 
     /** The magic eraser's models (see EraseModel): quick MI-GAN, precise LaMa. */
     val eraseStores: Map<EraseVariant, SpeechModelStore> =
@@ -370,6 +382,11 @@ class SmartFeatures(
     }
 
     init {
+        // Old models still on the phone go, and the user is told once (RetiredModelsDialog).
+        scope.launch(Dispatchers.IO) {
+            runCatching { RetiredModels.sweep(app) }.onFailure { Log.w(TAG, "Could not delete the retired models", it) }
+            _retired.value = RetiredModels.pending(app)
+        }
         // A model being imported or checked shows in the notifications while it is.
         if (work != null) {
             speechStores.forEach { (variant, store) ->

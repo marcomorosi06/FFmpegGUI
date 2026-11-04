@@ -127,7 +127,7 @@ class CutoutEngine(context: Context, private val active: () -> CutoutModelStore)
             }
         }
         if (output.size != side * side) throw IOException("Unexpected output of ${output.size} values")
-        return SubjectModelIo.mask(output)
+        return SubjectModelIo.mask(output, model.store.model.net)
     }
 
     private fun load(store: CutoutModelStore): Loaded {
@@ -135,11 +135,12 @@ class CutoutEngine(context: Context, private val active: () -> CutoutModelStore)
         if (!file.isFile || !store.ready) throw ModelMissing()
         val memory = ActivityManager.MemoryInfo()
         (appContext.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)?.getMemoryInfo(memory)
-        if (memory.availMem in 1 until MIN_FREE_BYTES) throw NotEnoughMemory(memory.availMem)
+        if (memory.availMem in 1 until store.model.minFreeBytes) throw NotEnoughMemory(memory.availMem)
         val started = SystemClock.elapsedRealtime()
         val environment = OrtEnvironment.getEnvironment()
         val options = AiKernels.options(threads)
         try {
+            if (store.model.lean) options.setCPUArenaAllocator(false)
             val session = environment.createSession(file.absolutePath, options)
             val input = session.inputNames.firstOrNull() ?: throw IOException("The model has no input")
             Log.i(TAG, "${store.model.name} loaded in ${SystemClock.elapsedRealtime() - started} ms on $threads threads")
@@ -175,8 +176,5 @@ class CutoutEngine(context: Context, private val active: () -> CutoutModelStore)
 
         /** The model is let go of after this long unused. */
         const val IDLE_UNLOAD_MS = 2 * 60_000L
-
-        /** Below this much free memory the model is not even tried (the precise one needs about a gigabyte). */
-        private const val MIN_FREE_BYTES = 600L * 1024 * 1024
     }
 }

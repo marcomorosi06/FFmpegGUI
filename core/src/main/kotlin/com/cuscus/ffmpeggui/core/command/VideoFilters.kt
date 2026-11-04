@@ -201,8 +201,7 @@ internal class VideoFilters(private val fonts: FontProvider) {
     // Pieces shared by both chains
     // ---------------------------------------------------------------------
 
-    private fun denoise(color: ColorSettings): List<String> =
-        if (color.denoise > 0f) listOf(fmt("hqdn3d=%.1f", color.denoise)) else emptyList()
+    private fun denoise(color: ColorSettings): List<String> = listOfNotNull(denoiseFilter(color.denoise))
 
     private fun geometry(effects: Effects): List<String> {
         val filters = mutableListOf<String>()
@@ -472,3 +471,11 @@ private fun size(expression: String, changes: Boolean): String = if (changes) "m
 
 internal fun fmt(pattern: String, vararg args: Any): String =
     String.format(Locale.US, pattern, *args)
+
+/**
+ * The denoise of [strength] (0..10, see [ColorSettings.denoise]), or null for
+ * none. Shared by the export and the editor's comparison (see
+ * core/preview/DenoiseSample.kt), so both run the very same filter.
+ */
+internal fun denoiseFilter(strength: Float): String? =
+    if (strength > 0f) fmt("hqdn3d=%.1f", strength.coerceAtMost(ColorSettings.DENOISE_MAX)) else null

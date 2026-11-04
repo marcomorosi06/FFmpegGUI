@@ -92,6 +92,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -154,7 +155,7 @@ import com.cuscus.ffmpeggui.preview.fitted
 import com.cuscus.ffmpeggui.preview.renderPicture
 import com.cuscus.ffmpeggui.core.model.ColorSettings
 import com.cuscus.ffmpeggui.core.preview.eqMatrix
-import androidx.compose.material.icons.rounded.Colorize
+import androidx.compose.material.icons.rounded.ContentCut
 import com.cuscus.ffmpeggui.core.model.KeyMode
 import com.cuscus.ffmpeggui.preview.stillPicture
 import com.cuscus.ffmpeggui.preview.SubjectMasks
@@ -209,7 +210,7 @@ internal enum class ImageTool(@StringRes val labelRes: Int, val icon: ImageVecto
     EFFECTS(R.string.tool_effects, Icons.Rounded.AutoAwesome, ToolFamily.PICTURE),
     DETAILS(R.string.image_tool_details, Icons.Rounded.Details, ToolFamily.PICTURE),
     HDR(R.string.image_tool_hdr, Icons.Rounded.HdrOn, ToolFamily.PICTURE),
-    KEY(R.string.tool_key, Icons.Rounded.Colorize, ToolFamily.PICTURE),
+    KEY(R.string.tool_key, Icons.Rounded.ContentCut, ToolFamily.PICTURE),
     // What is painted over goes, filled in with what should be behind it.
     ERASE(R.string.tool_magic_erase, Icons.Rounded.AutoFixHigh, ToolFamily.PICTURE),
     DRAW(R.string.image_tool_draw, Icons.Rounded.Brush, ToolFamily.OVERLAY),
@@ -233,7 +234,7 @@ internal enum class ImageTool(@StringRes val labelRes: Int, val icon: ImageVecto
     ROTATE(R.string.tool_rotate, Icons.Rounded.RotateRight, ToolFamily.OVERLAY),
     OPACITY(R.string.tool_opacity, Icons.Rounded.Opacity, ToolFamily.OVERLAY),
     STICKER_ADJUST(R.string.tool_adjust, Icons.Rounded.Tune, ToolFamily.OVERLAY),
-    STICKER_KEY(R.string.tool_key, Icons.Rounded.Colorize, ToolFamily.OVERLAY),
+    STICKER_KEY(R.string.tool_key, Icons.Rounded.ContentCut, ToolFamily.OVERLAY),
     STICKER_ERASE(R.string.tool_magic_erase, Icons.Rounded.AutoFixHigh, ToolFamily.OVERLAY),
     STICKER_CROP(R.string.tool_overlay_crop, Icons.Rounded.Crop, ToolFamily.OVERLAY),
     STICKER_BORDER(R.string.tool_border, Icons.Rounded.BorderOuter, ToolFamily.OVERLAY),
@@ -297,6 +298,8 @@ fun ImageEditorScreen(
     onUpdateText: (String, String?, (TextOverlay) -> TextOverlay) -> Unit,
     /** Lays the pictures on the picture, all at once, each a little apart; the callback gets the first one's id. */
     onAddOverlays: (List<PickedFile>, (String) -> Unit) -> Unit,
+    /** Lays a sticker already placed and sized (a subject lifted off the picture); the callback gets its id. */
+    onAddPlacedSticker: (ImageOverlay, (String) -> Unit) -> Unit = { _, _ -> },
     onReplaceOverlay: (String, Uri, String) -> Unit,
     onRemoveImageOverlay: (String) -> Unit,
     onUpdateImage: (String, String?, (ImageOverlay) -> ImageOverlay) -> Unit,
@@ -771,6 +774,112 @@ fun ImageEditorScreen(
             },
         )
     }
+    // -- Lifting a subject off the photo: a long press on it (EdgeTAM, see SubjectLifter) -------
+    // The subject under the finger becomes a sticker of its own, laid exactly where it was.
+    val refineEngine = LocalSubjectCut.current?.refine
+    val openSmartFeatures = LocalSubjectCut.current?.onOpenSmartFeatures
+    val lifter = remember(refineEngine) { refineEngine?.let { com.cuscus.ffmpeggui.cutout.SubjectLifter(context, it) } }
+    val liftScope = rememberCoroutineScope()
+    var liftWorking by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    var liftShown by remember { mutableStateOf<LiftedShow?>(null) }
+    var liftNote by remember { mutableStateOf<LiftNote?>(null) }
+    val liftLook by rememberUpdatedState(Triple(shownEdit, viewEffects, keepsAlpha))
+    // The picture the subject is lifted from: larger than the preview, made with the same look.
+    var liftPicture by remember(source?.uri) { mutableStateOf<Pair<Any, Bitmap>?>(null) }
+    val liftedName = stringResource(R.string.lift_sticker_name)
+    // Once, the first time the photo editor opens with the model ready: what a long press does.
+    val liftTips = remember { context.getSharedPreferences(LIFT_PREFS, android.content.Context.MODE_PRIVATE) }
+    LaunchedEffect(lifter != null) {
+        if (lifter != null && !isVideo && !liftTips.getBoolean(KEY_LIFT_TIP, false)) {
+            delay(LIFT_TIP_DELAY_MS)
+            liftNote = LiftNote.TIP
+            liftTips.edit().putBoolean(KEY_LIFT_TIP, true).apply()
+        }
+    }
+    val liftAllowed = source != null && !isVideo && shownCanvas == null && !cropping && !comparing && !tracing &&
+        selectedTool != ImageTool.DRAW && !isManualMode
+    val onLiftPress: ((Float, Float) -> Unit)? = if (!liftAllowed) null else press@{ fx, fy ->
+        if (liftWorking != null) return@press
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        val engine = lifter
+        val uri = source?.uri
+        if (engine == null || uri == null) {
+            liftNote = LiftNote.NEEDS_MODEL
+            return@press
+        }
+        liftNote = null
+        liftWorking = androidx.compose.ui.geometry.Offset(fx, fy)
+        liftScope.launch {
+            try {
+                val (edit, effects, alphaKept) = liftLook
+                val key = Triple(uri, edit, effects)
+                val picture = liftPicture?.takeIf { it.first == key }?.second ?: run {
+                    val raw = withContext(Dispatchers.IO) { stillPicture(context, uri, LIFT_PX)?.toRaster() } ?: throw java.io.IOException("Unreadable picture")
+                    withContext(Dispatchers.Default) {
+                        val opaque = raw.opaque()
+                        val alpha = if (alphaKept) alphaOf(raw) else null
+                        PictureRenderer().render(opaque, edit, effects, subjectMaskFor(edit, opaque), alpha).toBitmap()
+                    }.also { liftPicture = key to it }
+                }
+                val lifted = engine.lift(picture, fx * picture.width, fy * picture.height)
+                if (lifted == null) {
+                    haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                    liftNote = LiftNote.NOTHING
+                } else {
+                    val image = withContext(Dispatchers.IO) { android.graphics.BitmapFactory.decodeFile(lifted.file.path) }?.asImageBitmap()
+                    val overlay = ImageOverlay(
+                        uri = Uri.fromFile(lifted.file),
+                        fileName = liftedName,
+                        x = lifted.placeX,
+                        y = lifted.placeY,
+                        scaleW = lifted.share,
+                        aspect = lifted.aspect,
+                    ).withSpan(com.cuscus.ffmpeggui.core.timeline.TimeSpan(0L, com.cuscus.ffmpeggui.core.timeline.TimeSpan.DEFAULT_LENGTH_MS))
+                    onAddPlacedSticker(overlay) { id ->
+                        if (selectedTool != null && selectedTool !in STICKER_TOOLS && selectedTool !in SELECTION_FREE_TOOLS) selectedTool = null
+                        selectedOverlayId = id
+                    }
+                    if (image != null) {
+                        liftShown = LiftedShow(
+                            image = image,
+                            left = lifted.left.toFloat() / lifted.pictureWidth,
+                            top = lifted.top.toFloat() / lifted.pictureHeight,
+                            width = lifted.width.toFloat() / lifted.pictureWidth,
+                            height = lifted.height.toFloat() / lifted.pictureHeight,
+                        )
+                    }
+                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: com.cuscus.ffmpeggui.cutout.RefineEngine.ModelMissing) {
+                liftNote = LiftNote.NEEDS_MODEL
+            } catch (e: com.cuscus.ffmpeggui.cutout.RefineEngine.NotEnoughMemory) {
+                liftNote = LiftNote.MEMORY
+            } catch (e: OutOfMemoryError) {
+                liftNote = LiftNote.MEMORY
+            } catch (e: Exception) {
+                android.util.Log.w("ImageEditor", "Could not lift the subject", e)
+                liftNote = LiftNote.FAILED
+            } finally {
+                liftWorking = null
+            }
+        }
+    }
+    val pictureLift = PictureLift(
+        onPress = onLiftPress,
+        working = liftWorking,
+        shown = liftShown,
+        onShown = { liftShown = null },
+        note = liftNote,
+        onNoteAction = {
+            val note = liftNote
+            liftNote = null
+            if (note == LiftNote.NEEDS_MODEL) openSmartFeatures?.invoke()
+        },
+        onNoteGone = { liftNote = null },
+    )
+
     val stage: @Composable (Modifier) -> Unit = { modifier ->
         // While cropping the picture steps back from the edges, so that its handles are easy to take.
         val cropInset by animateDpAsState(
@@ -817,6 +926,7 @@ fun ImageEditorScreen(
                 drawing = selectedTool == ImageTool.DRAW && !isManualMode,
                 brush = brush,
                 onStroke = onAddStroke,
+                lift = pictureLift,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -946,6 +1056,13 @@ fun ImageEditorScreen(
                     onDelete = { id ->
                         if (texts.any { it.id == id }) onRemoveTextOverlay(id) else onRemoveImageOverlay(id)
                         if (selectedOverlayId == id) selectedOverlayId = null
+                    },
+                    // Each its own undo step.
+                    onToggleHidden = { id ->
+                        if (texts.any { it.id == id }) onUpdateText(id, null) { it.copy(hidden = !it.hidden) } else onUpdateImage(id, null) { it.copy(hidden = !it.hidden) }
+                    },
+                    onToggleLocked = { id ->
+                        if (texts.any { it.id == id }) onUpdateText(id, null) { it.copy(locked = !it.locked) } else onUpdateImage(id, null) { it.copy(locked = !it.locked) }
                     },
                     onAddText = addText,
                     onAddSticker = { stickerPicker.launch(arrayOf("image/*")) },
@@ -1313,9 +1430,12 @@ private fun PictureStage(
     drawing: Boolean,
     brush: BrushSettings,
     onStroke: (Stroke) -> Unit,
+    /** The long press that lifts a subject off the picture, and what it shows; null: none. */
+    lift: PictureLift? = null,
     modifier: Modifier = Modifier,
 ) {
     val zoom = rememberStageZoom()
+    val currentLift by rememberUpdatedState(lift)
     // The canvas at zoom 1, in pixels: how far a zoomed one may be moved.
     val fitted = remember { FloatArray(2) }
     BoxWithConstraints(
@@ -1367,8 +1487,19 @@ private fun PictureStage(
                     modifier = Modifier
                         .offset { IntOffset(framePx.roundToInt(), framePx.roundToInt()) }
                         .size(pictureWidthPx.toDp(), pictureHeightPx.toDp())
-                        // A touch on the picture itself lets the selected text or sticker go.
-                        .pointerInput(Unit) { detectTapGestures { onSelect(null) } },
+                        // A touch on the picture itself lets the selected text or sticker go; a long
+                        // press lifts the subject under the finger off it (see PictureLift).
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onLongPress = { at ->
+                                    currentLift?.onPress?.invoke(
+                                        (at.x / size.width).coerceIn(0f, 1f),
+                                        (at.y / size.height).coerceIn(0f, 1f),
+                                    )
+                                },
+                                onTap = { onSelect(null) },
+                            )
+                        },
                 ) {
                     if (canvas != null) {
                         // The canvas: its colour, or a checkerboard where it is transparent; the
@@ -1426,6 +1557,9 @@ private fun PictureStage(
                             }
                         }
                     }
+                    if (lift != null) {
+                        LiftEffects(lift = lift, modifier = Modifier.fillMaxSize())
+                    }
                     if (crop != null) {
                         CropOverlay(
                             cropRect = Rect(crop.left, crop.top, crop.left + crop.width, crop.top + crop.height),
@@ -1443,6 +1577,16 @@ private fun PictureStage(
                 .align(Alignment.TopCenter)
                 .padding(top = 8.dp),
         )
+        if (lift != null) {
+            LiftNotePill(
+                note = lift.note,
+                onAction = lift.onNoteAction,
+                onGone = lift.onNoteGone,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 12.dp, start = 16.dp, end = 16.dp),
+            )
+        }
     }
 }
 

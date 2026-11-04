@@ -277,6 +277,8 @@ object ProjectJson {
         put("hue", i.hue)
         put("lookSpeed", i.lookSpeed)
         put("lookAmount", i.lookAmount)
+        put("hidden", i.hidden)
+        put("locked", i.locked)
     }
 
     fun writeShape(s: ShapeLayer): Json.Obj = jsonObject {
@@ -343,6 +345,8 @@ object ProjectJson {
             hue = o.float("hue", d.hue),
             lookSpeed = o.float("lookSpeed", d.lookSpeed),
             lookAmount = o.float("lookAmount", d.lookAmount),
+            hidden = o.bool("hidden", d.hidden),
+            locked = o.bool("locked", d.locked),
         )
     }
 
