@@ -627,6 +627,12 @@ vibration, copies in the phone's folders, recent projects and how many to
 keep, Live Updates) kept with Preferences
 DataStore by `SettingsRepository` (a `StateFlow` that is null until read; the
 splash screen waits for it so that the first frame has the chosen colours).
+The splash screen itself (its animated shapes, their timing and the hand-over
+in `MainActivity`) comes from WiFi Audio Streaming for Android
+(https://github.com/marcomorosi06/WiFiAudioStreaming-Android), by the same author and under
+the same licence (its copy of the EUPL in `assets/licenses/wifi-audio-streaming/`,
+pinned in `scripts/licence-copies.lock` and checked by
+`scripts/check-licence-copies.py`); the glyph and the colours are this app's.
 Where each one acts:
 
 - theme, wallpaper colours, monochrome, pure black: `FFmpegGUITheme` and the

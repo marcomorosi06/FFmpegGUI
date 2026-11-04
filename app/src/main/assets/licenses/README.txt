@@ -19,6 +19,11 @@ FFmpeg GUI
   the music is composed and played by that script; no recording is used
   for any sound),
   under the same licence.
+  The splash screen comes from WiFi Audio Streaming for Android
+  (https://github.com/marcomorosi06/WiFiAudioStreaming-Android),
+  by the same author and under the same licence (EUPL-1.2):
+  wifi-audio-streaming/LICENSE.txt (its own copy, as that repository has
+  it); see ffmpeg-gui/NOTICE.txt, "CODE BASED ON OTHER PROJECTS".
 
 Each component below keeps its own licence. Paths are relative to this
 folder.

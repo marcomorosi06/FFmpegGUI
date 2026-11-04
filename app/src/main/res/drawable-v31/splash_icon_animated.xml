@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- From WiFi Audio Streaming for Android (https://github.com/marcomorosi06/WiFiAudioStreaming-Android),
+     by the same author, EUPL-1.2: the shapes and their animation; the glyph and its scale are this app's. -->
 <animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt">
     <aapt:attr name="android:drawable">

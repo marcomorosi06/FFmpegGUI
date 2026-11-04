@@ -1559,6 +1559,8 @@
     <string name="about_licence_models_record_summary">Every model the app can use: its licence, where it comes from, its SHA-256 and what it was trained on</string>
     <string name="about_licence_effects">The video effects, drawn by FFmpeg GUI\'s own script (scripts/generate-effects.py)</string>
     <string name="about_licence_effects_summary">Part of FFmpeg GUI, under its licence</string>
+    <string name="about_licence_splash">The splash screen, from WiFi Audio Streaming for Android</string>
+    <string name="about_licence_splash_summary">By the same author, under the same licence (EUPL 1.2, github.com/marcomorosi06/WiFiAudioStreaming-Android)</string>
     <string name="about_licence_anti_vocale">anti-vocale, by RisorseArtificiali</string>
     <string name="about_licence_anti_vocale_summary">The smart subtitles take their idea from it (Apache License 2.0)</string>
     <string name="tool_framing">Zoom</string>

@@ -313,6 +313,14 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
                         openLink(context, ProjectLinks.EFFECTS_SCRIPT)
                     }
                 },
+                { shape ->
+                    // The splash screen comes from the author's other app, under the same licence:
+                    // its own copy of the EUPL comes with the app.
+                    val name = stringResource(R.string.about_licence_splash)
+                    LicenceRow(shape, name, stringResource(R.string.about_licence_splash_summary), icon = Icons.Rounded.AutoAwesome, local = true) {
+                        licenceFile = LicenceFile(name, "wifi-audio-streaming/LICENSE.txt")
+                    }
+                },
             ),
         )
         LicenceSection(

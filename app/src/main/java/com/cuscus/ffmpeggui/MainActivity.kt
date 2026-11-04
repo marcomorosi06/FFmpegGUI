@@ -86,6 +86,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+// The splash screen's timing and hand-over come from WiFi Audio Streaming for Android
+// (https://github.com/marcomorosi06/WiFiAudioStreaming-Android), by the same author, EUPL-1.2.
 private const val SPLASH_CHOREOGRAPHY_MS = 900L
 private const val SPLASH_HANDOFF_MS = 160L
 

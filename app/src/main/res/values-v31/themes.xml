@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- The splash screen, from WiFi Audio Streaming for Android (https://github.com/marcomorosi06/WiFiAudioStreaming-Android),
+         by the same author, EUPL-1.2. -->
     <style name="Theme.FFmpegGUI.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash_background</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon_animated</item>

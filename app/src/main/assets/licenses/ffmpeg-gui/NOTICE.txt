@@ -38,6 +38,15 @@ The complete source code of this APK is:
   (https://github.com/microsoft/onnxruntime).
 
 CODE BASED ON OTHER PROJECTS
+- The splash screen (res/drawable/splash_icon.xml, res/drawable-v31/
+  splash_icon_animated*.xml, the Splash themes in res/values-v31/themes.xml
+  and its exit in MainActivity: the animated shapes, their timing and the
+  hand-over to the app) comes from WiFi Audio Streaming for Android,
+  https://github.com/marcomorosi06/WiFiAudioStreaming-Android , by the same author
+  (Copyright (c) 2025-2026 Marco Morosi and contributors), under the same
+  licence: EUPL-1.2, its text as that repository has it in
+  ../wifi-audio-streaming/LICENSE.txt. The glyph in it, its scale and the
+  colours are FFmpeg GUI's own.
 - The voice separation (core/voice) computes Spleeter's spectrogram, masks
   and overlap-add the way sherpa-onnx does (Apache-2.0, ../sherpa-onnx/
   LICENSE.txt), written again in Kotlin; the model is Spleeter's, by

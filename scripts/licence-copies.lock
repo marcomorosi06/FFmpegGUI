@@ -1,0 +1,8 @@
+# Licence texts copied into the app from other repositories, byte for byte,
+# because code or artwork of theirs is in FFmpeg GUI. scripts/check-licence-copies.py
+# checks every copy against the SHA-256 here, and with --online that the file
+# upstream, at the pinned commit and today, is still the one pinned.
+# (The AI models' licences are pinned in their own locks: scripts/*-onnx.lock.)
+#
+# name                  repository                                                    commit                                    upstream file  sha256                                                            copy in this repository
+wifi-audio-streaming    https://github.com/marcomorosi06/WiFiAudioStreaming-Android   53eefd7c4d337b6f7b76a5df244cac35619d4edd  LICENSE.md     32947bc1881a42db1febc9bf595fe92daf7b9f685c3119e0fc1a7a875be427ab  app/src/main/assets/licenses/wifi-audio-streaming/LICENSE.txt
