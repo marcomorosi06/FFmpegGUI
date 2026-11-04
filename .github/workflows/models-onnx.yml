@@ -188,6 +188,11 @@ jobs:
           done
           exit "$status"
 
+      # A release is made as a draft, its files are uploaded one by one (those
+      # already there are left as they are) and downloaded again to be checked
+      # against the pins; only then is it published. A run that stopped half
+      # way is finished by the next one; a file already published is never
+      # replaced (the check refuses a release whose files are not the pinned ones).
       - name: Publish what is not published yet
         if: inputs.publish
         env:
@@ -198,34 +203,47 @@ jobs:
             tag=$(awk '$1 == "release_tag" { print $2 }' "$lock")
             dir="builds/${model}-ubuntu-24.04"
             cp "builds/${model}-ubuntu-26.04/PROVENANCE" "$dir/PROVENANCE.second-build"
+            files=("$dir"/*.onnx "$dir/LICENSE" "$dir/NOTICE" "$dir/PROVENANCE" "$dir/PROVENANCE.second-build" "$dir/SHA256SUMS" "$dir/check.json")
+            echo "::group::${tag}"
             if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-              echo "Release $tag exists: checking it rather than replacing it."
-              mkdir -p "published/$model"
-              gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "published/$model"
-              python -I scripts/check-model-pins.py --release-dir "$model=published/$model"
-              echo "### ${tag}: already published, and as pinned" >> "$GITHUB_STEP_SUMMARY"
-              continue
+              echo "Release $tag exists: only what it lacks is uploaded."
+            else
+              {
+                case "$model" in
+                  edgetam) echo "EdgeTAM by Meta (Apache License 2.0), converted to ONNX by FFmpeg GUI for its cut-out correction and its \"lift the subject\" gesture." ;;
+                  birefnet) echo "BiRefNet-lite (general use) by Zheng Peng et al. (MIT License), converted to ONNX by FFmpeg GUI for its finest subject cut-out." ;;
+                esac
+                echo
+                echo "Made from the upstream code, weights and licence pinned in \`${lock}\` at ${GITHUB_SHA},"
+                echo "twice (ubuntu-24.04; ubuntu-26.04 on two cores), with byte-identical results. Nothing was"
+                echo "trained or changed: see NOTICE for what the conversion does, PROVENANCE for everything the"
+                echo "files were made from. The licence and the notice are also inside each ONNX file (its metadata)."
+                echo
+                echo '```'
+                cat "$dir/SHA256SUMS"
+                echo '```'
+                echo
+                echo "The record of every model the app can use: docs/MODELS.md. This is not legal advice."
+              } > notes.md
+              gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+                --title "$tag" --notes-file notes.md --draft --prerelease --latest=false
             fi
-            {
-              case "$model" in
-                edgetam) echo "EdgeTAM by Meta (Apache License 2.0), converted to ONNX by FFmpeg GUI for its cut-out correction and its \"lift the subject\" gesture." ;;
-                birefnet) echo "BiRefNet-lite (general use) by Zheng Peng et al. (MIT License), converted to ONNX by FFmpeg GUI for its finest subject cut-out." ;;
-              esac
-              echo
-              echo "Made from the upstream code, weights and licence pinned in \`${lock}\` at ${GITHUB_SHA},"
-              echo "twice (ubuntu-24.04; ubuntu-26.04 on two cores), with byte-identical results. Nothing was"
-              echo "trained or changed: see NOTICE for what the conversion does, PROVENANCE for everything the"
-              echo "files were made from. The licence and the notice are also inside each ONNX file (its metadata)."
-              echo
-              echo '```'
-              cat "$dir/SHA256SUMS"
-              echo '```'
-              echo
-              echo "The record of every model the app can use: docs/MODELS.md. This is not legal advice."
-            } > notes.md
-            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-              --title "$tag" --notes-file notes.md --prerelease --latest=false \
-              "$dir"/*.onnx "$dir/LICENSE" "$dir/NOTICE" "$dir/PROVENANCE" "$dir/PROVENANCE.second-build" \
-              "$dir/SHA256SUMS" "$dir/check.json"
+            there=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[] | select(.state == "uploaded") | .name')
+            for f in "${files[@]}"; do
+              name=$(basename "$f")
+              if grep -qxF "$name" <<< "$there"; then
+                echo "Already there: $name"
+              else
+                echo "Uploading $name ($(stat -c %s "$f") bytes)"
+                gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "$f"
+              fi
+            done
+            # What the release holds now, checked as the app will download it.
+            rm -rf "published/$model"
+            mkdir -p "published/$model"
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "published/$model"
+            python3 -I scripts/check-model-pins.py --release-dir "$model=published/$model"
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+            echo "::endgroup::"
             echo "### Published: \`${tag}\`" >> "$GITHUB_STEP_SUMMARY"
           done
