@@ -177,6 +177,8 @@ AI Act, Regulation (EU) 2024/1689, Article 50(2); see docs/ARCHITECTURE.md,
 imported before any other model (`MarkingGate`); without them no model stays
 on the phone (`MarkingSweep`). The marks carry nothing but "made with AI":
 their payloads are constants, the same for everyone (`core/marking/Marks.kt`).
+That they carry no fingerprint is the design, not a certainty: see
+docs/ARCHITECTURE.md, "That they carry nothing is not certain".
 
 - **AudioSeal** (["Proactive Detection of Voice Cloning with Localized
   Watermarking"](https://arxiv.org/abs/2401.17264), Meta, ICML 2024), which
@@ -185,8 +187,8 @@ their payloads are constants, the same for everyone (`core/marking/Marks.kt`).
   `LICENSE`, SHA-256 `da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93`.
   **Made from**, pinned in `scripts/ai-markers.lock`: the package
   `audioseal==0.2.1` (the network's code) and the weights
-  `generator_base.pth`, SHA-256 `0000000000000000000000000000000000000000000000000000000000000000`, and
-  `detector_base.pth`, SHA-256 `0000000000000000000000000000000000000000000000000000000000000000`
+  `generator_base.pth`, SHA-256 `7a845b5fbe9364a63a3909d8ab3fe064d13a76ae4c2e983573e08c69b7b51748`, and
+  `detector_base.pth`, SHA-256 `8a78e8a83584113523e161fc599fcab10fd0e94c04d2eb9d2fa1e9ec91ab69d9`
   (https://huggingface.co/facebook/audioseal). **What the conversion does**
   (`scripts/export-ai-markers.py`): the generator as `get_watermark` with its
   message as an input, the detector as `forward`, both written as ONNX
@@ -206,20 +208,20 @@ their payloads are constants, the same for everyone (`core/marking/Marks.kt`).
   confirmed that the files may be redistributed unchanged, with this
   attribution: https://github.com/adobe/trustmark/issues/48. **Made from**:
   Adobe's own ONNX files, unchanged byte for byte, renamed only:
-  `encoder_Q.onnx`, SHA-256 `0000000000000000000000000000000000000000000000000000000000000000`, and
-  `decoder_Q.onnx`, SHA-256 `0000000000000000000000000000000000000000000000000000000000000000`
+  `encoder_Q.onnx`, SHA-256 `19b3d1b25836130ffd78775a8f61539f993375d1823ef0e59ba5b8dffb4f892d`, and
+  `decoder_Q.onnx`, SHA-256 `ee3268f057c9dabef680e169302f5973d0589feea86189ed229a896cc3aa88df`
   (https://cai-watermark.adobe.net/watermarking/trustmark-models/, the
-  location in Adobe's own code), Adobe's reader checked with TrustMark at commit `0000000000000000000000000000000000000000`.
+  location in Adobe's own code), Adobe's reader checked with TrustMark at commit `f0df43ed760bf3305f98f495f990b8c2315e7983`.
   **Training data.** "We follow the same settings of [7] to train our models
   on 101K images from the MIRFlickR 1M dataset" (the paper).
 - **The files**, pinned in `app/.../marking/MarkerModel.kt`:
 
   | File | Made from | SHA-256 | Bytes |
   |---|---|---|---|
-  | `audioseal-generator.onnx` | AudioSeal, converted | `0000000000000000000000000000000000000000000000000000000000000000` | 0 |
-  | `audioseal-detector.onnx` | AudioSeal, converted | `0000000000000000000000000000000000000000000000000000000000000000` | 0 |
-  | `trustmark-encoder-q.onnx` | Adobe's `encoder_Q.onnx` | `0000000000000000000000000000000000000000000000000000000000000000` | 0 |
-  | `trustmark-decoder-q.onnx` | Adobe's `decoder_Q.onnx` | `0000000000000000000000000000000000000000000000000000000000000000` | 0 |
+  | `audioseal-generator.onnx` | AudioSeal, converted | `ecb230f2d38de821f72f04eda9c40b82f102e058263848f892be4f6e189dd0e7` | 58,960,229 |
+  | `audioseal-detector.onnx` | AudioSeal, converted | `a389f9a5e3fa67a6a3a13480c3799875a5f3251d2d542fada6bd93b5c2bb53fa` | 34,754,353 |
+  | `trustmark-encoder-q.onnx` | Adobe's `encoder_Q.onnx` | `19b3d1b25836130ffd78775a8f61539f993375d1823ef0e59ba5b8dffb4f892d` | 17,312,208 |
+  | `trustmark-decoder-q.onnx` | Adobe's `decoder_Q.onnx` | `ee3268f057c9dabef680e169302f5973d0589feea86189ed229a896cc3aa88df` | 47,401,222 |
 
   A value of zeros is not pinned yet: `.github/workflows/ai-markers.yml`
   learns it on its first run (building and checking everything, publishing

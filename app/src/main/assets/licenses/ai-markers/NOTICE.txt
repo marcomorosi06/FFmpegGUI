@@ -11,9 +11,9 @@ audioseal-generator.onnx and audioseal-detector.onnx
   package audioseal==0.2.1), Copyright (c) Meta Platforms, Inc. and
   affiliates, MIT License (its weights included): see LICENSE-audioseal.txt.
   Changes made: the PyTorch models (generator_base.pth, SHA-256
-  0000000000000000000000000000000000000000000000000000000000000000;
+  7a845b5fbe9364a63a3909d8ab3fe064d13a76ae4c2e983573e08c69b7b51748;
   detector_base.pth, SHA-256
-  0000000000000000000000000000000000000000000000000000000000000000)
+  8a78e8a83584113523e161fc599fcab10fd0e94c04d2eb9d2fa1e9ec91ab69d9)
   were converted to ONNX, opset 17, for a fixed window of 80000
   samples at 16 kHz, by scripts/export-ai-markers.py of FFmpeg GUI: the
   generator as AudioSealWM.get_watermark with its message as an input, the
@@ -22,14 +22,14 @@ audioseal-generator.onnx and audioseal-detector.onnx
 
 trustmark-encoder-q.onnx and trustmark-decoder-q.onnx
   are Adobe's encoder_Q.onnx and decoder_Q.onnx of TrustMark
-  (https://github.com/adobe/trustmark, commit 0000000000000000000000000000000000000000),
+  (https://github.com/adobe/trustmark, commit f0df43ed760bf3305f98f495f990b8c2315e7983),
   Copyright 2023 Adobe, MIT License: see LICENSE-trustmark.txt. "The MIT
   license covers both the code in this repo and the model files which are
   downloaded upon first use" (TrustMark's README); Adobe confirmed that they
   may be redistributed unchanged: https://github.com/adobe/trustmark/issues/48
   They are unchanged, byte for byte (SHA-256
-  0000000000000000000000000000000000000000000000000000000000000000 and
-  0000000000000000000000000000000000000000000000000000000000000000,
+  19b3d1b25836130ffd78775a8f61539f993375d1823ef0e59ba5b8dffb4f892d and
+  ee3268f057c9dabef680e169302f5973d0589feea86189ed229a896cc3aa88df,
   as served at https://cai-watermark.adobe.net/watermarking/trustmark-models/); only their names differ.
   TrustMark: T. Bui, S. Agarwal, J. Collomosse, "TrustMark: Robust
   Watermarking and Watermark Removal for Arbitrary Resolution Images", IEEE

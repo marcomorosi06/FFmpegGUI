@@ -2053,6 +2053,17 @@ noise reduction among what is not). `core.provenance`, pure and tested:
   feasible", and the GDPR (data minimisation, Article 5(1)(c); the AI Act
   does not override it, its Article 2(7)) asks for as little as needed: the
   robustness signing would add is what the invisible marks give.
+- **That they carry nothing is not certain**, and the README says so to
+  the user. The design leaves no identifier in them, but: the constant
+  payloads and the XMP say "made with software that marks this way", and
+  with few users that alone narrows down who made a file; the marks come
+  from neural models that cannot be fully inspected, so nothing proves a
+  mark carries no more than its bits, or that it does not tell which model
+  files or app version wrote it (its residual depends on both, and on the
+  content); and the rest of the file can identify its maker anyway: the
+  place and device tags FFmpeg keeps unless "Remove sensitive"
+  (`withoutSensitive`) is chosen, the encoder tags and x264/x265's settings
+  SEI, the file's dates, the content itself.
 - **Their files** are made by `.github/workflows/ai-markers.yml` (on every
   push that changes `scripts/ai-markers.lock`, the export script or the
   tools, and by hand): AudioSeal converted from Meta's weights, TrustMark's

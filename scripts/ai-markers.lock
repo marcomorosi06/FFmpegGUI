@@ -26,32 +26,32 @@ audioseal_package_sha256    e51ee84850d5e2351346c52b1711373cdedb952676da91484fd0
 audioseal_licence_url       https://raw.githubusercontent.com/facebookresearch/audioseal/main/LICENSE
 audioseal_licence_sha256    da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93
 audioseal_generator_url     https://huggingface.co/facebook/audioseal/resolve/main/generator_base.pth
-audioseal_generator_sha256  0000000000000000000000000000000000000000000000000000000000000000
+audioseal_generator_sha256  7a845b5fbe9364a63a3909d8ab3fe064d13a76ae4c2e983573e08c69b7b51748
 audioseal_detector_url      https://huggingface.co/facebook/audioseal/resolve/main/detector_base.pth
-audioseal_detector_sha256   0000000000000000000000000000000000000000000000000000000000000000
+audioseal_detector_sha256   8a78e8a83584113523e161fc599fcab10fd0e94c04d2eb9d2fa1e9ec91ab69d9
 
 # TrustMark, by Adobe. MIT, the model files included ("The MIT license covers
 # both the code in this repo and the model files which are downloaded upon
 # first use", its README; confirmed for redistributing them unchanged in
 # trustmark_confirmation). Its ONNX files, as Adobe serves them, unchanged.
 trustmark_repository        https://github.com/adobe/trustmark
-trustmark_commit            0000000000000000000000000000000000000000
+trustmark_commit            f0df43ed760bf3305f98f495f990b8c2315e7983
 trustmark_licence           LICENSE
 trustmark_licence_sha256    58d47a5cdfaaceda98925d845e8207d90336c62347a2383f95962b667b1cdaf5
 trustmark_confirmation      https://github.com/adobe/trustmark/issues/48
 trustmark_encoder_url       https://cai-watermark.adobe.net/watermarking/trustmark-models/encoder_Q.onnx
-trustmark_encoder_sha256    0000000000000000000000000000000000000000000000000000000000000000
+trustmark_encoder_sha256    19b3d1b25836130ffd78775a8f61539f993375d1823ef0e59ba5b8dffb4f892d
 trustmark_decoder_url       https://cai-watermark.adobe.net/watermarking/trustmark-models/decoder_Q.onnx
-trustmark_decoder_sha256    0000000000000000000000000000000000000000000000000000000000000000
+trustmark_decoder_sha256    ee3268f057c9dabef680e169302f5973d0589feea86189ed229a896cc3aa88df
 
 # The files the release serves (the TrustMark ones hash as Adobe's, above).
 generator_file              audioseal-generator.onnx
-generator_sha256            0000000000000000000000000000000000000000000000000000000000000000
-generator_bytes             0
+generator_sha256            ecb230f2d38de821f72f04eda9c40b82f102e058263848f892be4f6e189dd0e7
+generator_bytes             58960229
 detector_file               audioseal-detector.onnx
-detector_sha256             0000000000000000000000000000000000000000000000000000000000000000
-detector_bytes              0
+detector_sha256             a389f9a5e3fa67a6a3a13480c3799875a5f3251d2d542fada6bd93b5c2bb53fa
+detector_bytes              34754353
 encoder_file                trustmark-encoder-q.onnx
-encoder_bytes               0
+encoder_bytes               17312208
 decoder_file                trustmark-decoder-q.onnx
-decoder_bytes               0
+decoder_bytes               47401222

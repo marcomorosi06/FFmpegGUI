@@ -55,32 +55,32 @@ object MarkerModel {
     /** AudioSeal's generator: speech (16 kHz, one window) and its message of zeros in, the watermark out. */
     val GENERATOR = SpeechModel.ModelFile(
         name = "audioseal-generator.onnx",
-        sha256 = "0000000000000000000000000000000000000000000000000000000000000000",
-        bytes = 0L,
+        sha256 = "ecb230f2d38de821f72f04eda9c40b82f102e058263848f892be4f6e189dd0e7",
+        bytes = 58_960_229L,
         role = SpeechModel.Role.ENCODER,
     )
 
     /** AudioSeal's detector: speech in, per sample how likely the mark is there, and its message. */
     val DETECTOR = SpeechModel.ModelFile(
         name = "audioseal-detector.onnx",
-        sha256 = "0000000000000000000000000000000000000000000000000000000000000000",
-        bytes = 0L,
+        sha256 = "a389f9a5e3fa67a6a3a13480c3799875a5f3251d2d542fada6bd93b5c2bb53fa",
+        bytes = 34_754_353L,
         role = SpeechModel.Role.DECODER,
     )
 
     /** TrustMark Q's encoder (Adobe's encoder_Q.onnx): a 256 square and the payload in, the square marked out. */
     val ENCODER = SpeechModel.ModelFile(
         name = "trustmark-encoder-q.onnx",
-        sha256 = "0000000000000000000000000000000000000000000000000000000000000000",
-        bytes = 0L,
+        sha256 = "19b3d1b25836130ffd78775a8f61539f993375d1823ef0e59ba5b8dffb4f892d",
+        bytes = 17_312_208L,
         role = SpeechModel.Role.JOINER,
     )
 
     /** TrustMark Q's decoder (Adobe's decoder_Q.onnx): a 256 square in, its 100 bits out. */
     val DECODER = SpeechModel.ModelFile(
         name = "trustmark-decoder-q.onnx",
-        sha256 = "0000000000000000000000000000000000000000000000000000000000000000",
-        bytes = 0L,
+        sha256 = "ee3268f057c9dabef680e169302f5973d0589feea86189ed229a896cc3aa88df",
+        bytes = 47_401_222L,
         role = SpeechModel.Role.TOKENS,
     )
 
