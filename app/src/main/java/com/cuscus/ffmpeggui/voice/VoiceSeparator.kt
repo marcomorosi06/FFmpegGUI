@@ -15,20 +15,16 @@ import com.cuscus.ffmpeggui.core.voice.VoiceStem
 import com.cuscus.ffmpeggui.core.voice.WavWriter
 import com.cuscus.ffmpeggui.media.FfmpegAudioExtractor
 import com.cuscus.ffmpeggui.speech.AiKernels
+import com.cuscus.ffmpeggui.speech.ModelSlot
 import com.cuscus.ffmpeggui.speech.SpeechModel
 import com.cuscus.ffmpeggui.speech.SpeechModelStore
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -52,7 +48,9 @@ import java.util.UUID
  *
  * Results are kept in the app's private files, one per media file (by its
  * address), so that a file separated once is never separated again, in any
- * project. The models stay in memory [IDLE_UNLOAD_MS] after the last use.
+ * project. The models go through the app's ModelGate: loaded only while the
+ * voice is set apart (not while FFmpeg takes the sound out or packs it), alone
+ * in memory, and let go of as soon as it is.
  */
 class VoiceSeparator(
     context: Context,
@@ -91,10 +89,10 @@ class VoiceSeparator(
     private val appContext = context.applicationContext
     private val folder = File(appContext.filesDir, FOLDER)
     private val cache = File(appContext.cacheDir, FOLDER)
+    /** One file at a time; the models themselves wait their turn at the gate. */
     private val mutex = Mutex()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val slot = ModelSlot("Voice model") { release() }
     private var loaded: Loaded? = null
-    private var unloadJob: Job? = null
 
     private val _inMemory = MutableStateFlow(false)
     val inMemory: StateFlow<Boolean> = _inMemory.asStateFlow()
@@ -122,7 +120,6 @@ class VoiceSeparator(
     suspend fun separate(uri: Uri, durationMs: Long, onStep: (Step) -> Unit): File = withContext(Dispatchers.Default) {
         existing(uri)?.let { return@withContext it }
         mutex.withLock {
-            unloadJob?.cancel()
             val id = UUID.randomUUID().toString()
             val pcm = File(cache, "$id.pcm")
             val wav = File(cache, "$id.wav")
@@ -139,21 +136,23 @@ class VoiceSeparator(
                 }
                 if (pcm.length() < PcmStereoFile.BYTES_PER_FRAME) throw NoSound()
                 onStep(Step.Loading)
-                val model = load()
-                onStep(Step.Separating(0f))
                 val context = currentCoroutineContext()
-                PcmStereoFile(pcm).use { source ->
-                    WavWriter(wav, VoiceStem.CHANNELS, VoiceSeparation.SAMPLE_RATE).use { writer ->
-                        val frame = FloatArray(VoiceSeparation.CORE_FRAMES * VoiceSeparation.HOP * VoiceStem.CHANNELS)
-                        VoiceSeparation { magnitudes -> estimate(model, magnitudes) }.separate(
-                            source = source,
-                            sink = { voice, rest, count ->
-                                VoiceStem.interleave(voice, rest, count, frame)
-                                writer.write(frame, count)
-                            },
-                            onProgress = { onStep(Step.Separating(it)) },
-                            checkCancelled = { context.ensureActive() },
-                        )
+                slot.run {
+                    val model = load()
+                    onStep(Step.Separating(0f))
+                    PcmStereoFile(pcm).use { source ->
+                        WavWriter(wav, VoiceStem.CHANNELS, VoiceSeparation.SAMPLE_RATE).use { writer ->
+                            val frame = FloatArray(VoiceSeparation.CORE_FRAMES * VoiceSeparation.HOP * VoiceStem.CHANNELS)
+                            VoiceSeparation { magnitudes -> estimate(model, magnitudes) }.separate(
+                                source = source,
+                                sink = { voice, rest, count ->
+                                    VoiceStem.interleave(voice, rest, count, frame)
+                                    writer.write(frame, count)
+                                },
+                                onProgress = { onStep(Step.Separating(it)) },
+                                checkCancelled = { context.ensureActive() },
+                            )
+                        }
                     }
                 }
                 pcm.delete()
@@ -177,7 +176,6 @@ class VoiceSeparator(
             } finally {
                 pcm.delete()
                 wav.delete()
-                scheduleUnload()
             }
         }
     }
@@ -201,9 +199,7 @@ class VoiceSeparator(
     }
 
     /** Frees the models' memory now. */
-    fun unload() {
-        scope.launch { mutex.withLock { release() } }
-    }
+    fun unload() = slot.unload()
 
     private fun estimate(model: Loaded, magnitudes: FloatArray): Pair<FloatArray, FloatArray> {
         val env = OrtEnvironment.getEnvironment()
@@ -250,14 +246,6 @@ class VoiceSeparator(
         }
     }
 
-    private fun scheduleUnload() {
-        unloadJob?.cancel()
-        unloadJob = scope.launch {
-            delay(IDLE_UNLOAD_MS)
-            mutex.withLock { release() }
-        }
-    }
-
     private fun release() {
         loaded?.close()
         loaded = null
@@ -284,9 +272,6 @@ class VoiceSeparator(
     companion object {
         private const val TAG = "VoiceSeparator"
         private const val FOLDER = "voice-stems"
-
-        /** The models are let go of after this long unused. */
-        const val IDLE_UNLOAD_MS = 2 * 60_000L
 
         /** Below this much free memory the models are not even tried. */
         private const val MIN_FREE_BYTES = 300L * 1024 * 1024

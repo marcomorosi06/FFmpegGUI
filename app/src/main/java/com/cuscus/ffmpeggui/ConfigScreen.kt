@@ -53,6 +53,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.outlined.BookmarkAdd
+import com.cuscus.ffmpeggui.stickers.stickerColours
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -905,7 +907,33 @@ fun ConfigScreen(
             )
         }
     }
-    val addImage: () -> Unit = { imagePicker.launch(OVERLAY_TYPES) }
+    // The sticker gallery opens first (StickerSheet): a saved sticker, or the phone's files.
+    val stickerShelf = com.cuscus.ffmpeggui.stickers.LocalStickerShelf.current
+    var stickerSheetOpen by rememberSaveable { mutableStateOf(false) }
+    // Whether the selected picture is saved already: the bookmark fills, and takes it away again.
+    val savableImage = selectedImage?.takeIf { it.shape == null && !it.isEffect && !it.isVideo && it.uri != null }
+    val savableImageColours = savableImage?.stickerColours()
+    val imageSavedId = com.cuscus.ffmpeggui.stickers.rememberSavedSticker(stickerShelf, savableImage?.uri, savableImage?.key, savableImageColours)
+    val addImage: () -> Unit = { if (stickerShelf != null) stickerSheetOpen = true else imagePicker.launch(OVERLAY_TYPES) }
+    if (stickerSheetOpen && stickerShelf != null) {
+        com.cuscus.ffmpeggui.stickers.StickerSheet(
+            shelf = stickerShelf,
+            pickLabel = stringResource(R.string.stickers_from_phone_any),
+            onPick = { sticker ->
+                onAddOverlays(
+                    listOf(PickedFile(sticker.uri, context.getString(R.string.image_fallback_name, overlayCount + 1))),
+                    playback.snapshot.value.outputMs,
+                    { id ->
+                        selectOverlay(id)
+                        if (selectedTool != EditorTool.LAYERS) selectedTool = null
+                    },
+                    { android.widget.Toast.makeText(context, overlayReadFailed, android.widget.Toast.LENGTH_SHORT).show() },
+                )
+            },
+            onFromPhone = { imagePicker.launch(OVERLAY_TYPES) },
+            onDismiss = { stickerSheetOpen = false },
+        )
+    }
     // The gallery of effects, opened from the effects lane; the effect picked goes at the playhead.
     var effectPickerOpen by rememberSaveable { mutableStateOf(false) }
     if (effectPickerOpen) {
@@ -1120,6 +1148,20 @@ fun ConfigScreen(
             ClipAction(R.string.tool_delete, Icons.Rounded.DeleteOutline, enabled = !isManualMode) {
                 if (selectedText != null) onRemoveTextOverlay(id) else onRemoveImageOverlay(id)
                 selectedOverlayId = null
+            },
+        ) + listOfNotNull(
+            // A still picture (not a video, a shape or an effect) goes to the sticker gallery as
+            // it shows: cut by its key, with its own colours.
+            savableImage?.takeIf { stickerShelf != null }?.let { image ->
+                val savedId = imageSavedId
+                ClipAction(
+                    if (savedId != null) R.string.stickers_saved_action else R.string.stickers_save_action,
+                    if (savedId != null) Icons.Rounded.BookmarkAdded else Icons.Outlined.BookmarkAdd,
+                    enabled = !isManualMode,
+                ) {
+                    val uri = image.uri ?: return@ClipAction
+                    if (savedId != null) stickerShelf?.onDelete?.invoke(savedId) else stickerShelf?.onSave?.invoke(uri, image.key, savableImageColours)
+                }
             },
         )
     }
@@ -1771,6 +1813,13 @@ fun ConfigScreen(
                         newBackground = null,
                         fillHint = stringResource(R.string.key_overlay_hint),
                         subjectUri = image.uri?.takeIf { !image.isVideo },
+                        onSaveSticker = image.uri?.takeIf { !image.isVideo && image.key != null && stickerShelf != null }?.let { uri ->
+                            {
+                                val savedId = imageSavedId
+                                if (savedId != null) stickerShelf?.onDelete?.invoke(savedId) else stickerShelf?.onSave?.invoke(uri, image.key, savableImageColours)
+                            }
+                        },
+                        stickerSaved = imageSavedId != null,
                     )
                 }
                 EditorTool.FRAMING -> selectedClip?.let { clip ->
@@ -1945,6 +1994,8 @@ fun ConfigScreen(
                             sizeDefault = 0.05f,
                             onSize = { size -> updateText(selectedText.id, "size") { it.copy(size = size) } },
                             onPosition = { x, y -> updateText(selectedText.id, "move") { it.copy(x = x, y = y) } },
+                            // As far as it can be dragged: partly off the frame too.
+                            positionRange = com.cuscus.ffmpeggui.core.model.ImagePlacement.POSITION_MIN..com.cuscus.ffmpeggui.core.model.ImagePlacement.POSITION_MAX,
                         )
                     }
                     selectedImage != null -> Column {
@@ -1966,6 +2017,8 @@ fun ConfigScreen(
                             sizeDefault = 0.33f,
                             onSize = { size -> updateImage(selectedImage.id, "size") { it.copy(scaleW = size) } },
                             onPosition = { x, y -> updateImage(selectedImage.id, "move") { it.copy(x = x, y = y) } },
+                            // A picture can lie partly off the frame, as it can be dragged.
+                            positionRange = com.cuscus.ffmpeggui.core.model.ImagePlacement.POSITION_MIN..com.cuscus.ffmpeggui.core.model.ImagePlacement.POSITION_MAX,
                         )
                     }
                     else -> Unit
@@ -2321,8 +2374,17 @@ private val FRAME_STEP_GAP = 2.dp
 private val EDITOR_TOOLS_HEIGHT = TIMELINE_HEIGHT + TOOLBAR_HEIGHT + 8.dp
 /** Height of the row with the clock, play / pause, undo and redo. */
 private val CONTROL_ROW_HEIGHT = 56.dp
+
+// Declared before the heights made from them: a file's top-level values are set in order.
+/** Height of the editors' top bar at the normal text size, its margins included. */
+internal val EDITOR_TOP_BAR_HEIGHT = 68.dp
+
+/** The top bar's margin above and below, and how round its ends are. */
+private val TOP_BAR_MARGIN = 4.dp
+private val TOP_BAR_CORNER = 30.dp
+
 /** Top bar and control row. */
-private val EDITOR_CHROME_HEIGHT = 52.dp + CONTROL_ROW_HEIGHT
+private val EDITOR_CHROME_HEIGHT = EDITOR_TOP_BAR_HEIGHT + CONTROL_ROW_HEIGHT
 /** Below this the preview is too small to be of use above the tools. */
 private val MIN_PREVIEW_HEIGHT = 200.dp
 
@@ -2386,9 +2448,13 @@ private fun footageHdr(timeline: Timeline, sources: List<EditorSource>): VideoHd
 }
 
 /**
- * Close on the left, the file and its target format, Export on the right; on a
- * screen wider than it is tall ([playerRight] not null) the switch that moves
- * the player to the other side of the tools before Export.
+ * The editor's top bar, a floating pill: Close (a tonal button that squares up
+ * under the finger) on the left, the file (cut in the middle, so that its
+ * extension shows) and its target format, Export on the right, the one filled
+ * button. On a screen wider than it is tall ([playerRight] not null) the switch
+ * that moves the player to the other side of the tools joins Export as one
+ * connected pair. At least [EDITOR_TOP_BAR_HEIGHT] tall, taller with large
+ * text, so that nothing is cut.
  */
 @Composable
 internal fun EditorTopBar(
@@ -2401,41 +2467,61 @@ internal fun EditorTopBar(
     /** The switch was tapped; it gets where the player was. */
     onSwapSides: (Boolean) -> Unit = {},
 ) {
+    val scheme = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
-            .padding(horizontal = 4.dp),
+            .padding(horizontal = 8.dp, vertical = TOP_BAR_MARGIN)
+            .clip(RoundedCornerShape(TOP_BAR_CORNER))
+            .background(scheme.surfaceContainer)
+            .heightIn(min = EDITOR_TOP_BAR_HEIGHT - TOP_BAR_MARGIN * 2)
+            .padding(6.dp),
     ) {
-        IconButton(onClick = onClose) {
+        FilledTonalIconButton(onClick = onClose, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(48.dp)) {
             Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.action_close))
         }
+        Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = fileName,
                 style = MaterialTheme.typography.titleMediumEmphasized,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = scheme.onSurface,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                overflow = TextOverflow.MiddleEllipsis,
             )
             Text(
                 text = stringResource(R.string.editor_output_format, formatLabel),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
-        if (playerRight != null) SwapSidesButton(playerRight = playerRight, onSwap = { onSwapSides(playerRight) })
-        // Expressive button: it changes shape (rounder to squarer) under the finger.
-        Button(
-            onClick = onExport,
-            shapes = ButtonDefaults.shapes(),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-            modifier = Modifier.padding(end = 8.dp),
+        Spacer(modifier = Modifier.width(8.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
         ) {
-            Icon(Icons.Rounded.IosShare, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(stringResource(R.string.editor_export), style = MaterialTheme.typography.labelLargeEmphasized)
+            if (playerRight != null) ConnectedSwapSidesButton(playerRight = playerRight, onSwap = { onSwapSides(playerRight) })
+            // Alone it is a pill that squares up under the finger; joined to the switch, its inner end is narrow.
+            Button(
+                onClick = onExport,
+                shapes = if (playerRight != null) {
+                    ButtonDefaults.shapes(
+                        shape = RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp, topEnd = 24.dp, bottomEnd = 24.dp),
+                        pressedShape = RoundedCornerShape(8.dp),
+                    )
+                } else {
+                    ButtonDefaults.shapes()
+                },
+                contentPadding = PaddingValues(horizontal = 20.dp),
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                Icon(Icons.Rounded.IosShare, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.editor_export), style = MaterialTheme.typography.labelLargeEmphasized, maxLines = 1)
+            }
         }
     }
 }

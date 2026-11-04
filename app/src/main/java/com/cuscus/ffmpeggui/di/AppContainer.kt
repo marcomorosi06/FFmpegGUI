@@ -147,6 +147,11 @@ class AppContainer(
     /** The editors' long work in words, for [workNotifier]. */
     val workReports: WorkReports by lazy { WorkReports(appContext, workNotifier) }
 
+    /** The app's own gallery of stickers (subjects cut out or lifted, saved to be used again). */
+    val stickerLibrary: com.cuscus.ffmpeggui.stickers.StickerLibrary by lazy {
+        com.cuscus.ffmpeggui.stickers.StickerLibrary(appContext) { settingsRepository.current.stickerCopies }
+    }
+
     /** The speech model and what runs it: subtitles made from what is said (the settings' smart features). */
     val smartFeatures: SmartFeatures by lazy { SmartFeatures(appContext, ffmpegExecutor, workNotifier) }
 

@@ -10,20 +10,15 @@ import android.os.SystemClock
 import android.util.Log
 import com.cuscus.ffmpeggui.core.cutout.PromptSegmentation
 import com.cuscus.ffmpeggui.speech.AiKernels
+import com.cuscus.ffmpeggui.speech.ModelSlot
 import com.cuscus.ffmpeggui.speech.SpeechModel
 import com.cuscus.ffmpeggui.speech.SpeechModelStore
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.Closeable
 import java.io.IOException
 import java.nio.FloatBuffer
 import java.nio.LongBuffer
@@ -34,8 +29,9 @@ import java.nio.LongBuffer
  * the masks of what some points show (the mask decoder, a fraction of a
  * second), once per stroke or tap.
  *
- * The model is loaded the first time it is needed and let go of
- * [IDLE_UNLOAD_MS] after its last use. One call at a time.
+ * The model goes through the app's ModelGate: loaded when needed, alone in
+ * memory, and let go of as soon as a call is done, unless the work [hold]s it
+ * (the correcting dialog, until it closes; a lift, across its two calls).
  *
  * The tensors are as scripts/export-edgetam.py names them: the encoder takes
  * "image" (the picture stretched to 1024 x 1024, see PromptSegmentation) and
@@ -65,10 +61,8 @@ class RefineEngine(context: Context, private val store: SpeechModelStore) {
     )
 
     private val appContext = context.applicationContext
-    private val mutex = Mutex()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val slot = ModelSlot(RefineModel.NAME) { release() }
     private var loaded: Loaded? = null
-    private var unloadJob: Job? = null
 
     private val _inMemory = MutableStateFlow(false)
 
@@ -82,33 +76,29 @@ class RefineEngine(context: Context, private val store: SpeechModelStore) {
 
     /** Reads [picture] (any size) with the image encoder. */
     suspend fun study(picture: Bitmap): Studied = withContext(Dispatchers.Default) {
-        mutex.withLock {
+        slot.run {
             val model = use()
-            try {
-                // SAM 2 stretches the picture to the square, whatever its proportions.
-                val sideInt = PromptSegmentation.SIDE
-                val resized = Bitmap.createScaledBitmap(picture, sideInt, sideInt, true)
-                val argb = IntArray(sideInt * sideInt)
-                resized.getPixels(argb, 0, sideInt, 0, 0, sideInt, sideInt)
-                if (resized !== picture) resized.recycle()
-                val input = PromptSegmentation.input(argb)
-                val side = sideInt.toLong()
-                val inputName = model.encoder.inputNames.firstOrNull() ?: throw IOException("The encoder has no input")
-                val outputs = OnnxTensor.createTensor(model.environment, FloatBuffer.wrap(input), longArrayOf(1, 3, side, side)).use { tensor ->
-                    model.encoder.run(mapOf(inputName to tensor)).use { result ->
-                        val kept = mutableMapOf<String, Pair<FloatArray, LongArray>>()
-                        for ((name, value) in result) {
-                            val t = value as? OnnxTensor ?: continue
-                            val buffer = t.floatBuffer ?: continue
-                            kept[name] = FloatArray(buffer.remaining()).also { buffer.get(it) } to t.info.shape
-                        }
-                        kept
+            // SAM 2 stretches the picture to the square, whatever its proportions.
+            val sideInt = PromptSegmentation.SIDE
+            val resized = Bitmap.createScaledBitmap(picture, sideInt, sideInt, true)
+            val argb = IntArray(sideInt * sideInt)
+            resized.getPixels(argb, 0, sideInt, 0, 0, sideInt, sideInt)
+            if (resized !== picture) resized.recycle()
+            val input = PromptSegmentation.input(argb)
+            val side = sideInt.toLong()
+            val inputName = model.encoder.inputNames.firstOrNull() ?: throw IOException("The encoder has no input")
+            val outputs = OnnxTensor.createTensor(model.environment, FloatBuffer.wrap(input), longArrayOf(1, 3, side, side)).use { tensor ->
+                model.encoder.run(mapOf(inputName to tensor)).use { result ->
+                    val kept = mutableMapOf<String, Pair<FloatArray, LongArray>>()
+                    for ((name, value) in result) {
+                        val t = value as? OnnxTensor ?: continue
+                        val buffer = t.floatBuffer ?: continue
+                        kept[name] = FloatArray(buffer.remaining()).also { buffer.get(it) } to t.info.shape
                     }
+                    kept
                 }
-                Studied(picture.width, picture.height, outputs)
-            } finally {
-                scheduleUnload()
             }
+            Studied(picture.width, picture.height, outputs)
         }
     }
 
@@ -123,61 +113,60 @@ class RefineEngine(context: Context, private val store: SpeechModelStore) {
      */
     suspend fun find(studied: Studied, points: FloatArray, inside: BooleanArray): Prediction = withContext(Dispatchers.Default) {
         require(points.size == inside.size * 2 && inside.isNotEmpty()) { "One label per point" }
-        mutex.withLock {
+        slot.run {
             val model = use()
+            val count = inside.size.toLong()
+            val xs = FloatArray(inside.size) { points[2 * it] }
+            val ys = FloatArray(inside.size) { points[2 * it + 1] }
+            val scaled = PromptSegmentation.points(xs, ys, studied.width, studied.height)
+            val labels = LongArray(inside.size) { if (inside[it]) PromptSegmentation.INSIDE else PromptSegmentation.OUTSIDE }
+            val env = model.environment
+            val tensors = mutableMapOf<String, OnnxTensor>()
             try {
-                val count = inside.size.toLong()
-                val xs = FloatArray(inside.size) { points[2 * it] }
-                val ys = FloatArray(inside.size) { points[2 * it + 1] }
-                val scaled = PromptSegmentation.points(xs, ys, studied.width, studied.height)
-                val labels = LongArray(inside.size) { if (inside[it]) PromptSegmentation.INSIDE else PromptSegmentation.OUTSIDE }
-                val env = model.environment
-                val tensors = mutableMapOf<String, OnnxTensor>()
-                try {
-                    for (name in model.decoder.inputNames) {
-                        val lower = name.lowercase()
-                        tensors[name] = when {
-                            "point_coords" == lower -> OnnxTensor.createTensor(env, FloatBuffer.wrap(scaled), longArrayOf(1, count, 2))
-                            "point_labels" == lower -> OnnxTensor.createTensor(env, LongBuffer.wrap(labels), longArrayOf(1, count))
-                            else -> {
-                                val (values, shape) = studied.outputs[name] ?: throw IOException("The decoder wants $name, which the encoder does not give")
-                                OnnxTensor.createTensor(env, FloatBuffer.wrap(values), shape)
-                            }
+                for (name in model.decoder.inputNames) {
+                    val lower = name.lowercase()
+                    tensors[name] = when {
+                        "point_coords" == lower -> OnnxTensor.createTensor(env, FloatBuffer.wrap(scaled), longArrayOf(1, count, 2))
+                        "point_labels" == lower -> OnnxTensor.createTensor(env, LongBuffer.wrap(labels), longArrayOf(1, count))
+                        else -> {
+                            val (values, shape) = studied.outputs[name] ?: throw IOException("The decoder wants $name, which the encoder does not give")
+                            OnnxTensor.createTensor(env, FloatBuffer.wrap(values), shape)
                         }
                     }
-                    model.decoder.run(tensors).use { result ->
-                        var logits: FloatArray? = null
-                        var scores: FloatArray? = null
-                        for ((name, value) in result) {
-                            val buffer = (value as? OnnxTensor)?.floatBuffer ?: continue
-                            val values = FloatArray(buffer.remaining()).also { buffer.get(it) }
-                            when {
-                                name == "masks" -> logits = values
-                                name == "iou_predictions" -> scores = values
-                            }
+                }
+                model.decoder.run(tensors).use { result ->
+                    var logits: FloatArray? = null
+                    var scores: FloatArray? = null
+                    for ((name, value) in result) {
+                        val buffer = (value as? OnnxTensor)?.floatBuffer ?: continue
+                        val values = FloatArray(buffer.remaining()).also { buffer.get(it) }
+                        when {
+                            name == "masks" -> logits = values
+                            name == "iou_predictions" -> scores = values
                         }
-                        val maskLogits = logits ?: throw IOException("The decoder gave no mask")
-                        val maskCount = maskLogits.size / (PromptSegmentation.MASK_SIDE * PromptSegmentation.MASK_SIDE)
-                        if (maskCount < 1) throw IOException("Unexpected mask of ${maskLogits.size} values")
-                        val maskScores = scores?.takeIf { it.size >= maskCount } ?: FloatArray(maskCount) { 1f }
-                        Prediction(maskLogits, maskScores, maskCount)
                     }
-                } finally {
-                    tensors.values.forEach { it.close() }
+                    val maskLogits = logits ?: throw IOException("The decoder gave no mask")
+                    val maskCount = maskLogits.size / (PromptSegmentation.MASK_SIDE * PromptSegmentation.MASK_SIDE)
+                    if (maskCount < 1) throw IOException("Unexpected mask of ${maskLogits.size} values")
+                    val maskScores = scores?.takeIf { it.size >= maskCount } ?: FloatArray(maskCount) { 1f }
+                    Prediction(maskLogits, maskScores, maskCount)
                 }
             } finally {
-                scheduleUnload()
+                tensors.values.forEach { it.close() }
             }
         }
     }
 
+    /**
+     * Keeps the model in memory between calls until the hold is closed: for a
+     * piece of work made of many calls (see ModelSlot.hold).
+     */
+    fun hold(): Closeable = slot.hold()
+
     /** Frees the model's memory now (it loads again when next needed). */
-    fun unload() {
-        scope.launch { mutex.withLock { release() } }
-    }
+    fun unload() = slot.unload()
 
     private fun use(): Loaded {
-        unloadJob?.cancel()
         val model = loaded ?: load().also { loaded = it }
         _inMemory.value = true
         return model
@@ -213,14 +202,6 @@ class RefineEngine(context: Context, private val store: SpeechModelStore) {
         }
     }
 
-    private fun scheduleUnload() {
-        unloadJob?.cancel()
-        unloadJob = scope.launch {
-            delay(IDLE_UNLOAD_MS)
-            mutex.withLock { release() }
-        }
-    }
-
     private fun release() {
         loaded?.let { model ->
             runCatching { model.encoder.close() }
@@ -233,9 +214,6 @@ class RefineEngine(context: Context, private val store: SpeechModelStore) {
 
     companion object {
         private const val TAG = "RefineEngine"
-
-        /** The model is let go of after this long unused. */
-        const val IDLE_UNLOAD_MS = 2 * 60_000L
 
         /** Below this much free memory the model is not even tried. */
         private const val MIN_FREE_BYTES = 300L * 1024 * 1024

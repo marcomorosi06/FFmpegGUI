@@ -4,19 +4,17 @@ package com.cuscus.ffmpeggui
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -26,7 +24,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Constraints
@@ -35,8 +32,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.Layout
 import kotlin.math.roundToInt
 import com.cuscus.ffmpeggui.settings.LandscapeLayout
-import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
-import com.cuscus.ffmpeggui.ui.expressive.springPress
 
 /*
  * Where the player goes on a screen wider than it is tall: the editors' own
@@ -91,42 +86,6 @@ internal fun SideBySide(
 internal fun LandscapeLayout.forcesSides(landscape: Boolean): Boolean = landscape && this != LandscapeLayout.AUTO
 
 /**
- * The top bar's switch: a small window drawn with the player on [playerRight]
- * side or the other, which hops across when tapped ([onSwap]).
- */
-@Composable
-internal fun SwapSidesButton(playerRight: Boolean, onSwap: () -> Unit, modifier: Modifier = Modifier) {
-    val haptic = LocalHapticFeedback.current
-    val interaction = remember { MutableInteractionSource() }
-    val scheme = MaterialTheme.colorScheme
-    val side by animateFloatAsState(if (playerRight) 1f else 0f, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "swapSide")
-    val label = stringResource(if (playerRight) R.string.editor_player_to_left else R.string.editor_player_to_right)
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier
-            .size(48.dp)
-            .springPress(interaction, pressedScale = 0.85f)
-            .clickable(interactionSource = interaction, indication = null, role = Role.Button) {
-                haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                onSwap()
-            }
-            .semantics { contentDescription = label },
-    ) {
-        MorphingContainer(
-            from = MaterialShapes.Cookie9Sided,
-            to = MaterialShapes.Cookie12Sided,
-            morphed = playerRight,
-            color = scheme.secondaryContainer,
-            modifier = Modifier.size(40.dp),
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize().padding(10.dp)) {
-                drawLayout(side, player = scheme.onSecondaryContainer, tools = scheme.onSecondaryContainer.copy(alpha = 0.35f))
-            }
-        }
-    }
-}
-
-/**
  * A picture of [layout] for the settings' tiles, in [color]: a landscape
  * window with its player (filled) and its tools (faint).
  */
@@ -144,6 +103,36 @@ internal fun LayoutSample(layout: LandscapeLayout, color: Color) {
 }
 
 /** A window with the player at [side] (0 left, 1 right) and the tools beside it. */
+/**
+ * The same switch as the leading half of a connected pair (Export the other,
+ * see EditorTopBar): a tonal button, its outer end round, squaring up under
+ * the finger, the layout drawn in it sliding to the new side.
+ */
+@Composable
+internal fun ConnectedSwapSidesButton(playerRight: Boolean, onSwap: () -> Unit, modifier: Modifier = Modifier) {
+    val haptic = LocalHapticFeedback.current
+    val scheme = MaterialTheme.colorScheme
+    val side by animateFloatAsState(if (playerRight) 1f else 0f, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "swapSide")
+    val label = stringResource(if (playerRight) R.string.editor_player_to_left else R.string.editor_player_to_right)
+    FilledTonalIconButton(
+        onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+            onSwap()
+        },
+        shapes = IconButtonDefaults.shapes(
+            shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp, topEnd = 8.dp, bottomEnd = 8.dp),
+            pressedShape = RoundedCornerShape(8.dp),
+        ),
+        modifier = modifier
+            .size(width = 56.dp, height = 48.dp)
+            .semantics { contentDescription = label },
+    ) {
+        Canvas(modifier = Modifier.size(22.dp)) {
+            drawLayout(side, player = scheme.onSecondaryContainer, tools = scheme.onSecondaryContainer.copy(alpha = 0.35f))
+        }
+    }
+}
+
 private fun DrawScope.drawLayout(side: Float, player: Color, tools: Color) {
     val w = size.width
     val h = size.height * 0.72f

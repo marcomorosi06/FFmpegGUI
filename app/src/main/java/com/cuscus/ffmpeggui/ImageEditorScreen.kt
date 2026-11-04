@@ -24,6 +24,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,6 +51,9 @@ import androidx.compose.material.icons.rounded.BorderOuter
 import androidx.compose.material.icons.rounded.FormatColorFill
 import androidx.compose.material.icons.rounded.Brush
 import androidx.compose.material.icons.rounded.Compare
+import androidx.compose.material.icons.outlined.BookmarkAdd
+import androidx.compose.material.icons.rounded.BookmarkAdded
+import com.cuscus.ffmpeggui.stickers.stickerColours
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Crop
 import androidx.compose.material.icons.rounded.WbShade
@@ -163,6 +168,7 @@ import com.cuscus.ffmpeggui.preview.toBitmap
 import com.cuscus.ffmpeggui.preview.toRaster
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -648,6 +654,16 @@ fun ImageEditorScreen(
         selectedTool = ImageTool.TEXT_EDIT
     }
     val stickerName = stringResource(R.string.image_sticker_name)
+    // The sticker gallery: the Sticker button opens it first (StickerSheet).
+    val stickerShelf = com.cuscus.ffmpeggui.stickers.LocalStickerShelf.current
+    var stickerSheetOpen by rememberSaveable { mutableStateOf(false) }
+    // Whether the selected sticker, and the picture as it is cut out, are saved already: the
+    // bookmark fills when they are, and takes them away again.
+    val savableSticker = selectedSticker?.takeIf { it.shape == null && !it.isPhoto && !it.isVideo && it.uri != null }
+    val savableStickerColours = savableSticker?.stickerColours()
+    val stickerSavedId = com.cuscus.ffmpeggui.stickers.rememberSavedSticker(stickerShelf, savableSticker?.uri, savableSticker?.key, savableStickerColours)
+    val pictureCutUri = source?.takeIf { described && !isVideo && imageEdit.key != null }?.uri
+    val pictureSavedId = com.cuscus.ffmpeggui.stickers.rememberSavedSticker(stickerShelf, pictureCutUri, imageEdit.key, null)
     // Several pictures at once too.
     val stickerPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
@@ -695,7 +711,7 @@ fun ImageEditorScreen(
         item(ImageTool.ERASE),
         ToolbarItem(R.string.tool_text, Icons.Rounded.Title, enabled = !isManualMode, family = ToolFamily.OVERLAY, onClick = addText),
         ToolbarItem(R.string.image_tool_sticker, Icons.Rounded.AddPhotoAlternate, enabled = !isManualMode, family = ToolFamily.OVERLAY) {
-            stickerPicker.launch(arrayOf("image/*"))
+            if (stickerShelf != null) stickerSheetOpen = true else stickerPicker.launch(arrayOf("image/*"))
         },
         ToolbarItem(R.string.tool_shape, Icons.Rounded.Category, enabled = !isManualMode, family = ToolFamily.OVERLAY, onClick = addShape),
         item(ImageTool.LAYERS),
@@ -734,6 +750,35 @@ fun ImageEditorScreen(
                 if (selectedText != null) onRemoveTextOverlay(id) else onRemoveImageOverlay(id)
                 selectedOverlayId = null
             },
+        ) + listOfNotNull(
+            // A picture (not a shape, nor the photo itself) goes to the sticker gallery as it
+            // shows: cut by its key, with its own colours.
+            savableSticker?.takeIf { stickerShelf != null }?.let { sticker ->
+                val savedId = stickerSavedId
+                ClipAction(
+                    if (savedId != null) R.string.stickers_saved_action else R.string.stickers_save_action,
+                    if (savedId != null) Icons.Rounded.BookmarkAdded else Icons.Outlined.BookmarkAdd,
+                    enabled = !isManualMode,
+                ) {
+                    val uri = sticker.uri ?: return@ClipAction
+                    if (savedId != null) stickerShelf?.onDelete?.invoke(savedId) else stickerShelf?.onSave?.invoke(uri, sticker.key, savableStickerColours)
+                }
+            },
+        )
+    }
+    // The sticker gallery: a tap lays a saved sticker, the large button picks one from the phone.
+    if (stickerSheetOpen && stickerShelf != null) {
+        com.cuscus.ffmpeggui.stickers.StickerSheet(
+            shelf = stickerShelf,
+            pickLabel = stringResource(R.string.stickers_from_phone_picture),
+            onPick = { sticker ->
+                onAddOverlays(listOf(PickedFile(sticker.uri, stickerName))) { id ->
+                    selectedOverlayId = id
+                    if (selectedTool != ImageTool.LAYERS) selectedTool = null
+                }
+            },
+            onFromPhone = { stickerPicker.launch(arrayOf("image/*")) },
+            onDismiss = { stickerSheetOpen = false },
         )
     }
 
@@ -781,6 +826,14 @@ fun ImageEditorScreen(
     val lifter = remember(refineEngine) { refineEngine?.let { com.cuscus.ffmpeggui.cutout.SubjectLifter(context, it) } }
     val liftScope = rememberCoroutineScope()
     var liftWorking by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    // Where a lift was called off (the finger left too early), shown in red.
+    var liftAborted by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    var liftJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // Once a lift ends, done or called off, the picture it read leaves memory (the model
+    // goes by itself: SubjectLifter holds it only for the lift).
+    val releaseLiftModel: () -> Unit = {
+        lifter?.forget()
+    }
     var liftShown by remember { mutableStateOf<LiftedShow?>(null) }
     var liftNote by remember { mutableStateOf<LiftNote?>(null) }
     val liftLook by rememberUpdatedState(Triple(shownEdit, viewEffects, keepsAlpha))
@@ -808,8 +861,10 @@ fun ImageEditorScreen(
             return@press
         }
         liftNote = null
+        liftAborted = null
         liftWorking = androidx.compose.ui.geometry.Offset(fx, fy)
-        liftScope.launch {
+        liftJob = liftScope.launch {
+            val me = coroutineContext[kotlinx.coroutines.Job]
             try {
                 val (edit, effects, alphaKept) = liftLook
                 val key = Triple(uri, edit, effects)
@@ -822,6 +877,9 @@ fun ImageEditorScreen(
                     }.also { liftPicture = key to it }
                 }
                 val lifted = engine.lift(picture, fx * picture.width, fy * picture.height)
+                // Called off meanwhile: nothing is laid (and the subject written is not kept).
+                if (me?.isActive == false) lifted?.file?.delete()
+                ensureActive()
                 if (lifted == null) {
                     haptic.performHapticFeedback(HapticFeedbackType.Reject)
                     liftNote = LiftNote.NOTHING
@@ -862,13 +920,34 @@ fun ImageEditorScreen(
                 android.util.Log.w("ImageEditor", "Could not lift the subject", e)
                 liftNote = LiftNote.FAILED
             } finally {
-                liftWorking = null
+                // A lift called off has been tidied already, and another may be under way by now.
+                if (liftJob === me) {
+                    liftWorking = null
+                    releaseLiftModel()
+                }
             }
+        }
+    }
+    // The finger left: a lift still under way is called off, in red, with a firm haptic.
+    val onLiftRelease: () -> Unit = {
+        val job = liftJob
+        val at = liftWorking
+        liftJob = null
+        if (job != null && job.isActive) {
+            job.cancel()
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            liftWorking = null
+            liftAborted = at
+            // The model goes as soon as the step it is in ends (never in the middle of one).
+            releaseLiftModel()
         }
     }
     val pictureLift = PictureLift(
         onPress = onLiftPress,
+        onRelease = onLiftRelease,
         working = liftWorking,
+        aborted = liftAborted,
+        onAbortShown = { liftAborted = null },
         shown = liftShown,
         onShown = { liftShown = null },
         note = liftNote,
@@ -1065,7 +1144,7 @@ fun ImageEditorScreen(
                         if (texts.any { it.id == id }) onUpdateText(id, null) { it.copy(locked = !it.locked) } else onUpdateImage(id, null) { it.copy(locked = !it.locked) }
                     },
                     onAddText = addText,
-                    onAddSticker = { stickerPicker.launch(arrayOf("image/*")) },
+                    onAddSticker = { if (stickerShelf != null) stickerSheetOpen = true else stickerPicker.launch(arrayOf("image/*")) },
                     onAddShape = addShape,
                 )
                 ImageTool.SHAPE -> selectedSticker?.let { sticker ->
@@ -1107,6 +1186,13 @@ fun ImageEditorScreen(
                     ),
                     // The model looks at a still picture (not a frame of a video).
                     subjectUri = source?.takeIf { described && !isVideo }?.uri,
+                    onSaveSticker = pictureCutUri?.takeIf { stickerShelf != null }?.let { uri ->
+                        {
+                            val savedId = pictureSavedId
+                            if (savedId != null) stickerShelf?.onDelete?.invoke(savedId) else stickerShelf?.onSave?.invoke(uri, imageEdit.key, null)
+                        }
+                    },
+                    stickerSaved = pictureSavedId != null,
                 )
                 ImageTool.COMMAND -> CommandSectionContent(
                     commandPreview = commandPreview,
@@ -1150,6 +1236,8 @@ fun ImageEditorScreen(
                             sizeDefault = 0.05f,
                             onSize = { size -> onUpdateText(selectedText.id, "size") { it.copy(size = size) } },
                             onPosition = { x, y -> onUpdateText(selectedText.id, "move") { it.copy(x = x, y = y) } },
+                            // As far as it can be dragged: partly off the frame too.
+                            positionRange = com.cuscus.ffmpeggui.core.model.ImagePlacement.POSITION_MIN..com.cuscus.ffmpeggui.core.model.ImagePlacement.POSITION_MAX,
                         )
                     }
                     selectedSticker != null -> Column {
@@ -1170,6 +1258,8 @@ fun ImageEditorScreen(
                             sizeDefault = 0.33f,
                             onSize = { size -> onUpdateImage(selectedSticker.id, "size") { it.copy(scaleW = size) } },
                             onPosition = { x, y -> onUpdateImage(selectedSticker.id, "move") { it.copy(x = x, y = y) } },
+                            // A picture can lie partly off the frame, as it can be dragged.
+                            positionRange = com.cuscus.ffmpeggui.core.model.ImagePlacement.POSITION_MIN..com.cuscus.ffmpeggui.core.model.ImagePlacement.POSITION_MAX,
                         )
                     }
                     else -> Unit
@@ -1213,6 +1303,13 @@ fun ImageEditorScreen(
                         enabled = !isManualMode,
                         fillHint = stringResource(R.string.key_overlay_hint),
                         subjectUri = sticker.uri?.takeIf { !sticker.isVideo },
+                        onSaveSticker = sticker.uri?.takeIf { !sticker.isVideo && sticker.key != null && stickerShelf != null }?.let { uri ->
+                            {
+                                val savedId = stickerSavedId
+                                if (savedId != null) stickerShelf?.onDelete?.invoke(savedId) else stickerShelf?.onSave?.invoke(uri, sticker.key, savableStickerColours)
+                            }
+                        },
+                        stickerSaved = stickerSavedId != null,
                     )
                 }
                 ImageTool.STICKER_CROP -> selectedSticker?.let { sticker ->
@@ -1488,17 +1585,49 @@ private fun PictureStage(
                         .offset { IntOffset(framePx.roundToInt(), framePx.roundToInt()) }
                         .size(pictureWidthPx.toDp(), pictureHeightPx.toDp())
                         // A touch on the picture itself lets the selected text or sticker go; a long
-                        // press lifts the subject under the finger off it (see PictureLift).
+                        // press lifts the subject under the finger off it, for as long as the finger
+                        // stays down: let go first and the lift is called off (see PictureLift).
                         .pointerInput(Unit) {
-                            detectTapGestures(
-                                onLongPress = { at ->
-                                    currentLift?.onPress?.invoke(
-                                        (at.x / size.width).coerceIn(0f, 1f),
-                                        (at.y / size.height).coerceIn(0f, 1f),
-                                    )
-                                },
-                                onTap = { onSelect(null) },
-                            )
+                            awaitEachGesture {
+                                val down = awaitFirstDown()
+                                // Before the long press: a tap, a move, another finger or a layer's gesture.
+                                val early = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                                    var end: EarlyEnd? = null
+                                    while (end == null) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == down.id }
+                                        end = when {
+                                            change == null || event.changes.size > 1 || event.changes.any { it.isConsumed } -> EarlyEnd.OTHER
+                                            !change.pressed -> EarlyEnd.TAP.also { change.consume() }
+                                            (change.position - down.position).getDistance() > viewConfiguration.touchSlop -> EarlyEnd.OTHER
+                                            else -> null
+                                        }
+                                    }
+                                    end
+                                }
+                                when (early) {
+                                    EarlyEnd.TAP -> onSelect(null)
+                                    EarlyEnd.OTHER -> Unit
+                                    null -> {
+                                        val lift = currentLift
+                                        val press = lift?.onPress ?: return@awaitEachGesture
+                                        press(
+                                            (down.position.x / size.width).coerceIn(0f, 1f),
+                                            (down.position.y / size.height).coerceIn(0f, 1f),
+                                        )
+                                        // Held until every finger leaves; then the lift ends, done or not
+                                        // (a gesture taken away, the screen left, counts as letting go).
+                                        try {
+                                            do {
+                                                val event = awaitPointerEvent()
+                                                event.changes.forEach { it.consume() }
+                                            } while (event.changes.any { it.pressed })
+                                        } finally {
+                                            lift.onRelease()
+                                        }
+                                    }
+                                }
+                            }
                         },
                 ) {
                     if (canvas != null) {
@@ -1823,7 +1952,7 @@ private const val MIN_STEP_PX = 2f
 
 private val IMAGE_CONTROL_ROW_HEIGHT = 56.dp
 private val IMAGE_TOOLS_HEIGHT = TOOLBAR_HEIGHT + 16.dp
-private val IMAGE_CHROME_HEIGHT = 52.dp + IMAGE_CONTROL_ROW_HEIGHT
+private val IMAGE_CHROME_HEIGHT = EDITOR_TOP_BAR_HEIGHT + IMAGE_CONTROL_ROW_HEIGHT
 private val IMAGE_MIN_STAGE_HEIGHT = 260.dp
 
 /** Most of the editor's height an open panel may take. */
@@ -1837,3 +1966,6 @@ private fun stackPlace(id: String, texts: List<TextOverlay>, images: List<ImageO
     val position = order.indexOfFirst { slot -> if (slot.isText) onPicture[slot.index].id == id else stickers[slot.index].id == id }
     return position to order.size
 }
+
+/** How a touch on the picture ended before it became a long press. */
+private enum class EarlyEnd { TAP, OTHER }

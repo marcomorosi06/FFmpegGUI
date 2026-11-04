@@ -9,17 +9,10 @@ import com.k2fsa.sherpa.onnx.OfflineModelConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
@@ -34,10 +27,10 @@ import java.util.Locale
  * processor): [active] gives its store each time the model is used, [samples]
  * the recordings to measure it on (those of any build on the phone).
  *
- * The model is loaded the first time it is needed and stays in memory while it
- * is used; [IDLE_UNLOAD_MS] after the last use it is unloaded, since it holds
- * over a gigabyte. When another build is chosen, the one in memory is let go
- * of and the new one loaded. One recognition runs at a time.
+ * The model goes through the app's ModelGate: loaded for one [use] (a whole
+ * file's words, say), alone in memory, and let go of as soon as it is done,
+ * since it holds over a gigabyte. When another build is chosen, the one in
+ * memory is let go of and the new one loaded.
  */
 class SpeechEngine(
     context: Context,
@@ -70,11 +63,9 @@ class SpeechEngine(
     class NoRecordings : IOException("No recordings to measure the speech model on")
 
     private val appContext = context.applicationContext
-    private val mutex = Mutex()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val slot = ModelSlot("Speech model") { release() }
     private var recognizer: OfflineRecognizer? = null
     private var recognizerStore: SpeechModelStore? = null
-    private var unloadJob: Job? = null
 
     private val _loaded = MutableStateFlow(false)
 
@@ -85,12 +76,11 @@ class SpeechEngine(
     val threads: Int = (Runtime.getRuntime().availableProcessors() - 2).coerceIn(2, 4)
 
     /**
-     * Runs [block] with the model loaded (loading it if needed). [onLoaded] gets
-     * how long loading took, 0 when it was already in memory.
+     * Runs [block] with the model loaded (loading it if needed), then lets it go.
+     * [onLoaded] gets how long loading took, 0 when it was already in memory.
      */
     suspend fun <T> use(onLoaded: (Long) -> Unit = {}, block: suspend (Recognizer) -> T): T = withContext(Dispatchers.Default) {
-        mutex.withLock {
-            unloadJob?.cancel()
+        slot.run {
             val store = active()
             if (recognizer != null && recognizerStore !== store) release()
             val started = SystemClock.elapsedRealtime()
@@ -101,20 +91,12 @@ class SpeechEngine(
             }
             _loaded.value = true
             onLoaded(if (wasLoaded) 0L else SystemClock.elapsedRealtime() - started)
-            try {
-                block(Recognizer(current))
-            } finally {
-                scheduleUnload()
-            }
+            block(Recognizer(current))
         }
     }
 
     /** Frees the model's memory now (it loads again when next needed). */
-    fun unload() {
-        scope.launch {
-            mutex.withLock { release() }
-        }
-    }
+    fun unload() = slot.unload()
 
     /** Measures the model on the recordings that came with it (or with the other build). */
     suspend fun speedTest(): SpeedResult {
@@ -194,14 +176,6 @@ class SpeechEngine(
         return model
     }
 
-    private fun scheduleUnload() {
-        unloadJob?.cancel()
-        unloadJob = scope.launch {
-            delay(IDLE_UNLOAD_MS)
-            mutex.withLock { release() }
-        }
-    }
-
     private fun release() {
         recognizer?.release()
         recognizer = null
@@ -213,9 +187,6 @@ class SpeechEngine(
         private const val TAG = "SpeechEngine"
         const val SAMPLE_RATE = 16_000
         private const val FEATURE_DIM = 80
-
-        /** The model is let go of after this long unused. */
-        const val IDLE_UNLOAD_MS = 2 * 60_000L
 
         /** Below this much free memory the model is not even tried (it needs about 1.2 GB). */
         private const val MIN_FREE_BYTES = 700L * 1024 * 1024

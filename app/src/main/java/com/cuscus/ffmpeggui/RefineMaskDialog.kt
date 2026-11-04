@@ -287,6 +287,12 @@ internal fun RefineMaskDialog(
         work { show(now.picture, refiner.replay(now, taken)) }
     }
 
+    // The model stays in memory from the first stroke to the last, and goes when the dialog
+    // closes (confirmed or not): a stroke never waits for it to load again.
+    DisposableEffect(engine) {
+        val hold = engine?.hold()
+        onDispose { hold?.close() }
+    }
     LaunchedEffect(uri, maskPath) {
         try {
             val picture = refiner.open(uri, maskPath)

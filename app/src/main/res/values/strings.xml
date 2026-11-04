@@ -1417,7 +1417,7 @@
     <string name="smart_delete_title">Delete the speech model?</string>
     <string name="smart_delete_text">%1$s are freed. Subtitles already made stay in your projects; to make new ones, import the model again.</string>
     <string name="smart_busy">Not while the editor is making subtitles with the model.</string>
-    <string name="smart_in_memory">Loaded in memory now. It is let go of after %1$d minutes unused.</string>
+    <string name="smart_in_memory">In memory now, for the work under way. It is let go of as soon as that is done, and never shares the memory with another model.</string>
     <string name="smart_unload">Unload</string>
     <plurals name="smart_checksums">
         <item quantity="one">%1$d of %2$d file matches its SHA-256</item>
@@ -1700,6 +1700,30 @@
     <string name="lift_nothing">Nothing clear there: press in the middle of the subject</string>
     <string name="lift_memory">Not enough free memory: close other apps and try again</string>
     <string name="lift_failed">The subject could not be lifted. Try again</string>
+
+    <!-- The sticker gallery (StickerLibrary, StickerSheet) -->
+    <string name="stickers_sheet_title">Your stickers</string>
+    <string name="stickers_sheet_none">Nothing saved yet</string>
+    <string name="stickers_sheet_hint">Tap a sticker to lay it, press and hold to take it away.</string>
+    <string name="stickers_sheet_empty_title">Make your first sticker</string>
+    <string name="stickers_sheet_empty_text">Cut a subject out with the Cut out tool, or lift it off a photo with a long press, then save it: it waits here for every picture and video.</string>
+    <string name="stickers_from_phone_picture">A picture from your phone</string>
+    <string name="stickers_from_phone_any">A picture or a video from your phone</string>
+    <string name="stickers_tile_description">Saved sticker</string>
+    <string name="stickers_delete">Take it out of your stickers</string>
+    <string name="stickers_save_action">Save to stickers</string>
+    <string name="stickers_save_title">Keep it as a sticker</string>
+    <string name="stickers_save_text">What is cut out, corrections included, goes to your stickers, to lay on any picture or video.</string>
+    <string name="stickers_save_button">Save</string>
+    <string name="stickers_saved_action">Saved</string>
+    <string name="stickers_saved_title">In your stickers</string>
+    <string name="stickers_saved_text">Already saved, as it is cut now. Change the cut and it can be saved again.</string>
+    <string name="stickers_remove_button">Remove</string>
+    <string name="stickers_save_empty">Nothing is left once it is cut: nothing to save</string>
+    <string name="stickers_save_failed">The sticker could not be saved</string>
+    <string name="settings_sticker_copies">Stickers in the phone\'s gallery too</string>
+    <string name="settings_sticker_copies_on">Every sticker you save is also copied to Pictures/FFmpegGUI/Stickers</string>
+    <string name="settings_sticker_copies_off">Saved stickers stay in the app only</string>
     <string name="smart_step_download_files_text">%1$d files, about %2$s in all, from Hugging Face. Each link opens in your browser.</string>
     <string name="smart_step_download_archive">Or the whole archive from sherpa-onnx on GitHub, %1$s: slower to import (it has to be unpacked, which takes minutes), but it also holds the recordings for the speed test.</string>
     <string name="smart_download_archive">Download the archive instead</string>
@@ -2815,4 +2839,8 @@
     <string name="lint_no_output">No output: the command must write %1$s (any extension)</string>
     <string name="lint_bad_input_index">There is no input %1$s (they count from 0)</string>
     <string name="lint_unknown_file">%1$s is not a file of this project</string>
+    <plurals name="stickers_count">
+        <item quantity="one">%1$d sticker saved</item>
+        <item quantity="other">%1$d stickers saved</item>
+    </plurals>
 </resources>

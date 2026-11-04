@@ -12,21 +12,14 @@ import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import com.cuscus.ffmpeggui.core.erase.InpaintArea
-import com.cuscus.ffmpeggui.preview.SubjectMasks
 import com.cuscus.ffmpeggui.speech.AiKernels
+import com.cuscus.ffmpeggui.speech.ModelSlot
 import com.cuscus.ffmpeggui.speech.SpeechModel
 import com.cuscus.ffmpeggui.speech.SpeechModelStore
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -36,6 +29,7 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.util.UUID
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * The magic eraser: what is painted over a picture is filled in with what
@@ -45,7 +39,13 @@ import kotlin.math.max
  * model fills it, and its picture goes back only where the erased part was,
  * faded at the edge; the rest of the picture is untouched, its alpha kept.
  * The result is a new PNG (the old picture stays: projects may still use it).
- * One model in memory, let go of [IDLE_UNLOAD_MS] after the last use.
+ *
+ * Memory: the picture and its mask stay bitmaps (outside the Java heap, which
+ * is a few hundred megabytes whatever the phone's memory); only the crop is
+ * held as arrays, and the fade only where it can reach, so that a photo of
+ * tens of megapixels does not run the heap out. The model goes through the
+ * app's ModelGate: alone in memory, and let go of as soon as the picture is
+ * filled in.
  */
 class EraseEngine(context: Context, private val active: () -> Pair<EraseVariant, SpeechModelStore>) {
 
@@ -58,10 +58,8 @@ class EraseEngine(context: Context, private val active: () -> Pair<EraseVariant,
 
     private val appContext = context.applicationContext
     private val folder = File(appContext.filesDir, FOLDER)
-    private val mutex = Mutex()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val slot = ModelSlot("Magic eraser model") { release() }
     private var loaded: Loaded? = null
-    private var unloadJob: Job? = null
 
     private val _inMemory = MutableStateFlow(false)
     val inMemory: StateFlow<Boolean> = _inMemory.asStateFlow()
@@ -70,59 +68,87 @@ class EraseEngine(context: Context, private val active: () -> Pair<EraseVariant,
 
     /** The picture at [uri] with what [maskPath] marks (its alpha above half) filled in: a new PNG. */
     suspend fun erase(uri: Uri, maskPath: String): File = withContext(Dispatchers.Default) {
+        // Written in place, row by row, where the erased part was: no copy of the whole picture.
         val picture = decode(uri) ?: throw Unreadable()
-        val width = picture.width
-        val height = picture.height
-        val alphas = SubjectMasks.alphas(maskPath, width, height) ?: throw Unreadable()
-        val marked = BooleanArray(alphas.size) { alphas[it] > 127 }
-        val side = max(width, height)
-        // A little more than was painted: an outline or a soft shadow at its edge goes too.
-        val erased = InpaintArea.grow(marked, width, height, max(2, side / GROW_PARTS))
-        val bounds = InpaintArea.bounds(erased, width, height) ?: throw NothingToErase()
-        val crop = InpaintArea.crop(bounds, width, height)
-        val pixels = IntArray(width * height)
-        picture.getPixels(pixels, 0, width, 0, 0, width, height)
-        // The crop, squeezed to the model's square, and its mask the same.
-        val cropped = Bitmap.createBitmap(picture, crop.left, crop.top, crop.width, crop.height)
-        val square = Bitmap.createScaledBitmap(cropped, InpaintArea.SIDE, InpaintArea.SIDE, true)
-        val n = InpaintArea.SIDE
-        val squarePixels = IntArray(n * n).also { square.getPixels(it, 0, n, 0, 0, n, n) }
-        val squareMask = BooleanArray(n * n) { i ->
-            val x = crop.left + (i % n) * crop.width / n
-            val y = crop.top + (i / n) * crop.height / n
-            erased[y * width + x]
-        }
-        val filled = mutex.withLock {
-            unloadJob?.cancel()
-            try {
-                run(use(), squarePixels, squareMask)
-            } catch (e: OutOfMemoryError) {
-                throw NotEnoughMemory()
-            } finally {
-                scheduleUnload()
+        var mask: Bitmap? = null
+        try {
+            val width = picture.width
+            val height = picture.height
+            mask = maskBitmap(maskPath, width, height) ?: throw Unreadable()
+            val marked = markedBox(mask) ?: throw NothingToErase()
+            val side = max(width, height)
+            // A little more than was painted: an outline or a soft shadow at its edge goes too.
+            val growBy = max(2, side / GROW_PARTS)
+            val erasedBox = InpaintArea.Box(
+                max(0, marked.left - growBy),
+                max(0, marked.top - growBy),
+                min(width, marked.right + growBy),
+                min(height, marked.bottom + growBy),
+            )
+            val crop = InpaintArea.crop(erasedBox, width, height)
+            val cw = crop.width
+            val ch = crop.height
+            // What is marked, in the crop (all of it is inside), then grown.
+            val local = BooleanArray(cw * ch)
+            val row = IntArray(cw)
+            for (y in 0 until ch) {
+                mask.getPixels(row, 0, cw, crop.left, crop.top + y, cw, 1)
+                for (x in 0 until cw) local[y * cw + x] = (row[x] ushr 24) > 127
             }
+            mask.recycle()
+            mask = null
+            val erased = InpaintArea.grow(local, cw, ch, growBy)
+            // The crop, squeezed to the model's square, and its mask the same.
+            val n = InpaintArea.SIDE
+            val cropped = Bitmap.createBitmap(picture, crop.left, crop.top, cw, ch)
+            val square = Bitmap.createScaledBitmap(cropped, n, n, true)
+            if (cropped !== picture && cropped !== square) cropped.recycle()
+            val squarePixels = IntArray(n * n).also { square.getPixels(it, 0, n, 0, 0, n, n) }
+            if (square !== picture) square.recycle()
+            val squareMask = BooleanArray(n * n) { i -> erased[(i / n) * ch / n * cw + (i % n) * cw / n] }
+            val filled = slot.run {
+                try {
+                    run(use(), squarePixels, squareMask)
+                } catch (e: OutOfMemoryError) {
+                    throw NotEnoughMemory()
+                }
+            }
+            // Back to the crop's size, then laid where the erased part was.
+            val made = Bitmap.createBitmap(filled, n, n, Bitmap.Config.ARGB_8888)
+            val back = Bitmap.createScaledBitmap(made, cw, ch, true)
+            if (back !== made) made.recycle()
+            // Only where the fade can reach is weighed (its blur sees nothing past it): elsewhere
+            // the picture stays as it is.
+            val feather = max(1, side / FEATHER_PARTS)
+            val inside = InpaintArea.bounds(erased, cw, ch) ?: throw NothingToErase()
+            val reach = FADE_REACH * feather
+            val bx = max(0, inside.left - reach)
+            val by = max(0, inside.top - reach)
+            val bw = min(cw, inside.right + reach) - bx
+            val bh = min(ch, inside.bottom + reach) - by
+            val part = BooleanArray(bw * bh) { i -> erased[(by + i / bw) * cw + bx + i % bw] }
+            val weights = InpaintArea.weights(part, bw, bh, feather)
+            val pictureRow = IntArray(bw)
+            val madeRow = IntArray(bw)
+            for (y in 0 until bh) {
+                picture.getPixels(pictureRow, 0, bw, crop.left + bx, crop.top + by + y, bw, 1)
+                back.getPixels(madeRow, 0, bw, bx, by + y, bw, 1)
+                InpaintArea.blend(pictureRow, madeRow, weights, y * bw)
+                picture.setPixels(pictureRow, 0, bw, crop.left + bx, crop.top + by + y, bw, 1)
+            }
+            back.recycle()
+            folder.mkdirs()
+            val target = File(folder, "erased-${UUID.randomUUID().toString().take(8)}.png")
+            FileOutputStream(target).use { if (!picture.compress(Bitmap.CompressFormat.PNG, 100, it)) throw IOException("Could not write the picture") }
+            target
+        } finally {
+            mask?.recycle()
+            picture.recycle()
         }
-        // Back to the crop's size, then laid where the erased part was.
-        val made = Bitmap.createBitmap(filled, n, n, Bitmap.Config.ARGB_8888)
-        val back = Bitmap.createScaledBitmap(made, crop.width, crop.height, true)
-        val backPixels = IntArray(crop.width * crop.height).also { back.getPixels(it, 0, crop.width, 0, 0, crop.width, crop.height) }
-        val local = BooleanArray(crop.width * crop.height) { i -> erased[(crop.top + i / crop.width) * width + crop.left + i % crop.width] }
-        val weights = InpaintArea.weights(local, crop.width, crop.height, max(1, side / FEATHER_PARTS))
-        val inCrop = IntArray(crop.width * crop.height) { i -> pixels[(crop.top + i / crop.width) * width + crop.left + i % crop.width] }
-        InpaintArea.blend(inCrop, backPixels, weights)
-        for (i in inCrop.indices) pixels[(crop.top + i / crop.width) * width + crop.left + i % crop.width] = inCrop[i]
-        val out = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
-        folder.mkdirs()
-        val target = File(folder, "erased-${UUID.randomUUID().toString().take(8)}.png")
-        FileOutputStream(target).use { if (!out.compress(Bitmap.CompressFormat.PNG, 100, it)) throw IOException("Could not write the picture") }
-        listOf(picture, cropped, square, made, back, out).forEach { if (!it.isRecycled) it.recycle() }
-        target
     }
 
     /** Frees the model's memory now. */
-    fun unload() {
-        scope.launch { mutex.withLock { release() } }
-    }
+    fun unload() = slot.unload()
 
     /** True when [path] is a picture this engine made. */
     fun owns(path: String?): Boolean = path != null && path.startsWith(folder.absolutePath + File.separator)
@@ -221,14 +247,6 @@ class EraseEngine(context: Context, private val active: () -> Pair<EraseVariant,
         }
     }
 
-    private fun scheduleUnload() {
-        unloadJob?.cancel()
-        unloadJob = scope.launch {
-            delay(IDLE_UNLOAD_MS)
-            mutex.withLock { release() }
-        }
-    }
-
     private fun release() {
         loaded?.let {
             it.session.close()
@@ -236,6 +254,58 @@ class EraseEngine(context: Context, private val active: () -> Pair<EraseVariant,
         }
         loaded = null
         _inMemory.value = false
+    }
+
+    /**
+     * The mask at [path] at the picture's [width] x [height], as a bitmap (read at
+     * the smallest power-of-two step that still covers that size); null when it
+     * cannot be read.
+     */
+    private fun maskBitmap(path: String, width: Int, height: Int): Bitmap? = try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            null
+        } else {
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= width && bounds.outHeight / (sample * 2) >= height) sample *= 2
+            BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })?.let { decoded ->
+                if (decoded.width == width && decoded.height == height) {
+                    decoded
+                } else {
+                    Bitmap.createScaledBitmap(decoded, width, height, true).also { if (it !== decoded) decoded.recycle() }
+                }
+            }
+        }
+    } catch (e: Exception) {
+        null
+    } catch (e: OutOfMemoryError) {
+        null
+    }
+
+    /** The box of what [mask] marks (alpha above half), read a row at a time; null when nothing is. */
+    private fun markedBox(mask: Bitmap): InpaintArea.Box? {
+        val width = mask.width
+        val row = IntArray(width)
+        var left = width
+        var top = -1
+        var right = -1
+        var bottom = -1
+        for (y in 0 until mask.height) {
+            mask.getPixels(row, 0, width, 0, y, width, 1)
+            var any = false
+            for (x in 0 until width) {
+                if ((row[x] ushr 24) <= 127) continue
+                any = true
+                if (x < left) left = x
+                if (x > right) right = x
+            }
+            if (any) {
+                if (top < 0) top = y
+                bottom = y
+            }
+        }
+        return if (right < 0) null else InpaintArea.Box(left, top, right + 1, bottom + 1)
     }
 
     private fun decode(uri: Uri): Bitmap? = try {
@@ -251,7 +321,7 @@ class EraseEngine(context: Context, private val active: () -> Pair<EraseVariant,
                 BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply {
                     inSampleSize = sample
                     inPreferredConfig = Bitmap.Config.ARGB_8888
-                    inMutable = false
+                    inMutable = true
                 })
             }
         }
@@ -265,15 +335,19 @@ class EraseEngine(context: Context, private val active: () -> Pair<EraseVariant,
         private const val TAG = "EraseEngine"
         private const val FOLDER = "erased"
 
-        /** The model is let go of after this long unused. */
-        const val IDLE_UNLOAD_MS = 2 * 60_000L
-
         /** Pictures larger than this are worked on at half size (and halved again...). */
         private const val MAX_SIDE = 4_096
 
         /** The painted part grows by its picture's side over this, and fades over the side over [FEATHER_PARTS]. */
         private const val GROW_PARTS = 150
         private const val FEATHER_PARTS = 220
+
+        /**
+         * The fade is weighed this many feathers past the erased part: its grow and
+         * blur reach two, so past that nothing changes (the result is the same as
+         * weighing the whole crop).
+         */
+        private const val FADE_REACH = 3
 
         private const val MIN_FREE_FAST = 200L * 1024 * 1024
         private const val MIN_FREE_PRECISE = 700L * 1024 * 1024

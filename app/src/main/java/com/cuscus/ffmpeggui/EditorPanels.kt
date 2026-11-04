@@ -1407,6 +1407,12 @@ internal fun OverlayLayoutContent(
     sizeDefault: Float,
     onSize: (Float) -> Unit,
     onPosition: (x: Float, y: Float) -> Unit,
+    /**
+     * How far the position sliders go: the editors pass
+     * ImagePlacement.POSITION_MIN..POSITION_MAX, so that a caption or a picture
+     * can be placed partly off the frame, as dragging it can.
+     */
+    positionRange: ClosedFloatingPointRange<Float> = 0f..1f,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         OptionTileRow(
@@ -1427,20 +1433,22 @@ internal fun OverlayLayoutContent(
             ValueSlider(
                 label = stringResource(R.string.image_position_x),
                 valueText = stringResource(R.string.value_percent, (x * 100).toInt()),
-                // Past the edges (dragged there) the slider waits at its end.
-                value = x.coerceIn(0f, 1f),
+                // Past the slider's ends (dragged there) it waits at its end.
+                value = x.coerceIn(positionRange),
                 onValueChange = { onPosition(it, y) },
-                valueRange = 0f..1f,
+                valueRange = positionRange,
+                defaultValue = 0.5f,
                 startLabel = stringResource(R.string.image_left),
                 endLabel = stringResource(R.string.image_right),
             )
             ValueSlider(
                 label = stringResource(R.string.image_position_y),
                 valueText = stringResource(R.string.value_percent, (y * 100).toInt()),
-                // Past the edges (dragged there) the slider waits at its end.
-                value = y.coerceIn(0f, 1f),
+                // Past the slider's ends (dragged there) it waits at its end.
+                value = y.coerceIn(positionRange),
                 onValueChange = { onPosition(x, it) },
-                valueRange = 0f..1f,
+                valueRange = positionRange,
+                defaultValue = 0.5f,
                 startLabel = stringResource(R.string.image_top),
                 endLabel = stringResource(R.string.image_bottom),
             )

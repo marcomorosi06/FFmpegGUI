@@ -671,8 +671,14 @@ Where each one acts:
   (`LayoutChoice.kt`) lays the two out without building the player again when it
   changes side (it would start over): the halves slide across with the
   theme's spatial spring. On a landscape screen the editors' top bar has the
-  switch (`SwapSidesButton`) that moves the player to the other side and keeps
-  the choice;
+  switch (`ConnectedSwapSidesButton`) that moves the player to the other side
+  and keeps the choice, joined to Export as one connected pair;
+- the editors' top bar (`EditorTopBar` in `ConfigScreen.kt`, shared by the
+  video, audio, GIF and photo editors): a floating pill on `surfaceContainer`,
+  Close a tonal button that squares up under the finger, the file's name cut in
+  the middle (its extension stays in view) over its target format, Export the
+  one filled button. Every target is 48 dp; the bar is at least
+  `EDITOR_TOP_BAR_HEIGHT` tall and grows with large text instead of cutting it;
 - the sound of the clips (Editor): the video editor's timeline draws each
   clip's own sound along the bottom of its frames (`drawClipSoundBand` in
   `EditorTimeline.kt`, from the same `WaveformCache` the placed sounds use: the
@@ -1631,6 +1637,31 @@ the partial file and runs the same request again with x264; it says so with
 `ConversionEvent.Encoder`, the processing screen shows who encodes, and the
 done screen says which one made the file (`VideoEncoderUse`).
 
+## Models in memory
+
+Every model of the app (speech, translation, voice, dubbing, cut-out,
+EdgeTAM, the magic eraser, and the check of an imported translation model)
+goes through one gate (`speech/ModelGate.kt`), so that their memory never
+adds up: each takes from a hundred megabytes to over a gigabyte, and two
+together would leave the phone short.
+
+- **One model in memory.** Each engine has a `ModelSlot`; before its model
+  runs, whichever other model is in memory is let go of (it loads again when
+  next needed).
+- **One run at a time.** A run waits for the one under way to end, whatever
+  started it (an editor, a job in the background, a speed test), so two
+  models never work side by side. A model is never let go of in the middle of
+  a run: `unload` waits for it.
+- **Let go of as soon as the work is done.** There is no timer: once a run
+  ends (done, cancelled or failed) its model goes. A piece of work made of many
+  runs holds it (`ModelSlot.hold`) until it ends: the correction dialog, from
+  the first stroke to its closing (confirmed or not), and a lift across its two
+  calls. A dub holds the voice only while the lines are said (the file is
+  written after), the voice model only while the voice is set apart (not while
+  FFmpeg takes the sound out or packs it), and the way through English loads
+  its second model only after letting the first go.
+- Settings shows a model in memory while it works, with Unload.
+
 ## Subtitle translation
 
 Subtitles translated on the phone with Opus-MT (University of Helsinki, CC BY
@@ -1662,9 +1693,9 @@ four times).
 
 **Running** (`TranslationEngine`). ONNX Runtime on the processor: each line is
 encoded once, then the decoder (the one without a cache: subtitles are short)
-is run for every id it writes, its last row of scores read. At most two
-models in memory (the way through English needs two), let go of two minutes
-after the last line.
+is run for every id it writes, its last row of scores read. One model in
+memory (the way through English lets the first go before the second loads),
+let go of as soon as the lines are translated (see Models in memory).
 
 **Which models** (`TranslationRoute`). A model that reads the subtitles'
 language and writes the one asked; else two, through English. The language is
@@ -1890,6 +1921,16 @@ kept. A new PNG in `files/erased/` takes the old picture's place
 (`replacePicture` for the picture itself, the overlay's uri otherwise): one
 step of undo. Through `AiKernels`, like every model.
 
+**Memory** (issue 28). The Java heap is a few hundred megabytes whatever the
+phone's memory, and a photo of 12 megapixels is 50 MB per copy as an int
+array. So the picture (decoded mutable, at most 4096 pixels) and its mask
+stay bitmaps; the mask's box is read a row at a time; only the crop is held
+as arrays (the mask in it, grown), the fade is weighed only three feathers
+past the erased part (its grow and blur reach two, so the weights are those of
+the whole crop: tested), and the result is laid row by row into the picture
+itself, which is then written. The app asks for the larger heap
+(`largeHeap`) as the margin for what is left.
+
 ## Smart subtitles (speech)
 
 Subtitles made from what is said in the video, on the phone. The idea, the
@@ -1918,7 +1959,8 @@ SHA-256: the build checks it (`verifySherpaOnnx`) and
 left out of the APK (the app uses JNI only), and R8 keeps its classes (the
 native code reads them by name). `speech/SpeechEngine.kt` loads the
 `OfflineRecognizer` (greedy search, cores - 2 threads, between 2 and 4) when
-it is needed and lets it go after two minutes unused; the speed test listens
+it is needed and lets it go as soon as the file is heard (see Models in
+memory); the speed test listens
 to the four recordings of the archive and compares what it heard with what
 they say.
 
@@ -2128,7 +2170,8 @@ not stretched, so that a picture with no subject stays empty).
 `cutout/SubjectCutter` squeezes the picture (decoded as FFmpeg and the preview
 read it, EXIF turn ignored, at most 4096 pixels), runs the model, stretches the
 mask back to the picture's size and keeps it in `files/cutouts`, one per picture
-and model.
+and model. Once a picture is cut the model leaves memory at once (see Models
+in memory).
 
 **Correcting it, and lifting a subject** (`cutout/RefineEngine`,
 `core/cutout/PromptSegmentation`, tested). EdgeTAM (Meta, Apache 2.0), a
@@ -2150,7 +2193,20 @@ cut to its box, as a PNG in `files/lifted/` (older than 14 days: deleted; a
 saved project keeps its own copy). `addPlacedOverlay` lays it as a sticker
 exactly where it was (an overlay's x and y are shares of the free space around
 it), one step of undo; it rises off the picture (a spring, a halo of its
-outline, sparks) and settles.
+outline, sparks) and settles. The lift lasts as long as the finger stays down:
+let go before it is done and it is called off (the job cancelled, nothing laid,
+the PNG written meanwhile deleted), with a firm haptic. While the model looks,
+a badge sits under the finger (a nine-sided cookie turning slowly, a loading
+indicator in it) and ripples spread from it as on a pond, each born as the
+cookie and relaxing into a circle as it goes (`MorphShape` drawn as an
+outline); called off, the same badge springs to rest and morphs into a red
+four-leaf clover with a cross, the ripples turn red and are drawn back in, and
+it shrinks away; done, it pops away as the subject rises. Done or called off, the
+model and the picture it read leave memory at once (the lift holds the model
+only across its two calls, `SubjectLifter.forget` the picture); it is let go
+of after the step under way, never in the middle of one, and loads again for
+the next press. The correction dialog holds it from the first stroke to its
+closing, confirmed or not (see Models in memory).
 
 **The project's own ONNX files** (docs/MODELS.md has the whole record).
 EdgeTAM is published by Meta for PyTorch only, and BiRefNet-lite's own ONNX
@@ -2172,6 +2228,30 @@ there. `scripts/check-model-pins.py` (run by `release.yml` for every tag,
 with `--online`) checks that the Kotlin pins, the locks,
 the licences and notices bundled in `assets/licenses/`, the release files and
 docs/MODELS.md all agree.
+
+**The sticker gallery** (`stickers/StickerLibrary`, `stickers/StickerShelf`).
+A picture saved as a sticker is decoded as the editors read it (at most 2048
+pixels), cut by its key when it has one (the subject's mask, brush corrections
+included, or a colour; the fill made transparent) after its own colours
+(`keyedBitmap`), trimmed to what is left and written as a PNG in
+`files/sticker-library/`, with a record beside it (`<id>.sig`): the signature
+of what it was made from (`core/stickers/StickerSignature`, tested: the
+picture's SHA-256, the key's settings and its mask's bytes, the colours) and
+its own file's SHA-256. `savedAs` finds a picture cut the same way (or a
+sticker laid as it is) among them: the editors' bookmark is outlined until it
+is saved, filled once it is (and then takes it away), and a save of what is
+there already writes nothing. With `AppSettings.stickerCopies` (off by default) a
+copy goes to Pictures/FFmpegGUI/Stickers through MediaStore (`PublicCopies`,
+no permission). `MainActivity` provides the gallery as `LocalStickerShelf`
+(its list, save and delete); a save is confirmed by a haptic only, and a
+short message says when it could not be made.
+Saved from: the floating actions of a selected sticker or picture (a subject
+just lifted with a long press is selected, its actions in view), and the Cut
+out panel (`ColorKeyContent`'s `onSaveSticker`). The photo editor's Sticker and the video editor's Overlay open
+`StickerSheet` first: the saved stickers on a checkerboard (a tap lays one, a
+long press offers to take it away) and a large button to pick a file. A
+sticker deleted from the gallery stays in the projects that use it (they keep
+their own copy).
 
 **Retired models** (`cutout/RetiredModels`). A model the app no longer uses
 (SlimSAM, before EdgeTAM) is deleted at start when it is still on the phone,

@@ -296,7 +296,6 @@ internal fun SpeechSection(smart: SmartFeaturesUi) {
             busy = stringResource(R.string.smart_busy),
             deleteTitle = stringResource(R.string.smart_delete_title),
             deleteText = R.string.smart_delete_text,
-            unloadMinutes = (SpeechEngine.IDLE_UNLOAD_MS / 60_000).toInt(),
         ),
         model = smart.model,
         loaded = smart.loaded,
@@ -365,7 +364,6 @@ internal fun CutoutSection(smart: SmartFeaturesUi) {
             busy = stringResource(R.string.cutout_busy),
             deleteTitle = stringResource(R.string.cutout_delete_title),
             deleteText = R.string.cutout_delete_text,
-            unloadMinutes = (CutoutEngine.IDLE_UNLOAD_MS / 60_000).toInt(),
             oneFile = true,
         ),
         model = cutout.model,
@@ -396,7 +394,6 @@ internal fun CutoutSection(smart: SmartFeaturesUi) {
             busy = stringResource(R.string.cutout_busy),
             deleteTitle = stringResource(R.string.refine_delete_title),
             deleteText = R.string.refine_delete_text,
-            unloadMinutes = (RefineEngine.IDLE_UNLOAD_MS / 60_000).toInt(),
         ),
         model = refine.model,
         loaded = refine.loaded,
@@ -426,7 +423,6 @@ internal fun DubSection(dub: DubFeatureUi) {
             busy = stringResource(R.string.dub_busy),
             deleteTitle = stringResource(R.string.dub_delete_title),
             deleteText = R.string.dub_delete_text,
-            unloadMinutes = (DubEngine.IDLE_UNLOAD_MS / 60_000).toInt(),
             oneFile = true,
         ),
         model = dub.model,
@@ -629,7 +625,6 @@ internal fun VoiceSettingsSection(voice: VoiceFeatureUi) {
             busy = stringResource(R.string.voice_busy),
             deleteTitle = stringResource(R.string.voice_delete_title),
             deleteText = R.string.voice_delete_text,
-            unloadMinutes = (VoiceSeparator.IDLE_UNLOAD_MS / 60_000).toInt(),
         ),
         model = voice.model,
         loaded = voice.loaded,
@@ -731,7 +726,6 @@ internal fun EraseSettingsSection(erase: EraseFeatureUi) {
             busy = stringResource(R.string.erase_busy),
             deleteTitle = stringResource(R.string.erase_delete_title),
             deleteText = R.string.erase_delete_text,
-            unloadMinutes = (EraseEngine.IDLE_UNLOAD_MS / 60_000).toInt(),
             oneFile = true,
         ),
         model = erase.variants[variant] ?: SpeechModelStore.State.Missing,
@@ -831,7 +825,6 @@ private class ModelSpec(
     val deleteTitle: String,
     /** Takes the space freed. */
     @androidx.annotation.StringRes val deleteText: Int,
-    val unloadMinutes: Int,
     /** A single file is picked (not an archive or several files). */
     val oneFile: Boolean = false,
 )
@@ -1064,7 +1057,7 @@ private fun ModelCard(
                     Icon(Icons.Rounded.Memory, contentDescription = null, tint = scheme.onSecondaryContainer, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        stringResource(R.string.smart_in_memory, spec.unloadMinutes),
+                        stringResource(R.string.smart_in_memory),
                         style = MaterialTheme.typography.bodySmall,
                         color = scheme.onSecondaryContainer,
                         modifier = Modifier.weight(1f),

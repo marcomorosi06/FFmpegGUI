@@ -3,9 +3,12 @@
 package com.cuscus.ffmpeggui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -32,6 +35,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.SearchOff
@@ -55,10 +59,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -66,10 +73,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.graphics.shapes.Morph
+import com.cuscus.ffmpeggui.ui.expressive.MorphShape
+import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
 import com.cuscus.ffmpeggui.ui.expressive.PolygonShape
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.PI
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -79,13 +90,18 @@ import kotlin.math.sin
  * the picture as a sticker (see SubjectLifter), as the picture stage shows it:
  * [onPress] gets where the finger pressed (shares of the picture's width and
  * height), null when a press does nothing now (a canvas, the crop, drawing);
- * [working] is where the model is looking while it does; [shown] the subject
- * just lifted, which rises off the picture and settles as its sticker
- * ([onShown] when it has); [note] a word on what happened.
+ * [onRelease] that the finger left (a lift not finished by then is called
+ * off); [working] is where the model is looking while it does; [aborted]
+ * where a lift was called off, shown in red ([onAbortShown] when it has);
+ * [shown] the subject just lifted, which rises off the picture and settles as
+ * its sticker ([onShown] when it has); [note] a word on what happened.
  */
 internal class PictureLift(
     val onPress: ((Float, Float) -> Unit)?,
+    val onRelease: () -> Unit,
     val working: Offset?,
+    val aborted: Offset?,
+    val onAbortShown: () -> Unit,
     val shown: LiftedShow?,
     val onShown: () -> Unit,
     val note: LiftNote?,
@@ -123,66 +139,140 @@ internal const val KEY_LIFT_TIP = "lift_tip_shown"
 internal const val LIFT_TIP_DELAY_MS = 1_200L
 
 /**
- * Over the picture: while the model looks, a sonar of rings and a loading
- * indicator where the finger pressed; then the subject lifted rises off the
- * picture (bigger, a halo of the theme's colour round its outline, a burst of
- * sparks) and settles back into the sticker laid in its place.
+ * Over the picture: while the model looks, a badge where the finger pressed (a
+ * turning cookie with a loading indicator, ripples spreading from it as on a
+ * pond); called off, the same badge springs into a red clover with a cross,
+ * the ripples drawn back in, and goes;
+ * done, it pops away while the subject lifted rises off the picture (bigger, a
+ * halo of the theme's colour round its outline, a burst of sparks) and settles
+ * back into the sticker laid in its place.
  */
 @Composable
 internal fun LiftEffects(lift: PictureLift, modifier: Modifier = Modifier) {
+    // The badge's point, kept while it goes away.
+    var badge by remember { mutableStateOf<Offset?>(null) }
+    (lift.working ?: lift.aborted)?.let { badge = it }
     BoxWithConstraints(modifier = modifier) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
-        lift.working?.let { at -> LiftScanner(Offset(at.x * w, at.y * h)) }
+        badge?.let { at ->
+            val state = when (at) {
+                lift.aborted -> BadgeState.ABORTED
+                lift.working -> BadgeState.WORKING
+                else -> BadgeState.DONE
+            }
+            key(at) { LiftBadge(Offset(at.x * w, at.y * h), state, lift.onAbortShown) { badge = null } }
+        }
         lift.shown?.let { shown -> key(shown) { LiftRise(shown, w, h, lift.onShown) } }
     }
 }
 
-/** The model looking where the finger pressed: rings spreading out, a morphing loading indicator. */
+/** What the badge where the finger pressed shows. */
+private enum class BadgeState { WORKING, ABORTED, DONE }
+
+/**
+ * The badge where the finger pressed. Working: a nine-sided cookie that turns
+ * slowly, a loading indicator in it, and ripples spreading from it, each born
+ * as the cookie and relaxing into a circle as it goes. Called off: the turn
+ * springs to rest, the cookie morphs into a four-leaf clover and turns red, the
+ * indicator gives way to a cross, the ripples turn red and are drawn back in, a
+ * squash, and it shrinks away ([onAbortShown]). Done: it pops away ([onGone]).
+ */
 @Composable
-private fun LiftScanner(at: Offset) {
+private fun LiftBadge(at: Offset, state: BadgeState, onAbortShown: () -> Unit, onGone: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val density = LocalDensity.current
     val appear = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { appear.animateTo(1f, motion.fastSpatialSpec()) }
-    val sonar = rememberInfiniteTransition(label = "liftSonar")
-    val ring by sonar.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(durationMillis = 1_200, easing = LinearEasing), RepeatMode.Restart),
-        label = "liftRing",
-    )
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        val inner = 30.dp.toPx()
-        val reach = 84.dp.toPx()
-        val line = 3.dp.toPx()
-        for (k in 0 until RINGS) {
-            val p = (ring + k.toFloat() / RINGS) % 1f
-            drawCircle(
-                color = scheme.primary.copy(alpha = (1f - p) * 0.7f * appear.value),
-                radius = inner + p * reach,
-                center = at,
-                style = Stroke(width = line * (1f - p * 0.6f)),
-            )
+    val spin = remember { Animatable(0f) }
+    val burst = remember { Animatable(0f) }
+    // Once called off it stays red while it goes.
+    var aborted by remember { mutableStateOf(false) }
+    if (state == BadgeState.ABORTED) aborted = true
+    LaunchedEffect(state) {
+        when (state) {
+            BadgeState.WORKING -> {
+                launch { appear.animateTo(1f, motion.defaultSpatialSpec()) }
+                launch { burst.animateTo(1f, motion.slowSpatialSpec()) }
+                while (true) spin.animateTo(spin.value + 360f, tween(durationMillis = SPIN_MS, easing = LinearEasing))
+            }
+            BadgeState.ABORTED -> {
+                // The turn comes to rest with a spring, on the clover's own angle.
+                val rest = ceil(spin.value / 90f) * 90f
+                launch { spin.animateTo(rest, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)) }
+                launch { burst.animateTo(0f, motion.fastSpatialSpec()) }
+                appear.animateTo(1.18f, motion.fastSpatialSpec())
+                appear.animateTo(1f, motion.defaultSpatialSpec())
+                delay(ABORT_HOLD_MS)
+                appear.animateTo(0f, motion.fastSpatialSpec())
+                onAbortShown()
+            }
+            BadgeState.DONE -> {
+                launch { burst.animateTo(0f, motion.fastSpatialSpec()) }
+                appear.animateTo(0f, motion.fastSpatialSpec())
+                onGone()
+            }
         }
     }
-    val side = 60.dp
+    // Ripples, as on a pond: each starts as the badge's cookie and relaxes into a
+    // circle as it spreads, turning a little and fading.
+    val pond = rememberInfiniteTransition(label = "liftPond")
+    val wave by pond.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(durationMillis = RIPPLE_MS, easing = LinearEasing), RepeatMode.Restart),
+        label = "liftWave",
+    )
+    val container by animateColorAsState(if (aborted) scheme.error else scheme.primaryContainer, motion.defaultEffectsSpec(), label = "liftBadgeColor")
+    val content by animateColorAsState(if (aborted) scheme.onError else scheme.onPrimaryContainer, motion.defaultEffectsSpec(), label = "liftBadgeContent")
+    val ripple by animateColorAsState(if (aborted) scheme.error else scheme.primary, motion.fastEffectsSpec(), label = "liftRippleColor")
+    val relax = remember { Morph(MaterialShapes.Cookie9Sided, MaterialShapes.Circle) }
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val start = 64.dp.toPx()
+        val reach = 96.dp.toPx()
+        val line = 3.dp.toPx()
+        val spread = burst.value.coerceAtLeast(0f)
+        for (k in 0 until RIPPLES) {
+            val p = (wave + k.toFloat() / RIPPLES) % 1f
+            // Called off, the ripples are drawn back in towards the badge.
+            val side = start + p * reach * 2f * spread
+            val outline = MorphShape(relax, p, spin.value + p * RIPPLE_TURN).createOutline(Size(side, side), layoutDirection, this)
+            translate(at.x - side / 2f, at.y - side / 2f) {
+                drawOutline(
+                    outline = outline,
+                    color = ripple.copy(alpha = (1f - p) * 0.75f * burst.value.coerceIn(0f, 1f)),
+                    style = Stroke(width = line * (1f - p * 0.6f)),
+                )
+            }
+        }
+    }
+    val side = 64.dp
     val half = with(density) { (side / 2).toPx() }
-    Box(
-        contentAlignment = Alignment.Center,
+    MorphingContainer(
+        from = MaterialShapes.Cookie9Sided,
+        to = MaterialShapes.Clover4Leaf,
+        morphed = aborted,
+        color = container,
+        rotationDegrees = spin.value,
         modifier = Modifier
             .offset { IntOffset((at.x - half).roundToInt(), (at.y - half).roundToInt()) }
             .graphicsLayer {
-                scaleX = appear.value
-                scaleY = appear.value
+                val s = appear.value.coerceAtLeast(0f)
+                scaleX = s
+                scaleY = s
+                alpha = appear.value.coerceIn(0f, 1f)
             }
-            .size(side)
-            .shadow(6.dp, CircleShape)
-            .clip(CircleShape)
-            .background(scheme.primaryContainer),
+            .size(side),
     ) {
-        LoadingIndicator(color = scheme.onPrimaryContainer, modifier = Modifier.size(44.dp))
+        Crossfade(targetState = aborted, animationSpec = motion.fastEffectsSpec(), label = "liftBadgeIcon") { off ->
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(side)) {
+                if (off) {
+                    Icon(Icons.Rounded.Close, contentDescription = null, tint = content, modifier = Modifier.size(30.dp))
+                } else {
+                    LoadingIndicator(color = content, modifier = Modifier.size(42.dp))
+                }
+            }
+        }
     }
 }
 
@@ -320,12 +410,22 @@ internal fun LiftNotePill(note: LiftNote?, onAction: () -> Unit, onGone: () -> U
             shown.action?.let { action ->
                 Spacer(modifier = Modifier.width(4.dp))
                 TextButton(onClick = onAction) {
-                    Text(stringResource(action), style = MaterialTheme.typography.labelLarge, color = scheme.inversePrimary)
+                    Text(stringResource(action), style = MaterialTheme.typography.labelLarge, color = if (tip) scheme.tertiary else scheme.inversePrimary)
                 }
             }
         }
     }
 }
 
-private const val RINGS = 3
 private const val SPARKS = 8
+
+/** One turn of the working badge. */
+private const val SPIN_MS = 4_000
+
+/** Ripples on the pond at once, how long each takes to spread and how far it turns as it does. */
+private const val RIPPLES = 3
+private const val RIPPLE_MS = 1_800
+private const val RIPPLE_TURN = 40f
+
+/** How long the red clover stays before it goes. */
+private const val ABORT_HOLD_MS = 280L

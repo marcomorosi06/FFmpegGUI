@@ -25,9 +25,10 @@ object PublicCopies {
 
     /**
      * Copies [file]; the folder it went to ("Movies/FFmpegGUI"), or null when it
-     * could not be copied (nothing is left half written). Call it off the main thread.
+     * could not be copied (nothing is left half written). [subfolder] goes inside
+     * the FFmpegGUI folder ("Pictures/FFmpegGUI/Stickers"). Call it off the main thread.
      */
-    fun save(context: Context, file: File): String? {
+    fun save(context: Context, file: File, subfolder: String? = null): String? {
         if (!file.isFile) return null
         val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase(Locale.ROOT)) ?: "application/octet-stream"
         val volume = MediaStore.VOLUME_EXTERNAL_PRIMARY
@@ -38,7 +39,7 @@ object PublicCopies {
             mime.startsWith("image/") && mime != "image/svg+xml" -> MediaStore.Images.Media.getContentUri(volume) to Environment.DIRECTORY_PICTURES
             else -> MediaStore.Downloads.getContentUri(volume) to Environment.DIRECTORY_DOWNLOADS
         }
-        val folder = "$directory/$FOLDER"
+        val folder = if (subfolder == null) "$directory/$FOLDER" else "$directory/$FOLDER/$subfolder"
         val resolver = context.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)

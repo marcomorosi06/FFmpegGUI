@@ -35,6 +35,11 @@ data class AppSettings(
     /** Every finished file also goes to Movies, Music, Pictures or Download (Android 10+). */
     val saveCopies: Boolean = true,
     /**
+     * Stickers saved to the app's own gallery also go to Pictures/FFmpegGUI/Stickers,
+     * where the phone's gallery finds them. Off: they stay in the app only.
+     */
+    val stickerCopies: Boolean = false,
+    /**
      * MP4 and MKV pictures encoded by the phone's video chip (the processor takes over
      * when it fails). Off until the chip's test in the settings has passed.
      */

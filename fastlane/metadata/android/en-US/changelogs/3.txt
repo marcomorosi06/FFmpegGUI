@@ -3,3 +3,6 @@
 * Cut out tool (was Chroma key), with a finest cut-out: BiRefNet-lite
 * Photo editor: long-press a subject to lift it off as a sticker
 * EdgeTAM corrects cut-outs; the old SlimSAM model is deleted
+* Your stickers: save cut-outs and lifted subjects, reuse them anywhere
+* Pictures and texts can be placed past the frame's edges with the sliders
+* Less memory: one model at a time, freed at once

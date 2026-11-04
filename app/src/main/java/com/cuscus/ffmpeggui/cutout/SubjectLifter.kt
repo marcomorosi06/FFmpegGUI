@@ -69,11 +69,14 @@ class SubjectLifter(context: Context, private val engine: RefineEngine) {
     suspend fun lift(picture: Bitmap, x: Float, y: Float): Lifted? {
         val width = picture.width
         val height = picture.height
-        val study = studied?.takeIf { studiedOf === picture } ?: engine.study(picture).also {
-            studiedOf = picture
-            studied = it
+        // Held across its two calls, so that it is not loaded twice; let go of right after.
+        val prediction = engine.hold().use {
+            val study = studied?.takeIf { studiedOf === picture } ?: engine.study(picture).also {
+                studiedOf = picture
+                studied = it
+            }
+            engine.find(study, floatArrayOf(x, y), booleanArrayOf(true))
         }
-        val prediction = engine.find(study, floatArrayOf(x, y), booleanArrayOf(true))
         return withContext(Dispatchers.Default) {
             val index = PromptSegmentation.chooseForTap(prediction.logits, prediction.scores, prediction.count, x, y, width, height)
                 ?: return@withContext null

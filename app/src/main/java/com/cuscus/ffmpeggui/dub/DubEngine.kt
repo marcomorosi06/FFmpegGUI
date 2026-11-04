@@ -10,24 +10,18 @@ import com.cuscus.ffmpeggui.core.dub.DubPace
 import com.cuscus.ffmpeggui.core.dub.DubTiming
 import com.cuscus.ffmpeggui.core.voice.WavWriter
 import com.cuscus.ffmpeggui.speech.AiKernels
+import com.cuscus.ffmpeggui.speech.ModelSlot
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
@@ -45,8 +39,8 @@ import java.util.UUID
  * DubTiming.MAX_SPEED_UP). Each line is said in one go (DubTiming.oneBreath):
  * sherpa-onnx would otherwise say each of its sentences on its own and glue
  * them, which is heard. One model is loaded at a time (Kokoro for one
- * language, or one Piper voice) and let go of [IDLE_UNLOAD_MS] after the
- * last use.
+ * language, or one Piper voice), through the app's ModelGate: alone in
+ * memory, and let go of as soon as the lines are said (or the sample is).
  */
 class DubEngine(context: Context, private val store: DubModelStore, private val piper: PiperVoiceStore) {
 
@@ -65,10 +59,8 @@ class DubEngine(context: Context, private val store: DubModelStore, private val 
 
     private val appContext = context.applicationContext
     private val folder = File(appContext.filesDir, FOLDER)
-    private val mutex = Mutex()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val slot = ModelSlot("Dubbing voice") { release() }
     private var loaded: Loaded? = null
-    private var unloadJob: Job? = null
 
     private val _inMemory = MutableStateFlow(false)
     val inMemory: StateFlow<Boolean> = _inMemory.asStateFlow()
@@ -95,9 +87,8 @@ class DubEngine(context: Context, private val store: DubModelStore, private val 
             DubTiming.oneBreath(DubTiming.spoken(line.text)).takeIf { it.isNotEmpty() }?.let { line.copy(text = it) }
         }
         if (said.isEmpty()) throw NothingToSay()
-        mutex.withLock {
-            unloadJob?.cancel()
-            try {
+        try {
+            val (clips, rate) = slot.run {
                 val tts = load(speaker)
                 val sid = sid(speaker)
                 val rate = tts.sampleRate()
@@ -122,37 +113,37 @@ class DubEngine(context: Context, private val store: DubModelStore, private val 
                     clips += DubFit.fit(samples, rate, slots[index])
                     onProgress(index + 1, said.size)
                 }
-                val durations = clips.map { it.size * 1000L / rate }
-                val starts = DubTiming.place(said, durations)
-                val first = starts.first()
-                folder.mkdirs()
-                sweepOld()
-                val target = File(folder, "dub-${UUID.randomUUID().toString().take(8)}.wav")
-                var written = 0L
-                WavWriter(target, 1, rate, comment = aiComment(speaker)).use { writer ->
-                    val silence = FloatArray(rate / 10)
-                    clips.forEachIndexed { index, clip ->
-                        // Silence up to where the line starts, then the line.
-                        val at = (starts[index] - first) * rate / 1000L
-                        var gap = at - written
-                        while (gap > 0) {
-                            val n = minOf(gap, silence.size.toLong()).toInt()
-                            writer.write(silence, n)
-                            gap -= n
-                            written += n
-                        }
-                        writer.write(clip, clip.size)
-                        written += clip.size
-                    }
-                }
-                val took = System.currentTimeMillis() - began
-                Log.i(TAG, "Dub of ${said.size} lines (${written * 1000L / rate} ms) made in $took ms by ${speaker.key}")
-                Made(target, first, written * 1000L / rate, said.size, took)
-            } catch (e: OutOfMemoryError) {
-                throw NotEnoughMemory()
-            } finally {
-                scheduleUnload()
+                clips to rate
             }
+            // The voice is let go of by now: what is left is laying the lines into the file.
+            val durations = clips.map { it.size * 1000L / rate }
+            val starts = DubTiming.place(said, durations)
+            val first = starts.first()
+            folder.mkdirs()
+            sweepOld()
+            val target = File(folder, "dub-${UUID.randomUUID().toString().take(8)}.wav")
+            var written = 0L
+            WavWriter(target, 1, rate, comment = aiComment(speaker)).use { writer ->
+                val silence = FloatArray(rate / 10)
+                clips.forEachIndexed { index, clip ->
+                    // Silence up to where the line starts, then the line.
+                    val at = (starts[index] - first) * rate / 1000L
+                    var gap = at - written
+                    while (gap > 0) {
+                        val n = minOf(gap, silence.size.toLong()).toInt()
+                        writer.write(silence, n)
+                        gap -= n
+                        written += n
+                    }
+                    writer.write(clip, clip.size)
+                    written += clip.size
+                }
+            }
+            val took = System.currentTimeMillis() - began
+            Log.i(TAG, "Dub of ${said.size} lines (${written * 1000L / rate} ms) made in $took ms by ${speaker.key}")
+            Made(target, first, written * 1000L / rate, said.size, took)
+        } catch (e: OutOfMemoryError) {
+            throw NotEnoughMemory()
         }
     }
 
@@ -164,24 +155,17 @@ class DubEngine(context: Context, private val store: DubModelStore, private val 
 
     /** A few words said by [speaker], to hear it: a WAV file in the cache. */
     suspend fun sample(speaker: DubSpeaker, text: String, speed: Float): File = withContext(Dispatchers.Default) {
-        mutex.withLock {
-            unloadJob?.cancel()
-            try {
-                val tts = load(speaker)
-                val audio = tts.generate(DubTiming.oneBreath(text), sid(speaker), speed)
-                val file = File(appContext.cacheDir, "dub-sample.wav")
-                WavWriter(file, 1, audio.sampleRate, comment = aiComment(speaker)).use { it.write(audio.samples, audio.samples.size) }
-                file
-            } finally {
-                scheduleUnload()
-            }
+        slot.run {
+            val tts = load(speaker)
+            val audio = tts.generate(DubTiming.oneBreath(text), sid(speaker), speed)
+            val file = File(appContext.cacheDir, "dub-sample.wav")
+            WavWriter(file, 1, audio.sampleRate, comment = aiComment(speaker)).use { it.write(audio.samples, audio.samples.size) }
+            file
         }
     }
 
     /** Frees the model's memory now. */
-    fun unload() {
-        scope.launch { mutex.withLock { release() } }
-    }
+    fun unload() = slot.unload()
 
     private fun sid(speaker: DubSpeaker): Int = when (speaker) {
         is DubSpeaker.Kokoro -> speaker.voice.id
@@ -275,14 +259,6 @@ class DubEngine(context: Context, private val store: DubModelStore, private val 
         )
     }
 
-    private fun scheduleUnload() {
-        unloadJob?.cancel()
-        unloadJob = scope.launch {
-            delay(IDLE_UNLOAD_MS)
-            mutex.withLock { release() }
-        }
-    }
-
     private fun release() {
         loaded?.tts?.release()
         loaded = null
@@ -301,9 +277,6 @@ class DubEngine(context: Context, private val store: DubModelStore, private val 
     companion object {
         private const val TAG = "DubEngine"
         private const val FOLDER = "dubs"
-
-        /** The model is let go of after this long unused. */
-        const val IDLE_UNLOAD_MS = 2 * 60_000L
 
         private const val MIN_FREE_BYTES = 350L * 1024 * 1024
         private const val MIN_FREE_BYTES_PIPER = 150L * 1024 * 1024

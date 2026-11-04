@@ -127,10 +127,13 @@ object InpaintArea {
         return out
     }
 
-    /** [made] laid on [picture] (both ARGB) by [weights]: the colour mixed, the picture's own alpha kept. */
-    fun blend(picture: IntArray, made: IntArray, weights: FloatArray) {
+    /**
+     * [made] laid on [picture] (both ARGB) by [weights], read from [from] on (a
+     * row of a larger set of weights): the colour mixed, the picture's own alpha kept.
+     */
+    fun blend(picture: IntArray, made: IntArray, weights: FloatArray, from: Int = 0) {
         for (i in picture.indices) {
-            val w = weights[i]
+            val w = weights[from + i]
             if (w <= 0f) continue
             val p = picture[i]
             val m = made[i]

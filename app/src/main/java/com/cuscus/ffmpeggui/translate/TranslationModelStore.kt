@@ -13,6 +13,7 @@ import com.cuscus.ffmpeggui.core.translate.Languages
 import com.cuscus.ffmpeggui.core.translate.MarianConfig
 import com.cuscus.ffmpeggui.core.translate.MarianTokenizer
 import com.cuscus.ffmpeggui.core.translate.SentencePieceModel
+import com.cuscus.ffmpeggui.speech.ModelSlot
 import com.cuscus.ffmpeggui.speech.SpeechModelStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -58,6 +59,9 @@ class TranslationModelStore(context: Context) {
     private val appContext = context.applicationContext
     private val root = File(appContext.filesDir, ROOT)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** The check of an imported model: it opens and closes it, so there is nothing to let go of. */
+    private val check = ModelSlot("Translation model check") {}
     private var job: Job? = null
 
     private val _models = MutableStateFlow(readAll())
@@ -219,18 +223,24 @@ class TranslationModelStore(context: Context) {
         }
     }
 
-    /** Null when [file] opens as an ONNX model; what went wrong otherwise. */
-    private fun opens(file: File): String? = try {
-        val environment = OrtEnvironment.getEnvironment()
-        OrtSession.SessionOptions().use { options ->
-            environment.createSession(file.absolutePath, options).use { session ->
-                if (session.inputNames.isEmpty()) "no inputs" else null
+    /**
+     * Null when [file] opens as an ONNX model; what went wrong otherwise. Opened
+     * through the ModelGate like any model, so that it never shares the memory
+     * with one at work.
+     */
+    private suspend fun opens(file: File): String? = check.run {
+        try {
+            val environment = OrtEnvironment.getEnvironment()
+            OrtSession.SessionOptions().use { options ->
+                environment.createSession(file.absolutePath, options).use { session ->
+                    if (session.inputNames.isEmpty()) "no inputs" else null
+                }
             }
+        } catch (e: Exception) {
+            e.message ?: e.javaClass.simpleName
+        } catch (e: OutOfMemoryError) {
+            "out of memory"
         }
-    } catch (e: Exception) {
-        e.message ?: e.javaClass.simpleName
-    } catch (e: OutOfMemoryError) {
-        "out of memory"
     }
 
     private suspend fun hash(input: java.io.InputStream, sink: (ByteArray, Int) -> Unit): String {

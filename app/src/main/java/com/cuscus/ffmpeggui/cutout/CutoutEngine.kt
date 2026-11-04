@@ -9,17 +9,11 @@ import android.os.SystemClock
 import android.util.Log
 import com.cuscus.ffmpeggui.core.cutout.SubjectModelIo
 import com.cuscus.ffmpeggui.speech.AiKernels
-import kotlinx.coroutines.CoroutineScope
+import com.cuscus.ffmpeggui.speech.ModelSlot
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.nio.FloatBuffer
@@ -28,10 +22,9 @@ import java.nio.FloatBuffer
  * Runs the cut-out model chosen in the settings (through ONNX Runtime, on the
  * processor): [active] gives its store each time a picture is cut out.
  *
- * The model is loaded the first time it is needed and stays in memory while it
- * is used; [IDLE_UNLOAD_MS] after the last use it is let go of. When another
- * model is chosen, the one in memory is let go of and the new one loaded. One
- * picture at a time.
+ * The model goes through the app's ModelGate: loaded when a picture is to be
+ * cut, alone in memory, and let go of as soon as it is cut. When another
+ * model is chosen, the one in memory is let go of and the new one loaded.
  */
 class CutoutEngine(context: Context, private val active: () -> CutoutModelStore) {
 
@@ -54,10 +47,8 @@ class CutoutEngine(context: Context, private val active: () -> CutoutModelStore)
     )
 
     private val appContext = context.applicationContext
-    private val mutex = Mutex()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val slot = ModelSlot("Cut-out model") { release() }
     private var loaded: Loaded? = null
-    private var unloadJob: Job? = null
 
     private val _inMemory = MutableStateFlow(false)
 
@@ -77,8 +68,7 @@ class CutoutEngine(context: Context, private val active: () -> CutoutModelStore)
      * [onLoaded] gets how long that took, 0 when it was in memory already.
      */
     suspend fun mask(picture: (side: Int) -> IntArray, onLoaded: (Long) -> Unit = {}): Mask = withContext(Dispatchers.Default) {
-        mutex.withLock {
-            unloadJob?.cancel()
+        slot.run {
             val store = active()
             if (loaded != null && loaded?.store !== store) release()
             val started = SystemClock.elapsedRealtime()
@@ -86,20 +76,14 @@ class CutoutEngine(context: Context, private val active: () -> CutoutModelStore)
             val model = loaded ?: load(store).also { loaded = it }
             _inMemory.value = true
             onLoaded(if (wasLoaded) 0L else SystemClock.elapsedRealtime() - started)
-            try {
-                val net = store.model.net
-                val argb = picture(net.side)
-                Mask(net.side, run(model, SubjectModelIo.input(argb, net), net.side), store.model)
-            } finally {
-                scheduleUnload()
-            }
+            val net = store.model.net
+            val argb = picture(net.side)
+            Mask(net.side, run(model, SubjectModelIo.input(argb, net), net.side), store.model)
         }
     }
 
     /** Frees the model's memory now (it loads again when next needed). */
-    fun unload() {
-        scope.launch { mutex.withLock { release() } }
-    }
+    fun unload() = slot.unload()
 
     /** Measures the model on a made-up picture: how long it loads, how long one picture takes. */
     suspend fun speedTest(): SpeedResult {
@@ -154,14 +138,6 @@ class CutoutEngine(context: Context, private val active: () -> CutoutModelStore)
         }
     }
 
-    private fun scheduleUnload() {
-        unloadJob?.cancel()
-        unloadJob = scope.launch {
-            delay(IDLE_UNLOAD_MS)
-            mutex.withLock { release() }
-        }
-    }
-
     private fun release() {
         loaded?.let { model ->
             runCatching { model.session.close() }
@@ -173,8 +149,5 @@ class CutoutEngine(context: Context, private val active: () -> CutoutModelStore)
 
     companion object {
         private const val TAG = "CutoutEngine"
-
-        /** The model is let go of after this long unused. */
-        const val IDLE_UNLOAD_MS = 2 * 60_000L
     }
 }

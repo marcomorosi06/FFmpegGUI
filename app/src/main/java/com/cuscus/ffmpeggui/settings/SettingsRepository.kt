@@ -70,6 +70,7 @@ class SettingsRepository(context: Context) {
             monochrome = this[MONOCHROME] ?: defaults.monochrome,
             haptics = this[HAPTICS] ?: defaults.haptics,
             saveCopies = this[SAVE_COPIES] ?: defaults.saveCopies,
+            stickerCopies = this[STICKER_COPIES] ?: defaults.stickerCopies,
             liveUpdates = this[LIVE_UPDATES] ?: defaults.liveUpdates,
             hardwareVideo = this[HARDWARE_VIDEO] ?: defaults.hardwareVideo,
             cpuSpeed = this[CPU_SPEED]?.let { name -> CpuEncoderSpeed.entries.firstOrNull { it.name == name } } ?: defaults.cpuSpeed,
@@ -88,6 +89,7 @@ class SettingsRepository(context: Context) {
         this[MONOCHROME] = settings.monochrome
         this[HAPTICS] = settings.haptics
         this[SAVE_COPIES] = settings.saveCopies
+        this[STICKER_COPIES] = settings.stickerCopies
         this[LIVE_UPDATES] = settings.liveUpdates
         this[HARDWARE_VIDEO] = settings.hardwareVideo
         this[CPU_SPEED] = settings.cpuSpeed.name
@@ -105,6 +107,7 @@ class SettingsRepository(context: Context) {
         val MONOCHROME = booleanPreferencesKey("monochrome")
         val HAPTICS = booleanPreferencesKey("haptics")
         val SAVE_COPIES = booleanPreferencesKey("save_copies")
+        val STICKER_COPIES = booleanPreferencesKey("sticker_copies")
         val LIVE_UPDATES = booleanPreferencesKey("live_updates")
         val HARDWARE_VIDEO = booleanPreferencesKey("hardware_video")
         val CPU_SPEED = stringPreferencesKey("cpu_speed")

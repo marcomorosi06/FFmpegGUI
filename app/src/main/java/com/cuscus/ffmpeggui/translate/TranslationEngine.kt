@@ -12,19 +12,13 @@ import com.cuscus.ffmpeggui.core.translate.MarianTokenizer
 import com.cuscus.ffmpeggui.core.translate.SentencePieceModel
 import com.cuscus.ffmpeggui.core.translate.TranslationStep
 import com.cuscus.ffmpeggui.speech.AiKernels
-import kotlinx.coroutines.CoroutineScope
+import com.cuscus.ffmpeggui.speech.ModelSlot
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.nio.FloatBuffer
@@ -36,8 +30,9 @@ import java.nio.LongBuffer
  * through English. Each line is encoded once, then the decoder writes the
  * translation a token at a time, the likeliest each time (GreedyDecoder).
  *
- * The models used last stay in memory while lines come; [IDLE_UNLOAD_MS]
- * after the last one they are let go of. One translation at a time.
+ * The models go through the app's ModelGate: one in memory at a time (the
+ * way through English lets the first go before the second loads), and let go
+ * of as soon as the lines are translated.
  */
 class TranslationEngine(context: Context, private val store: TranslationModelStore) {
 
@@ -59,10 +54,8 @@ class TranslationEngine(context: Context, private val store: TranslationModelSto
     }
 
     private val appContext = context.applicationContext
-    private val mutex = Mutex()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val slot = ModelSlot("Translation model") { releaseAll() }
     private val loaded = LinkedHashMap<String, Loaded>()
-    private var unloadJob: Job? = null
 
     private val _inMemory = MutableStateFlow(false)
     val inMemory: StateFlow<Boolean> = _inMemory.asStateFlow()
@@ -76,35 +69,28 @@ class TranslationEngine(context: Context, private val store: TranslationModelSto
      */
     suspend fun translate(texts: List<String>, steps: List<TranslationStep>, onProgress: (Int, Int) -> Unit = { _, _ -> }): List<String> =
         withContext(Dispatchers.Default) {
-            mutex.withLock {
-                unloadJob?.cancel()
-                try {
-                    var current = texts
-                    val total = texts.size * steps.size.coerceAtLeast(1)
-                    var done = 0
-                    for (step in steps) {
-                        val model = load(step.model)
-                        // A model that writes several languages is told which by a token before the text.
-                        val target = if (model.tokenizer.targetTokens.isNotEmpty()) step.to else null
-                        current = current.map { line ->
-                            currentCoroutineContext().ensureActive()
-                            val out = if (line.isBlank()) line else translateOne(model, line, target)
-                            done++
-                            onProgress(done, total)
-                            out
-                        }
+            slot.run {
+                var current = texts
+                val total = texts.size * steps.size.coerceAtLeast(1)
+                var done = 0
+                for (step in steps) {
+                    val model = load(step.model)
+                    // A model that writes several languages is told which by a token before the text.
+                    val target = if (model.tokenizer.targetTokens.isNotEmpty()) step.to else null
+                    current = current.map { line ->
+                        currentCoroutineContext().ensureActive()
+                        val out = if (line.isBlank()) line else translateOne(model, line, target)
+                        done++
+                        onProgress(done, total)
+                        out
                     }
-                    current
-                } finally {
-                    scheduleUnload()
                 }
+                current
             }
         }
 
     /** Frees the models' memory now. */
-    fun unload() {
-        scope.launch { mutex.withLock { releaseAll() } }
-    }
+    fun unload() = slot.unload()
 
     private fun translateOne(model: Loaded, text: String, target: String?): String {
         val env = OrtEnvironment.getEnvironment()
@@ -164,8 +150,8 @@ class TranslationEngine(context: Context, private val store: TranslationModelSto
         loaded[id]?.let { return it }
         val dir = store.folder(id)
         if (!dir.isDirectory) throw ModelMissing(id)
-        // At most two models in memory: the way through English needs two.
-        while (loaded.size >= 2) loaded.remove(loaded.keys.first())?.close()
+        // One model in memory: the way through English needs two, one after the other.
+        releaseAll()
         val memory = ActivityManager.MemoryInfo()
         (appContext.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)?.getMemoryInfo(memory)
         if (memory.availMem in 1 until MIN_FREE_BYTES) throw NotEnoughMemory()
@@ -197,14 +183,6 @@ class TranslationEngine(context: Context, private val store: TranslationModelSto
         }
     }
 
-    private fun scheduleUnload() {
-        unloadJob?.cancel()
-        unloadJob = scope.launch {
-            delay(IDLE_UNLOAD_MS)
-            mutex.withLock { releaseAll() }
-        }
-    }
-
     private fun releaseAll() {
         loaded.values.forEach { it.close() }
         loaded.clear()
@@ -213,9 +191,6 @@ class TranslationEngine(context: Context, private val store: TranslationModelSto
 
     companion object {
         private const val TAG = "TranslationEngine"
-
-        /** The models are let go of after this long unused. */
-        const val IDLE_UNLOAD_MS = 2 * 60_000L
 
         /** Below this much free memory a model is not even tried. */
         private const val MIN_FREE_BYTES = 250L * 1024 * 1024

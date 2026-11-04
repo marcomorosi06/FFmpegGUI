@@ -14,6 +14,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -36,6 +38,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BookmarkAdd
+import androidx.compose.material.icons.rounded.BookmarkAdded
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Brush
@@ -212,6 +216,11 @@ private fun suggested(sample: Bitmap?, base: ColorKey): ColorKey {
  * @param onRefreshSample takes the sample again (the frame under the playhead), when there is one.
  * @param fillOpacity     the fill can be see-through (the result holds transparency).
  * @param fillHint        says what the output does with the fill.
+ * @param onSaveSticker   saves what is cut out (by the subject's mask, corrected
+ *                        with the brushes, or by the colour) to the sticker gallery,
+ *                        or takes it away when [stickerSaved]; null where there is
+ *                        no still picture to save.
+ * @param stickerSaved    what is cut out is in the sticker gallery already.
  */
 @Composable
 internal fun ColorKeyContent(
@@ -225,6 +234,8 @@ internal fun ColorKeyContent(
     fillOpacity: Boolean = false,
     fillHint: String? = null,
     subjectUri: Uri? = null,
+    onSaveSticker: (() -> Unit)? = null,
+    stickerSaved: Boolean = false,
 ) {
     val motion = MaterialTheme.motionScheme
     val small = remember(sample) { sample?.let { fitted(it, SAMPLE_PX) } }
@@ -264,6 +275,8 @@ internal fun ColorKeyContent(
             if (key != null) shownKey = key
             val current = shownKey
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // What is cut out, kept to be laid on another picture or video.
+                if (onSaveSticker != null) SaveStickerCard(saved = stickerSaved, onToggle = onSaveSticker, enabled = enabled)
                 // A subject key has no colour to pick or tune: only its fill.
                 if (current.mode != KeyMode.SUBJECT) {
                 PanelCard {
@@ -928,3 +941,69 @@ internal suspend fun keySample(context: Context, uri: Uri, positionMs: Long, sti
         }
         bitmap
     }
+
+/**
+ * A card offering to keep what the key cuts out in the sticker gallery: a
+ * tonal tile with a badge that turns a little under the finger, a title and
+ * a button. Once saved, the bookmark fills (its badge blooms into a flower)
+ * and the button takes it away again.
+ */
+@Composable
+private fun SaveStickerCard(saved: Boolean, onToggle: () -> Unit, enabled: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    val haptics = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val turn by animateFloatAsState(if (pressed) 30f else 0f, MaterialTheme.motionScheme.fastSpatialSpec(), label = "saveStickerTurn")
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(scheme.tertiaryContainer)
+            .padding(start = 14.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
+    ) {
+        com.cuscus.ffmpeggui.ui.expressive.MorphingContainer(
+            from = MaterialShapes.Cookie7Sided,
+            to = if (saved) MaterialShapes.Flower else MaterialShapes.Clover4Leaf,
+            morphed = pressed || saved,
+            color = scheme.tertiary,
+            rotationDegrees = turn,
+            modifier = Modifier.size(44.dp),
+        ) {
+            androidx.compose.animation.Crossfade(targetState = saved, animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(), label = "stickerBookmark") { isSaved ->
+                Icon(
+                    if (isSaved) Icons.Rounded.BookmarkAdded else Icons.Outlined.BookmarkAdd,
+                    contentDescription = null,
+                    tint = scheme.onTertiary,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                stringResource(if (saved) R.string.stickers_saved_title else R.string.stickers_save_title),
+                style = MaterialTheme.typography.titleSmallEmphasized,
+                color = scheme.onTertiaryContainer,
+            )
+            Text(
+                stringResource(if (saved) R.string.stickers_saved_text else R.string.stickers_save_text),
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onTertiaryContainer,
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        androidx.compose.material3.FilledTonalButton(
+            onClick = {
+                if (!saved) haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                onToggle()
+            },
+            enabled = enabled,
+            interactionSource = interaction,
+            shapes = androidx.compose.material3.ButtonDefaults.shapes(),
+        ) {
+            Text(stringResource(if (saved) R.string.stickers_remove_button else R.string.stickers_save_button), style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}

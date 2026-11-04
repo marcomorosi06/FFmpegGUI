@@ -345,6 +345,44 @@ class MainActivity : ComponentActivity() {
                         onFavourite = studioStore::setFavourite,
                     )
 
+                    // The sticker gallery (StickerLibrary): what the editors save and lay again.
+                    val savedStickers by container.stickerLibrary.stickers.collectAsState()
+                    val stickerScope = rememberCoroutineScope()
+                    val stickerHaptics = LocalHapticFeedback.current
+                    val stickerContext = androidx.compose.ui.platform.LocalContext.current
+                    val stickerShelf = com.cuscus.ffmpeggui.stickers.StickerShelf(
+                        stickers = savedStickers,
+                        // Saved: a confirming haptic, nothing on screen (the sheet shows it next
+                        // time). Not saved: a short message says why.
+                        onSave = { uri, key, matrix ->
+                            stickerScope.launch {
+                                val problem = try {
+                                    // Already there: nothing is written again (see StickerLibrary.savedAs).
+                                    container.stickerLibrary.save(uri, key, matrix)
+                                    null
+                                } catch (e: kotlinx.coroutines.CancellationException) {
+                                    throw e
+                                } catch (e: com.cuscus.ffmpeggui.stickers.StickerLibrary.NothingToSave) {
+                                    R.string.stickers_save_empty
+                                } catch (e: Exception) {
+                                    android.util.Log.w("Stickers", "Could not save the sticker", e)
+                                    R.string.stickers_save_failed
+                                }
+                                if (problem == null) {
+                                    stickerHaptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Confirm)
+                                } else {
+                                    stickerHaptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Reject)
+                                    android.widget.Toast.makeText(stickerContext, problem, android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        onDelete = { id ->
+                            stickerHaptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOff)
+                            container.stickerLibrary.delete(id)
+                        },
+                        savedAs = { uri, key, matrix -> container.stickerLibrary.savedAs(uri, key, matrix) },
+                    )
+
                     // Old models deleted from the phone (RetiredModels): said once, with a way to the new ones.
                     val retiredModels by container.smartFeatures.retiredModels.collectAsState()
                     com.cuscus.ffmpeggui.cutout.RetiredModelsDialog(
@@ -358,6 +396,7 @@ class MainActivity : ComponentActivity() {
                     )
 
                     CompositionLocalProvider(
+                        com.cuscus.ffmpeggui.stickers.LocalStickerShelf provides stickerShelf,
                         LocalSubjectCut provides subjectCut,
                         com.cuscus.ffmpeggui.erase.LocalMagicErase provides magicErase,
                         com.cuscus.ffmpeggui.command.LocalCommandStudio provides commandStudio,

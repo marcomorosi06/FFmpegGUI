@@ -47,6 +47,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
@@ -795,6 +796,20 @@ private fun ExportSettings(
                     onCheckedChange = { on -> onChange { it.copy(saveCopies = on) } },
                     badge = MaterialShapes.Clover4Leaf,
                     colors = ToneColors(scheme.secondaryContainer, scheme.onSecondaryContainer),
+                    enabled = PublicCopies.available,
+                )
+            },
+            { shape ->
+                // The sticker gallery: in the app only, unless asked (off by default).
+                SettingsSwitchRow(
+                    shape = shape,
+                    icon = Icons.Rounded.Bookmarks,
+                    title = stringResource(R.string.settings_sticker_copies),
+                    summary = stringResource(if (settings.stickerCopies) R.string.settings_sticker_copies_on else R.string.settings_sticker_copies_off),
+                    checked = settings.stickerCopies && PublicCopies.available,
+                    onCheckedChange = { on -> onChange { it.copy(stickerCopies = on) } },
+                    badge = MaterialShapes.Flower,
+                    colors = ToneColors(scheme.tertiaryContainer, scheme.onTertiaryContainer),
                     enabled = PublicCopies.available,
                 )
             },
