@@ -3,9 +3,8 @@
 Checks the licence texts FFmpeg GUI keeps of other repositories whose code or
 artwork it uses (scripts/licence-copies.lock): every copy must be byte for
 byte the upstream file the lock pins, and must be listed in the licences'
-README (app/src/main/assets/licenses/README.txt). Run by
-.github/workflows/model-pins.yml on every push and by release.yml before a
-release.
+README (app/src/main/assets/licenses/README.txt). Run, online, by
+.github/workflows/release.yml for every v* tag. Run it by hand any time.
 
 With --online it also reads the upstream file at the pinned commit (it must
 be the pinned one) and today (a change is reported, not fixed: read it, then

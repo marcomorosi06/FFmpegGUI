@@ -19,23 +19,12 @@ name: AI model files (ONNX)
 #      (never "latest": the app's own releases stay apart). The app downloads
 #      them from there.
 #
-# Run it by hand (Actions > AI model files > Run workflow) before the first
-# app release that pins new files. After a push that changes what the files
-# are made from it runs by itself, and only checks. A release that already
-# exists is never replaced: it is checked against the pins instead.
+# It runs only by hand (Actions > AI model files > Run workflow): before the
+# first app release that pins new files, or to check that they still build
+# to the same bytes (untick "publish"). A release that already exists is never
+# replaced: it is checked against the pins instead.
 
 on:
-  push:
-    branches:
-      - master
-    paths:
-      - scripts/export-edgetam.py
-      - scripts/export-birefnet.py
-      - scripts/edgetam-onnx.lock
-      - scripts/birefnet-onnx.lock
-      - scripts/model-export-requirements.txt
-      - scripts/check-model-pins.py
-      - .github/workflows/models-onnx.yml
   workflow_dispatch:
     inputs:
       publish:
@@ -200,7 +189,7 @@ jobs:
           exit "$status"
 
       - name: Publish what is not published yet
-        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        if: inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

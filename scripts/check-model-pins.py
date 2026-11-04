@@ -4,8 +4,9 @@ Checks that what the app says about its AI models agrees everywhere: the
 SHA-256, sizes and release tags pinned in the Kotlin code, the locks the
 ONNX files are made from (scripts/*-onnx.lock), the licences and notices that
 come with the app (app/src/main/assets/licenses/), and the record of every
-model (docs/MODELS.md). Run by .github/workflows/model-pins.yml on every push
-and pull request, and by models-onnx.yml before it publishes a file.
+model (docs/MODELS.md). Run, online, by .github/workflows/release.yml for
+every v* tag (a release is refused until everything agrees), and by
+models-onnx.yml before it publishes a file. Run it by hand any time.
 
 Offline (always):
   1. EdgeTAM: RefineModel.kt pins the files, sizes and release tag of

@@ -3,8 +3,9 @@
 Every AI model FFmpeg GUI can use, what it is for, who made it, under which
 licence, where its files come from, what the app checks them against, and
 what is known of the data it was trained on. `scripts/check-model-pins.py`
-checks on every push that this record holds every hash the app pins and every
-licence it names, so the record and the app cannot drift apart.
+checks before every release (`release.yml`) that this record holds every hash
+the app pins and every licence it names, so the record and the app cannot
+drift apart.
 
 > **Not legal advice.** This page records what the project does and why, as
 > carefully as it can, from the licences and the pages of each model as they

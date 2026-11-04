@@ -170,7 +170,7 @@ The video effects are made by the project's own `scripts/generate-effects.py` (t
 
 Each component stays under its own licence.
 
-**The AI models** are recorded one by one in [docs/MODELS.md](docs/MODELS.md): who made each, its licence, where its files come from, the SHA-256 the app checks them against and what it was trained on, and how the licences of the two models this project converts and serves itself are kept. `scripts/check-model-pins.py` checks on every push that the app, the record and the licences agree. It is a record, not legal advice.
+**The AI models** are recorded one by one in [docs/MODELS.md](docs/MODELS.md): who made each, its licence, where its files come from, the SHA-256 the app checks them against and what it was trained on, and how the licences of the two models this project converts and serves itself are kept. `scripts/check-model-pins.py` checks, before every release, that the app, the record and the licences agree. It is a record, not legal advice.
 
 ## License
 

@@ -632,7 +632,7 @@ in `MainActivity`) comes from WiFi Audio Streaming for Android
 (https://github.com/marcomorosi06/WiFiAudioStreaming-Android), by the same author and under
 the same licence (its copy of the EUPL in `assets/licenses/wifi-audio-streaming/`,
 pinned in `scripts/licence-copies.lock` and checked by
-`scripts/check-licence-copies.py`); the glyph and the colours are this app's.
+`scripts/check-licence-copies.py` before every release); the glyph and the colours are this app's.
 Where each one acts:
 
 - theme, wallpaper colours, monochrome, pure black: `FFmpegGUITheme` and the
@@ -2168,8 +2168,8 @@ licence and the notice also go inside each file (`doc_string`, metadata).
 `.github/workflows/models-onnx.yml` builds them twice (two runner images, the
 second on two cores) and publishes only byte-identical files, as the
 pre-releases named by the locks' `release_tag`; the app downloads them from
-there. `scripts/check-model-pins.py` (`model-pins.yml` on every push, and
-before every release with `--online`) checks that the Kotlin pins, the locks,
+there. `scripts/check-model-pins.py` (run by `release.yml` for every tag,
+with `--online`) checks that the Kotlin pins, the locks,
 the licences and notices bundled in `assets/licenses/`, the release files and
 docs/MODELS.md all agree.
 

@@ -5,7 +5,10 @@ name: Reproducible APK
 #      models: alongside, scripts/check-model-pins.py --online: the AI model
 #      files the app pins agree with their locks, licences and docs/MODELS.md,
 #      and the project's own conversions are published (models-onnx.yml), so
-#      that no release points its users at a download that is not there;
+#      that no release points its users at a download that is not there; and
+#      scripts/check-licence-copies.py --online: the licence texts copied from
+#      other repositories are still the upstream ones. These checks run here
+#      only, not on every push; run them by hand any time;
 #   1. build: the unsigned release APK, in the environment IzzyOnDroid's recipes
 #      provision;
 #   2. izzyondroid: IzzyOnDroid's own builder (rbtlog) rebuilds the tag from the
