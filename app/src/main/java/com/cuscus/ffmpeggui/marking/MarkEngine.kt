@@ -37,7 +37,7 @@ import java.nio.LongBuffer
  * turn at the ModelGate like every other, and are let go of right after.
  *
  * Nothing about the phone, the person, the file or the model goes in:
- * AudioSeal's message and TrustMark's payload are zeros (Marks).
+ * AudioSeal's message (zeros) and TrustMark's payload are constants (Marks).
  */
 class MarkEngine(context: Context, private val store: SpeechModelStore) {
 
@@ -190,7 +190,7 @@ class MarkEngine(context: Context, private val store: SpeechModelStore) {
         }
     }
 
-    /** True when [picture] carries TrustMark's mark of zeros. */
+    /** True when [picture] carries TrustMark's mark (Marks.PICTURE_CODEWORD). */
     suspend fun pictureMarked(picture: Bitmap): Boolean = withContext(Dispatchers.Default) {
         slot.run { Marks.pictureMarked(decode(picture)) }
     }

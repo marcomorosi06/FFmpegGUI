@@ -176,7 +176,7 @@ AI Act, Regulation (EU) 2024/1689, Article 50(2); see docs/ARCHITECTURE.md,
 "Marked as made with AI"). These four files write and find it. They are
 imported before any other model (`MarkingGate`); without them no model stays
 on the phone (`MarkingSweep`). The marks carry nothing but "made with AI":
-their payloads are all zeros, the same for everyone (`core/marking/Marks.kt`).
+their payloads are constants, the same for everyone (`core/marking/Marks.kt`).
 
 - **AudioSeal** (["Proactive Detection of Voice Cloning with Localized
   Watermarking"](https://arxiv.org/abs/2401.17264), Meta, ICML 2024), which

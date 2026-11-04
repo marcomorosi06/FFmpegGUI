@@ -2019,10 +2019,14 @@ noise reduction among what is not). `core.provenance`, pure and tested:
   256 x 256, the encoder's difference with each colour's mean taken away,
   stretched back bilinearly and added, fading in over the last 1% of each
   edge; the transparency left as it was. The payload is TrustMark's
-  BCH_SUPER schema with 40 data bits of zeros (its 56 BCH bits are zeros
-  too, the version 0000): Adobe's own reader finds it as such. Read back at
-  once: at most 3 wrong bits of 96 (BCH corrects 8), or the result is not
-  kept.
+  BCH_SUPER schema with the fixed 40 data bits 0101...01, their 56 BCH
+  bits and the version 0000 (`Marks.PICTURE_CODEWORD`): Adobe's own reader
+  finds it as such. Not all zeros: the encoder takes the bits through a
+  linear layer, and with no bit set the mark came out too weak (6 to 11
+  wrong bits right after marking on the export's test photos, often not
+  found); with as many ones as zeros it read with none, also after JPEG 75
+  and at half the size. Read back at once: at most 3 wrong bits of 96 (BCH
+  corrects 8), or the result is not kept.
 - **What was made before** (a dub, an erased picture, from an older version
   or another program that marked it as made with a trained model):
   `MarkGuard`, right before an export, reads its mark and, when it has none,
@@ -2036,8 +2040,8 @@ noise reduction among what is not). `core.provenance`, pure and tested:
   (`ModelsClearedDialog`); removing the marks removes every model. The dub
   and the eraser refuse to start without them, and the engines throw rather
   than hand out something unmarked.
-- **Nothing that tells anyone apart.** Both payloads are zeros, the same for
-  every user: no identifier of the phone, the person, the file or the
+- **Nothing that tells anyone apart.** Both payloads are constants (the
+  speech's zeros, the pictures' fixed codeword), the same for every user: no identifier of the phone, the person, the file or the
   model, no date, nothing random (a random value per file would make its
   copies linkable). The metadata are signed by no one, by choice: a key per
   phone would link every file of a person, a key shared by every copy of an

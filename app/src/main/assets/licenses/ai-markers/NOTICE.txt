@@ -3,7 +3,7 @@ https://github.com/marcomorosi06/FFmpegGUI
 
 These files write and find the invisible marks FFmpeg GUI puts into what its
 AI models make (EU AI Act, Regulation (EU) 2024/1689, Article 50(2)). The
-marks carry nothing but "made with AI": their payloads are all zeros, the
+marks carry nothing but "made with AI": their payloads are constants, the
 same in every file of every user (no identifier, no date, no random value).
 
 audioseal-generator.onnx and audioseal-detector.onnx

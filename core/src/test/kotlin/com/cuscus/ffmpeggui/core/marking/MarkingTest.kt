@@ -21,11 +21,13 @@ class MarkingTest {
     // --- The payloads: nothing but "made with AI" -----------------------------------------
 
     @Test
-    fun `both marks carry only zeros, the same for everyone`() {
+    fun `both marks carry only constants, the same for everyone`() {
         assertTrue(Marks.SPEECH_MESSAGE.all { it == 0L })
         assertEquals(16, Marks.SPEECH_MESSAGE.size)
-        assertTrue(Marks.PICTURE_PAYLOAD.all { it == 0f })
-        assertEquals(100, Marks.PICTURE_PAYLOAD.size)
+        assertEquals(100, Marks.PICTURE_CODEWORD.length)
+        assertEquals("01".repeat(20), Marks.PICTURE_CODEWORD.take(40))
+        assertEquals("0000", Marks.PICTURE_CODEWORD.takeLast(4))
+        assertEquals(Marks.PICTURE_CODEWORD, Marks.PICTURE_PAYLOAD.joinToString("") { if (it == 1f) "1" else "0" })
         // A fresh copy each time: nothing can be written into a shared one.
         Marks.PICTURE_PAYLOAD[0] = 1f
         assertEquals(0f, Marks.PICTURE_PAYLOAD[0], 0f)
@@ -33,16 +35,18 @@ class MarkingTest {
 
     @Test
     fun `the picture mark is found through up to eight wrong bits, its version exactly`() {
-        val logits = FloatArray(100) { -1f }
+        val logits = FloatArray(100) { if (Marks.PICTURE_CODEWORD[it] == '1') 1f else -1f }
         assertEquals(0, Marks.pictureErrors(logits))
         assertTrue(Marks.pictureMarked(logits))
-        for (i in listOf(0, 10, 39, 40, 60, 80, 90, 95)) logits[i] = 1f
+        for (i in listOf(0, 10, 39, 40, 60, 80, 90, 95)) logits[i] = -logits[i]
         assertEquals(8, Marks.pictureErrors(logits))
         assertTrue(Marks.pictureMarked(logits))
-        logits[50] = 1f
+        logits[50] = -logits[50]
         assertFalse(Marks.pictureMarked(logits))
+        // All zeros (an unmarked reading, or the old payload): far from the mark.
+        assertFalse(Marks.pictureMarked(FloatArray(100) { -1f }))
         // Another schema (BCH_5 ends in 01): not this mark, however its bits.
-        val other = FloatArray(100) { -1f }.also { it[99] = 1f }
+        val other = FloatArray(100) { if (Marks.PICTURE_CODEWORD[it] == '1') 1f else -1f }.also { it[99] = 1f }
         assertNull(Marks.pictureErrors(other))
         assertFalse(Marks.pictureMarked(FloatArray(10)))
     }

@@ -16,8 +16,8 @@ import com.cuscus.ffmpeggui.speech.SpeechModel
  *    TRUSTMARK_CONFIRMATION_URL): Adobe's own encoder and decoder, unchanged;
  *    a picture the magic eraser changed gets its mark as it is made.
  *
- * The marks carry nothing but "made with AI" (core.marking.Marks: payloads
- * of zeros, the same for everyone): no identifier of the phone, the person,
+ * The marks carry nothing but "made with AI" (core.marking.Marks: constant
+ * payloads, the same for everyone): no identifier of the phone, the person,
  * the file or the model, no date, nothing random.
  *
  * Built twice by .github/workflows/ai-markers.yml from what

@@ -91,7 +91,7 @@ When a file holds what an AI model made (a dub's voice, a picture the magic eras
 
 **And the metadata**: IPTC's [Digital Source Type](https://cv.iptc.org/newscodes/digitalsourcetype/) in the file's XMP, and tags of its own (`AI_GENERATED`, `DIGITAL_SOURCE_TYPE`) where the format has them. The marks are written after FFmpeg, so neither the metadata settings nor a command written by hand can leave them out; a format with no place for them (BMP, for example) is not written. Subtitles, transcripts, translations, subject cut-outs and voice separation are not marked: they do not make anything that passes for real.
 
-The marks say only that ("AI-generated voice", "AI-generated inpainting"; the invisible marks carry a payload of zeros): not which model or voice, not which app, no date, nothing about you or your phone, nothing random. They are the same in every file of every user: **no fingerprint of any kind**, they cannot tell one file, phone or person from another.
+The marks say only that ("AI-generated voice", "AI-generated inpainting"; the invisible marks carry a fixed payload, the same for everyone): not which model or voice, not which app, no date, nothing about you or your phone, nothing random. They are the same in every file of every user: **no fingerprint of any kind**, they cannot tell one file, phone or person from another.
 
 **Please do not remove these marks** from the files you share: they tell people what was not recorded.
 
