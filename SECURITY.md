@@ -7,9 +7,6 @@ subject that starts with `[SECURITY ISSUE]`. Say what you found,
 how to see it happen, and the version of the app. Please do not open a public
 issue for it.
 
-You can also use GitHub's private vulnerability reporting: the repository's
-**Security** tab, then **Report a vulnerability**.
-
 FFmpeg GUI is made by one person in spare time: you will get an answer as soon
 as possible. Once a fix is released, it is named in the release notes, with
 your name if you wish.
