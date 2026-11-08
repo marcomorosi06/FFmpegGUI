@@ -1896,9 +1896,12 @@ output clock (as the placed sounds do, `SoundVoices`); `StemMixProcessor`
 mixes the four channels down at the two levels for every buffer, so a slider
 is heard at once.
 
-**Where.** The editor's Voice tool, per clip or for every clip: the
-separation card, the two levels, then the tracks card (`StemTracksCard`:
-how far to split, which stems, one button).
+**Where.** The editor's Stems tool (video and audio editor), per clip or
+for every clip: on top the card of the split, with a strip of the parts it
+gave (dialogue, music, effects, instruments) lit as they are there; then
+"Quick mix" (the dialogue's level and the music's and effects' together,
+live, with presets) or "Tracks" (`StemTracksCard`: how far to split, which
+parts, one button).
 
 ## Dubbing
 

@@ -139,8 +139,8 @@ enum class EditorTool(@StringRes val labelRes: Int, val icon: ImageVector, val f
     CLIP_TRIM(R.string.tool_trim, Icons.Rounded.Straighten, ToolFamily.PICTURE),
     AUDIO(R.string.tool_audio, Icons.Rounded.GraphicEq, ToolFamily.SOUND),
     VOLUME(R.string.tool_volume, Icons.Rounded.VolumeUp, ToolFamily.SOUND),
-    // The voice set apart from the rest of the sound, each at its own level.
-    VOICE_SPLIT(R.string.tool_voice_split, Icons.Rounded.Mic, ToolFamily.SOUND),
+    // The sound split into its parts (dialogue, music, effects, instruments): their mix, or each as a track.
+    VOICE_SPLIT(R.string.tool_voice_split, Icons.Rounded.Layers, ToolFamily.SOUND),
     // Tools of a selected sound.
     SOUND_TRIM(R.string.tool_trim, Icons.Rounded.Straighten, ToolFamily.SOUND),
     SOUND_VOLUME(R.string.tool_volume, Icons.Rounded.VolumeUp, ToolFamily.SOUND),

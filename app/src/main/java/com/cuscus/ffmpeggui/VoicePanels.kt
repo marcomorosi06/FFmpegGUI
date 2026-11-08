@@ -15,6 +15,20 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material.icons.rounded.Piano
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -80,11 +94,12 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /*
- * The voice set apart from the rest of the sound (see VoiceSeparator): the
- * card that does it (with the model's state, the run as it goes and what went
- * wrong) and the mixer that sets the two levels, with presets for the usual
- * wishes (the voice alone, no voice, the voice up or down). The editor's Voice
- * tool and the standalone Voice screen are made of these.
+ * The sound split into its parts (see VoiceSeparator): the card that does
+ * it (with the model's state, the run as it goes, what went wrong and the
+ * parts it gave), the quick mix that sets the dialogue's level and the
+ * rest's, with presets for the usual wishes (the dialogue alone, none, up or
+ * down), and the tracks (StemTracksPanels). The editor's Stems tool is made
+ * of these.
  */
 
 /** The voice separation's state and actions, for the editor. */
@@ -125,10 +140,18 @@ internal enum class VoiceMixPreset(val voice: Float, val rest: Float) {
     }
 }
 
+/** The two halves of the Stems tool: the quick mix of the dialogue and the rest, or every part as a track. */
+private enum class StemsMode { MIX, TRACKS }
+
 /**
- * The editor's Voice tool: the separation card while the files of the scope
- * ([sourceIds]) are not separated yet, then the mixer for clip [clipId]
- * (null: every clip), now at [voiceLevel] and [backgroundLevel].
+ * The editor's Stems tool, for clip [clipId] (null: every clip), whose files
+ * are [sourceIds]: on top the card of the split (what is split, the run, the
+ * one thing to do next) with the parts it gives lit up as they are there;
+ * below, two ways to use them. "Quick mix" sets the dialogue's level and the
+ * music's and effects' together, live, now at [voiceLevel] and
+ * [backgroundLevel]; "Tracks" lays the parts picked on the video as sounds of
+ * their own, to move, cut and level one by one. After tracks were laid (or
+ * could not be) it shows Tracks, where that is said.
  */
 @Composable
 internal fun VoiceSectionContent(
@@ -138,37 +161,66 @@ internal fun VoiceSectionContent(
     voiceLevel: Float,
     backgroundLevel: Float,
 ) {
+    val haptics = LocalHapticFeedback.current
+    val motion = MaterialTheme.motionScheme
     val missing = sourceIds.count { it !in voice.stems }
     val separated = sourceIds.isNotEmpty() && missing == 0
+    // The parts every file in question has as tracks.
+    val parts = if (sourceIds.isEmpty()) emptySet() else sourceIds.map { voice.tracks[it].orEmpty() }.reduce { a, b -> a intersect b }
+    var mode by rememberSaveable { mutableStateOf(StemsMode.MIX) }
+    val tracksNote = when (val status = voice.status) {
+        is VoiceStatus.Placed -> true
+        is VoiceStatus.Failed -> status.problem == VoiceProblem.NO_INSTRUMENTS_MODEL || status.problem == VoiceProblem.NO_TRACKS
+        else -> false
+    }
+    LaunchedEffect(tracksNote) { if (tracksNote) mode = StemsMode.TRACKS }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         // What the tracks card says (tracks laid, or why not) stays there.
-        val shownStatus = when (val status = voice.status) {
-            is VoiceStatus.Placed -> VoiceStatus.Idle
-            is VoiceStatus.Failed -> if (status.problem == VoiceProblem.NO_INSTRUMENTS_MODEL || status.problem == VoiceProblem.NO_TRACKS) VoiceStatus.Idle else status
-            else -> status
-        }
         VoiceSeparationCard(
-            status = shownStatus,
+            status = if (tracksNote) VoiceStatus.Idle else voice.status,
             modelReady = voice.modelReady,
             separated = separated,
             missingFiles = missing,
+            parts = parts,
             onSeparate = { voice.onSeparate(sourceIds) },
             onStop = voice.onStop,
             onDismissProblem = voice.onDismissProblem,
             onOpenSmartFeatures = voice.onOpenSmartFeatures,
         )
-        VoiceMixer(
-            voiceLevel = voiceLevel,
-            backgroundLevel = backgroundLevel,
-            enabled = separated,
-            onLevels = { step, v, b -> voice.onLevels(clipId, v, b, step) },
+        OptionTileRow(
+            options = listOf(
+                TileOption(StemsMode.MIX, stringResource(R.string.stems_mode_mix), Icons.Rounded.Tune),
+                TileOption(StemsMode.TRACKS, stringResource(R.string.stems_mode_tracks), Icons.Rounded.Layers),
+            ),
+            selected = mode,
+            onSelect = {
+                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                mode = it
+            },
         )
-        PanelHint(stringResource(if (clipId == null) R.string.voice_scope_all_hint else R.string.voice_scope_clip_hint))
-        StemTracksCard(
-            voice = voice,
-            clipId = clipId,
-            sourceIds = sourceIds,
-        )
+        AnimatedContent(
+            targetState = mode,
+            transitionSpec = {
+                val forward = targetState.ordinal > initialState.ordinal
+                (slideInHorizontally(motion.defaultSpatialSpec()) { if (forward) it / 3 else -it / 3 } + fadeIn(motion.defaultEffectsSpec()))
+                    .togetherWith(slideOutHorizontally(motion.fastSpatialSpec()) { if (forward) -it / 3 else it / 3 } + fadeOut(motion.fastEffectsSpec()))
+                    .using(SizeTransform(clip = false))
+            },
+            label = "stemsMode",
+        ) { shown ->
+            when (shown) {
+                StemsMode.MIX -> Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    VoiceMixer(
+                        voiceLevel = voiceLevel,
+                        backgroundLevel = backgroundLevel,
+                        enabled = separated,
+                        onLevels = { step, v, b -> voice.onLevels(clipId, v, b, step) },
+                    )
+                    PanelHint(stringResource(if (clipId == null) R.string.voice_scope_all_hint else R.string.voice_scope_clip_hint))
+                }
+                StemsMode.TRACKS -> StemTracksCard(voice = voice, clipId = clipId, sourceIds = sourceIds)
+            }
+        }
     }
 }
 
@@ -185,6 +237,8 @@ internal fun VoiceSeparationCard(
     separated: Boolean,
     /** How many are not. */
     missingFiles: Int,
+    /** The parts every file in question has as tracks: lit in the strip. */
+    parts: Set<StemKind> = emptySet(),
     onSeparate: () -> Unit,
     onStop: () -> Unit,
     onDismissProblem: () -> Unit,
@@ -225,7 +279,7 @@ internal fun VoiceSeparationCard(
                         imageVector = when {
                             failed != null -> Icons.Rounded.ErrorOutline
                             separated -> Icons.Rounded.CheckCircle
-                            else -> Icons.Rounded.RecordVoiceOver
+                            else -> Icons.Rounded.Layers
                         },
                         contentDescription = null,
                         tint = tone.content,
@@ -260,6 +314,9 @@ internal fun VoiceSeparationCard(
                 )
             }
         }
+
+        Spacer(modifier = Modifier.height(14.dp))
+        PartsStrip(parts = parts, working = working != null)
 
         if (working != null) {
             Spacer(modifier = Modifier.height(14.dp))
@@ -342,7 +399,7 @@ internal fun VoiceSeparationCard(
                         shapes = ButtonDefaults.shapes(),
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                     ) {
-                        Icon(Icons.Rounded.RecordVoiceOver, contentDescription = null, modifier = Modifier.size(22.dp))
+                        Icon(Icons.Rounded.Layers, contentDescription = null, modifier = Modifier.size(22.dp))
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = if (failed != null) {
@@ -359,6 +416,62 @@ internal fun VoiceSeparationCard(
         if (action != null) {
             Spacer(modifier = Modifier.height(14.dp))
             action()
+        }
+    }
+}
+
+/**
+ * The parts the split gives, in a row: the dialogue, the music, the effects,
+ * then the instruments of the music. Each lights up in its own colour, its
+ * badge rounding off, once every file in question has it; while the split
+ * runs, the ones still to come breathe.
+ */
+@Composable
+private fun PartsStrip(parts: Set<StemKind>, working: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    val breath = rememberInfiniteTransition(label = "partsBreath")
+    val pulse by breath.animateFloat(0.55f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "partsPulse")
+    val instruments = StemKind.INSTRUMENTS.all { it in parts }
+    val items = listOf(
+        Triple(R.string.stem_dialogue, StemKind.DIALOGUE in parts, ToneColors(scheme.primary, scheme.onPrimary)),
+        Triple(R.string.stem_music, StemKind.MUSIC in parts, ToneColors(scheme.tertiary, scheme.onTertiary)),
+        Triple(R.string.stem_effects, StemKind.EFFECTS in parts, ToneColors(scheme.secondary, scheme.onSecondary)),
+        Triple(R.string.stems_instruments_short, instruments, ToneColors(scheme.tertiaryContainer, scheme.onTertiaryContainer)),
+    )
+    val icons = listOf(Icons.Rounded.RecordVoiceOver, Icons.Rounded.MusicNote, Icons.Rounded.Bolt, Icons.Rounded.Piano)
+    val shapes = listOf(MaterialShapes.Cookie9Sided, MaterialShapes.Flower, MaterialShapes.SoftBurst, MaterialShapes.Clover8Leaf)
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+        items.forEachIndexed { i, (label, lit, tone) ->
+            val container by animateColorAsState(if (lit) tone.container else scheme.surfaceContainerHighest, motion.defaultEffectsSpec(), label = "partBg$i")
+            val content by animateColorAsState(if (lit) tone.content else scheme.onSurfaceVariant, motion.defaultEffectsSpec(), label = "partFg$i")
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .weight(1f)
+                    .graphicsLayer { alpha = if (working && !lit) pulse else 1f }
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(scheme.surfaceContainer)
+                    .padding(vertical = 8.dp),
+            ) {
+                MorphingContainer(
+                    from = shapes[i],
+                    to = MaterialShapes.Circle,
+                    morphed = lit,
+                    color = container,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(icons[i], contentDescription = null, tint = content, modifier = Modifier.size(18.dp))
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    stringResource(label),
+                    style = MaterialTheme.typography.labelMediumEmphasized,
+                    color = if (lit) scheme.onSurface else scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -413,7 +526,7 @@ internal fun VoiceMixer(
         ) {
             VoiceLevelBadge(
                 level = voiceLevel,
-                icon = Icons.Rounded.Mic,
+                icon = Icons.Rounded.RecordVoiceOver,
                 label = stringResource(R.string.voice_level_voice),
                 from = MaterialShapes.Cookie12Sided,
                 to = MaterialShapes.Pill,
@@ -423,6 +536,7 @@ internal fun VoiceMixer(
             VoiceLevelBadge(
                 level = backgroundLevel,
                 icon = if (backgroundLevel < 0.01f) Icons.Rounded.MusicOff else Icons.Rounded.MusicNote,
+                // The music and the effects, together.
                 label = stringResource(R.string.voice_level_rest),
                 from = MaterialShapes.SoftBurst,
                 to = MaterialShapes.Pill,

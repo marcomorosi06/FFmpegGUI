@@ -2532,18 +2532,18 @@
     <string name="translate_stop">Stop</string>
     <string name="translate_times_kept">The times stay as they are. A file becomes a new file in the new language; spoken subtitles get the new words.</string>
 
-    <!-- The voice set apart from the rest of the sound (VoicePanels, the Voice tool). -->
-    <string name="tool_voice_split">Voice</string>
-    <string name="voice_title">Voice and the rest</string>
-    <string name="voice_split_hint">Splits the sound into dialogue, music and effects, on the phone. Then the voice and the rest each get their own level.</string>
+    <!-- The sound split into its parts (VoicePanels, StemTracksPanels: the Stems tool). -->
+    <string name="tool_voice_split">Stems</string>
+    <string name="voice_title">Split the sound</string>
+    <string name="voice_split_hint">Into dialogue, music and effects, on the phone. Then mix them, or lay each one as a track of its own.</string>
     <string name="voice_needs_model">Needs the voice model, set up once in Smart features.</string>
-    <string name="voice_done">The voice is set apart. Mix the two below.</string>
+    <string name="voice_done">Split. Mix the parts below, or lay each one as a track.</string>
     <string name="voice_working_note">It is done once per file and may take a while. You can leave the app meanwhile.</string>
     <string name="voice_stop">Stop</string>
     <string name="voice_retry">Try again</string>
     <plurals name="voice_separate_files">
-        <item quantity="one">Set the voice apart</item>
-        <item quantity="other">Set the voice apart in %1$d files</item>
+        <item quantity="one">Split the sound</item>
+        <item quantity="other">Split the sound of %1$d files</item>
     </plurals>
     <string name="voice_step_extracting">Taking the sound out</string>
     <string name="voice_step_loading">Loading the voice model</string>
@@ -2553,17 +2553,17 @@
     <string name="voice_problem_memory">Not enough free memory for the voice model. Close other apps and try again.</string>
     <string name="voice_problem_space">Not enough free space: the sound needs room while it is worked on. Free some and try again.</string>
     <string name="voice_problem_sound">This file has no sound to work on.</string>
-    <string name="voice_problem_failed">The voice could not be set apart.</string>
-    <string name="voice_mix">The mix</string>
+    <string name="voice_problem_failed">The sound could not be split.</string>
+    <string name="voice_mix">Quick mix</string>
     <string name="voice_preset_original">As it is</string>
-    <string name="voice_preset_voice_only">Voice only</string>
-    <string name="voice_preset_no_voice">No voice</string>
-    <string name="voice_preset_voice_up">Voice up front</string>
-    <string name="voice_preset_voice_down">Voice lower</string>
-    <string name="voice_level_voice">Voice</string>
-    <string name="voice_level_rest">The rest</string>
+    <string name="voice_preset_voice_only">Dialogue only</string>
+    <string name="voice_preset_no_voice">No dialogue</string>
+    <string name="voice_preset_voice_up">Dialogue up front</string>
+    <string name="voice_preset_voice_down">Dialogue lower</string>
+    <string name="voice_level_voice">Dialogue</string>
+    <string name="voice_level_rest">Music and effects</string>
     <string name="voice_level_off">Off</string>
-    <string name="voice_mix_locked">Set the voice apart first: then the two levels apply.</string>
+    <string name="voice_mix_locked">Split the sound first: then the levels apply.</string>
     <string name="voice_scope_all_hint">These levels go to every clip. Select a clip to give it levels of its own.</string>
     <string name="voice_scope_clip_hint">These levels go to this clip only.</string>
     <string name="voice_section">Split your audio</string>
@@ -2592,6 +2592,9 @@
     <string name="stem_drums">Drums</string>
     <string name="stem_bass">Bass</string>
     <string name="stem_other">Other instruments</string>
+    <string name="stems_mode_mix">Quick mix</string>
+    <string name="stems_mode_tracks">Tracks</string>
+    <string name="stems_instruments_short">Instruments</string>
     <string name="stems_tracks_title">Every part on its own track</string>
     <string name="stems_tracks_text">Lays the parts you pick on the video as sounds of their own, in step with the clips, and silences the clips. Each one can then be moved, cut, levelled or given effects like any sound.</string>
     <string name="stems_depth_scene">Dialogue, music, effects</string>
