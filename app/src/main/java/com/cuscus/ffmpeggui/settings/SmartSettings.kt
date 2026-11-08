@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.Piano
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Brush
 import androidx.compose.material.icons.rounded.CenterFocusStrong
@@ -105,7 +106,7 @@ import com.cuscus.ffmpeggui.speech.SpeechVariant
 import com.cuscus.ffmpeggui.translate.TranslationFeatureUi
 import com.cuscus.ffmpeggui.translate.TranslationSettingsSection
 import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
-import com.cuscus.ffmpeggui.voice.VoiceModel
+import com.cuscus.ffmpeggui.voice.StemModels
 import com.cuscus.ffmpeggui.dub.DubEngine
 import com.cuscus.ffmpeggui.dub.DubModel
 import com.cuscus.ffmpeggui.erase.EraseEngine
@@ -178,8 +179,9 @@ class DubFeatureUi(
     val piper: PiperFeatureUi? = null,
 )
 
-/** The voice model's state and actions (see VoiceModel), and the voices kept. */
+/** The stem models' state and actions (see StemModels), and the stems kept. */
 class VoiceFeatureUi(
+    /** Bandit v2: dialogue, music and effects. */
     val model: SpeechModelStore.State,
     /** The model is in memory now. */
     val loaded: Boolean,
@@ -194,6 +196,12 @@ class VoiceFeatureUi(
     val onDelete: () -> Unit,
     val onUnload: () -> Unit,
     val onDeleteKept: () -> Unit,
+    /** Spleeter's five stems: the music's instruments. */
+    val instruments: SpeechModelStore.State = SpeechModelStore.State.Missing,
+    val onImportInstruments: (List<Uri>) -> Unit = {},
+    val onStopImportInstruments: () -> Unit = {},
+    val onVerifyInstruments: () -> Unit = {},
+    val onDeleteInstruments: () -> Unit = {},
 )
 
 /** The cut-out model's state and actions, for the same page. */
@@ -549,10 +557,21 @@ internal fun AboutModelsSection() {
                 SettingsRow(
                     shape = shape,
                     icon = Icons.Rounded.RecordVoiceOver,
-                    title = VoiceModel.NAME,
-                    summary = stringResource(R.string.voice_model_summary, VoiceModel.MAKER, VoiceModel.LICENCE),
+                    title = StemModels.BANDIT_NAME,
+                    summary = stringResource(R.string.stems_bandit_summary, StemModels.BANDIT_MAKER, StemModels.BANDIT_LICENCE),
                     badge = MaterialShapes.Flower,
-                    onClick = { openLink(context, VoiceModel.MODEL_PAGE_URL) },
+                    onClick = { openLink(context, StemModels.BANDIT_PAGE_URL) },
+                    trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
+                )
+            },
+            { shape ->
+                SettingsRow(
+                    shape = shape,
+                    icon = Icons.Rounded.Piano,
+                    title = StemModels.SPLEETER_NAME,
+                    summary = stringResource(R.string.stems_spleeter_summary, StemModels.SPLEETER_MAKER, StemModels.SPLEETER_LICENCE),
+                    badge = MaterialShapes.Clover8Leaf,
+                    onClick = { openLink(context, StemModels.SPLEETER_PAGE_URL) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
             },
@@ -605,36 +624,70 @@ internal fun AboutModelsSection() {
 }
 
 /**
- * The voice model's section: its card (download, import, checks) and, once
- * voices have been set apart, how many are kept and the space they take,
- * with a way to remove them all.
+ * The stems' section: Bandit v2's card (dialogue, music and effects: what
+ * the voice levels, the dub and every split need), then Spleeter's five
+ * stems' (the music's instruments) and, once files have been split, how many
+ * are kept and the space they take, with a way to remove them all. While
+ * Bandit's file waits for its first build to be pinned, its card says it is
+ * on its way instead of offering an import that could only fail.
  */
 @Composable
 internal fun VoiceSettingsSection(voice: VoiceFeatureUi) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
-    val files = VoiceModel.FILES.files.joinToString(", ") { it.name }
-    val archive = VoiceModel.FILES.archiveDownload
+    StemsShowcase()
+    SectionTitle(stringResource(R.string.stems_scene_section), stringResource(R.string.stems_scene_intro))
+    if (StemModels.BANDIT_PINNED) {
+        val files = StemModels.SCENE.files.joinToString(", ") { it.name }
+        ModelCard(
+            spec = ModelSpec(
+                title = stringResource(R.string.voice_model_title, StemModels.BANDIT_NAME),
+                importing = stringResource(R.string.smart_model_importing),
+                downloadText = stringResource(R.string.stems_step_download_bandit, Formatter.formatShortFileSize(context, StemModels.SCENE.installedBytes)),
+                downloads = StemModels.SCENE.downloads.map { it.file to it.url },
+                importText = stringResource(R.string.smart_step_import_files_text, files),
+                installedBytes = StemModels.SCENE.installedBytes,
+                notTheModel = stringResource(R.string.stems_problem_not_bandit, files),
+                busy = stringResource(R.string.voice_busy),
+                deleteTitle = stringResource(R.string.voice_delete_title),
+                deleteText = R.string.voice_delete_text,
+                oneFile = true,
+            ),
+            model = voice.model,
+            loaded = voice.loaded,
+            idle = voice.idle,
+            onImport = voice.onImport,
+            onStopImport = voice.onStopImport,
+            onVerify = voice.onVerify,
+            onDelete = voice.onDelete,
+            onUnload = voice.onUnload,
+        )
+    } else {
+        StemModelOnItsWay()
+    }
+    SectionTitle(stringResource(R.string.stems_instruments_section), stringResource(R.string.stems_instruments_intro))
+    val instrumentFiles = StemModels.INSTRUMENTS.files.joinToString(", ") { it.name }
     ModelCard(
         spec = ModelSpec(
-            title = stringResource(R.string.voice_model_title, VoiceModel.NAME),
+            title = stringResource(R.string.stems_instruments_model_title, StemModels.SPLEETER_NAME),
             importing = stringResource(R.string.smart_model_importing),
-            downloadText = stringResource(R.string.voice_step_download_text, Formatter.formatShortFileSize(context, VoiceModel.FILES.archive?.bytes ?: 0L)),
-            downloads = listOfNotNull(archive?.let { it.file to it.url }),
-            importText = stringResource(R.string.smart_step_import_files_or_archive, files),
-            installedBytes = VoiceModel.FILES.installedBytes,
-            notTheModel = stringResource(R.string.voice_problem_not_model, files),
+            downloadText = stringResource(R.string.stems_step_download_spleeter, Formatter.formatShortFileSize(context, StemModels.INSTRUMENTS.installedBytes)),
+            downloads = StemModels.INSTRUMENTS.downloads.map { it.file to it.url },
+            importText = stringResource(R.string.smart_step_import_files_text, instrumentFiles),
+            installedBytes = StemModels.INSTRUMENTS.installedBytes,
+            notTheModel = stringResource(R.string.stems_problem_not_spleeter, instrumentFiles),
             busy = stringResource(R.string.voice_busy),
-            deleteTitle = stringResource(R.string.voice_delete_title),
-            deleteText = R.string.voice_delete_text,
+            deleteTitle = stringResource(R.string.stems_instruments_delete_title),
+            deleteText = R.string.stems_instruments_delete_text,
+            oneFile = true,
         ),
-        model = voice.model,
+        model = voice.instruments,
         loaded = voice.loaded,
         idle = voice.idle,
-        onImport = voice.onImport,
-        onStopImport = voice.onStopImport,
-        onVerify = voice.onVerify,
-        onDelete = voice.onDelete,
+        onImport = voice.onImportInstruments,
+        onStopImport = voice.onStopImportInstruments,
+        onVerify = voice.onVerifyInstruments,
+        onDelete = voice.onDeleteInstruments,
         onUnload = voice.onUnload,
     )
     if (voice.keptFiles > 0) {

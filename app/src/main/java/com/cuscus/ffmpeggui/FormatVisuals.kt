@@ -106,6 +106,8 @@ internal fun formatDescriptionRes(format: OutputFormat): Int = when (format) {
     OutputFormat.BMP -> R.string.format_desc_bmp
     OutputFormat.TIFF -> R.string.format_desc_tiff
     OutputFormat.SVG -> R.string.format_desc_svg
+    OutputFormat.ASCII -> R.string.format_desc_ascii
+    OutputFormat.ANSI -> R.string.format_desc_ansi
     OutputFormat.TXT -> R.string.format_desc_txt
     OutputFormat.SRT -> R.string.format_desc_srt
     OutputFormat.CUSTOM -> R.string.format_desc_custom
@@ -114,7 +116,16 @@ internal fun formatDescriptionRes(format: OutputFormat): Int = when (format) {
 /** The short name a format goes by: its extension in capitals ("MP4"), or the custom format's name. */
 @Composable
 internal fun formatShortName(format: OutputFormat): String =
-    if (format.extension.isEmpty()) stringResource(format.labelRes) else format.extension.uppercase(Locale.ROOT)
+    // Text art shares its extension with other kinds of file: its own name says what it is.
+    if (format.extension.isEmpty() || format.isTextArt) stringResource(format.labelRes) else format.extension.uppercase(Locale.ROOT)
+
+/**
+ * The section of the format picker [format] is shown in, and the look of its
+ * badge. ASCII and ANSI art are pictures to the engine (FFmpeg makes them as
+ * one), but text to whoever picks them: they sit with the text formats.
+ */
+internal fun shownCategory(format: OutputFormat): FormatCategory =
+    if (format.isTextArt) FormatCategory.TEXT else format.category
 
 /**
  * A format as a badge: its extension (an icon for the custom format) set in its
@@ -128,16 +139,16 @@ internal fun FormatBadge(
     modifier: Modifier = Modifier,
     morphed: Boolean = false,
 ) {
-    val colors = categoryColors(format.category)
+    val colors = categoryColors(shownCategory(format))
     MorphingContainer(
-        from = categoryShape(format.category),
+        from = categoryShape(shownCategory(format)),
         to = MaterialShapes.Circle,
         morphed = morphed,
         color = colors.container,
         modifier = modifier.size(size),
     ) {
         if (format.extension.isEmpty()) {
-            Icon(categoryIcon(format.category), contentDescription = null, tint = colors.content, modifier = Modifier.size(size * 0.42f))
+            Icon(categoryIcon(shownCategory(format)), contentDescription = null, tint = colors.content, modifier = Modifier.size(size * 0.42f))
         } else {
             Text(
                 text = format.extension.uppercase(Locale.ROOT),

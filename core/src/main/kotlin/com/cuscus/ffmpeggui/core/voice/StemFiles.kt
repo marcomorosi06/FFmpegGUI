@@ -1,5 +1,6 @@
 package com.cuscus.ffmpeggui.core.voice
 
+import com.cuscus.ffmpeggui.core.stems.StemSeparation
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -9,9 +10,9 @@ import java.nio.ByteOrder
 
 /**
  * A sound written by FFmpeg as raw interleaved 16-bit stereo samples (little
- * endian, `-f s16le -ac 2`), read where asked: what [VoiceSeparation] reads.
+ * endian, `-f s16le -ac 2`), read where asked: what a [StemSeparation] reads.
  */
-class PcmStereoFile(file: File) : VoiceSeparation.Source, AutoCloseable {
+class PcmStereoFile(file: File) : StemSeparation.Source, AutoCloseable {
 
     private val raf = RandomAccessFile(file, "r")
     override val length: Long = raf.length() / BYTES_PER_FRAME
@@ -145,9 +146,12 @@ class WavWriter(
 }
 
 /**
- * The file a separation leaves: four channels, the voice's left and right
- * then the rest's left and right, so that one player or one FFmpeg input
- * gives both and any mix of them is a matter of two gains.
+ * The file a separation leaves for the voice levels and the dub: four
+ * channels, the voice's left and right then the rest's left and right, so
+ * that one player or one FFmpeg input gives both and any mix of them is a
+ * matter of two gains. The voice is the dialogue Bandit v2 finds, the rest
+ * its music and effects together (they add up to the sound). Files made by
+ * Spleeter's two stems, before, are the same four channels and still play.
  */
 object VoiceStem {
     const val CHANNELS = 4

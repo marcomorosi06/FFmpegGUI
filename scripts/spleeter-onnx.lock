@@ -1,0 +1,37 @@
+# What scripts/export-spleeter.py exports Spleeter's five-stem model from, and
+# with what. The ONNX file the app pins (app/.../voice/StemModels.kt,
+# INSTRUMENTS) is made from exactly these (see docs/MODELS.md, "Spleeter 5
+# stems: our ONNX file").
+
+# Spleeter, by Deezer. MIT (its LICENSE, pinned below), the code and, as the
+# authors' JOSS paper says, the pretrained models. The weights are Deezer's
+# own, from the repository's release v1.4.0.
+repository          https://github.com/deezer/spleeter
+commit              6f2c8a2e283914faa544631430f65b793f1b1218
+licence             LICENSE
+licence_sha256      b15e40c921ec6fe997e0d88ddab9c26fb915bebbbb9496530d3f98f317d4325a
+weights_url         https://github.com/deezer/spleeter/releases/download/v1.4.0/5stems.tar.gz
+weights_sha256      25a1e87eb5f75cc72a4d2d5467a0a50ac75f05611f877c278793742513cc7218
+
+# The conversion is checked on the two-stem model against sherpa-onnx's own
+# ONNX files of it (Apache 2.0, the files the app used before).
+two_stems_url       https://github.com/deezer/spleeter/releases/download/v1.4.0/2stems.tar.gz
+two_stems_sha256    f3a90b39dd2874269e8b05a48a86745df897b848c61f3958efc80a39152bd692
+sherpa_url          https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/sherpa-onnx-spleeter-2stems.tar.bz2
+sherpa_sha256       e26401d9c1801f43c0229731d78d32c2e80085e3aceedeb25f29d2de5fa68ca2
+sherpa_vocals_sha256         bdc16ab6bf6117ddd4842c19e80e40e2be188fc555295064d424616b0224ac97
+sherpa_accompaniment_sha256  671ace17acd3720674a2bc14de32ac6292453dec20d9eb0ba4255d4ad8e3d8c0
+
+file                spleeter-5stems.onnx
+opset               17
+
+# What it comes out as, byte for byte: the SHA-256 and size the app pins
+# (scripts/check-model-pins.py checks that the two agree), and the release of
+# this repository that serves it (.github/workflows/models-onnx.yml makes it).
+file_sha256         533f0f260e6bfd14f55027594ba443e9d5c1cd8a1507a67000fa312d5b2374cf
+file_bytes          196647290
+release_tag         spleeter-onnx-1
+
+# The tools that write it: the same as the other models' (Python 3.13, CPU
+# only), installed with --require-hashes from scripts/model-export-requirements.txt.
+python              3.13

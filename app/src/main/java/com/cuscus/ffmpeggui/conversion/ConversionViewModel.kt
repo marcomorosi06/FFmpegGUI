@@ -23,6 +23,8 @@ import com.cuscus.ffmpeggui.core.translate.LanguageGuess
 import com.cuscus.ffmpeggui.dub.DubEngine
 import com.cuscus.ffmpeggui.dub.DubSpeaker
 import com.cuscus.ffmpeggui.voice.VoiceSeparator
+import com.cuscus.ffmpeggui.core.stems.StemKind
+import com.cuscus.ffmpeggui.core.stems.StemTracks
 import com.cuscus.ffmpeggui.LayerMove
 import com.cuscus.ffmpeggui.FfmpegGuiApp
 import com.cuscus.ffmpeggui.ImageOverlay
@@ -281,6 +283,11 @@ class ConversionViewModel(
      */
     val voiceStems: StateFlow<Map<String, Uri>> = _voiceStems.asStateFlow()
 
+    private val _stemTracks = MutableStateFlow<Map<String, Set<StemKind>>>(emptyMap())
+
+    /** Which stems of the project's files are kept as tracks of their own, by source id. */
+    val stemTracks: StateFlow<Map<String, Set<StemKind>>> = _stemTracks.asStateFlow()
+
     /** The run was stopped by hand: its end has nothing to say. */
     private var speechStopped = false
     private var cutoutStopped = false
@@ -345,6 +352,9 @@ class ConversionViewModel(
                     .collect { files ->
                         _voiceStems.value = withContext(ioDispatcher) {
                             files.mapNotNull { (id, uri) -> separator.existing(uri)?.let { id to Uri.fromFile(it) } }.toMap()
+                        }
+                        _stemTracks.value = withContext(ioDispatcher) {
+                            files.associate { (id, uri) -> id to separator.tracks(uri).keys }.filterValues { it.isNotEmpty() }
                         }
                     }
             }
@@ -1777,6 +1787,114 @@ class ConversionViewModel(
         }
     }
 
+    /**
+     * Lays the stems [kinds] of clip [clipId] (null: of every clip that plays)
+     * on the video as sounds of their own, each in step with its clip, and
+     * silences the clips: one step of undo. The files are split first where
+     * they are not yet (into their instruments too, when [kinds] has any).
+     * A track takes its clip's volume, and the voice or the rest's level;
+     * it is named [names] of its stem (the words of the user's language),
+     * then its file.
+     */
+    fun placeStemTracks(clipId: String?, kinds: Set<StemKind>, names: Map<StemKind, String>) {
+        val features = smart ?: return
+        if (voiceJob?.isActive == true || kinds.isEmpty()) return
+        val separator = features.voiceSeparator
+        val instruments = kinds.any { it.isInstrument }
+        if (!separator.ready) {
+            _voice.value = VoiceStatus.Failed(VoiceProblem.NO_MODEL)
+            return
+        }
+        if (instruments && !separator.instrumentsReady) {
+            _voice.value = VoiceStatus.Failed(VoiceProblem.NO_INSTRUMENTS_MODEL)
+            return
+        }
+        val settings = _settings.value
+        val project = _inputUri.value
+        fun wanted(clip: com.cuscus.ffmpeggui.core.timeline.Clip): Boolean {
+            val source = settings.source(clip.sourceId) ?: return false
+            return (clipId == null || clip.id == clipId) && !source.isStill && source.info?.hasAudio != false
+        }
+        val files = settings.playingClips.filter(::wanted).map { it.sourceId }.distinct().mapNotNull(settings::source)
+        if (files.isEmpty()) {
+            _voice.value = VoiceStatus.Failed(VoiceProblem.NO_SOUND)
+            return
+        }
+        voiceStopped = false
+        voiceJob = viewModelScope.launch {
+            try {
+                val made = HashMap<String, Map<StemKind, java.io.File>>()
+                files.forEachIndexed { index, file ->
+                    val report: (VoiceSeparator.Step) -> Unit = { step -> _voice.value = VoiceStatus.Working(step, index, files.size, file.fileName) }
+                    if (instruments) separator.separateInstruments(file.uri, file.durationMs, report) else separator.separate(file.uri, file.durationMs, report)
+                    made[file.id] = withContext(ioDispatcher) { separator.tracks(file.uri) }
+                }
+                if (_inputUri.value != project) return@launch
+                var tracks = 0
+                var clips = 0
+                var skipped = 0
+                mutate { current ->
+                    val placement = StemTracks.place(
+                        clips = current.playingClips,
+                        whole = current.wholeEffects,
+                        trimStartMs = current.trimStartMs,
+                        wanted = { clip -> clip.sourceId in made && (clipId == null || clip.id == clipId) },
+                        fileDurationMs = { clip -> current.source(clip.sourceId)?.durationMs ?: 0L },
+                    )
+                    skipped = placement.skipped
+                    var timeline = current.timeline
+                    val added = ArrayList<AudioClip>()
+                    for (p in placement.placed) {
+                        val files = made[p.sourceId] ?: continue
+                        val sourceName = current.source(p.sourceId)?.fileName.orEmpty()
+                        var any = false
+                        for (kind in kinds.sortedBy { it.ordinal }) {
+                            val file = files[kind] ?: continue
+                            val level = if (kind == StemKind.DIALOGUE) p.voiceLevel else p.backgroundLevel
+                            added += AudioClip(
+                                uri = Uri.fromFile(file),
+                                name = stemTrackName(names[kind] ?: kind.id, sourceName),
+                                span = p.span,
+                                volume = (p.volume * level).coerceIn(0f, VoiceStem.MAX_LEVEL),
+                            )
+                            any = true
+                        }
+                        if (any) {
+                            clips++
+                            timeline = timeline.updateEffects(p.clipId) { it.copy(muted = true) }
+                        }
+                    }
+                    tracks = added.size
+                    current.copy(timeline = timeline, audioClips = current.audioClips + added)
+                }
+                _voice.value = if (tracks == 0) VoiceStatus.Failed(VoiceProblem.NO_TRACKS) else VoiceStatus.Placed(tracks, clips, skipped)
+            } catch (e: CancellationException) {
+                if (_voice.value is VoiceStatus.Working) _voice.value = VoiceStatus.Idle
+                throw e
+            } catch (e: VoiceSeparator.ModelMissing) {
+                _voice.value = VoiceStatus.Failed(if (e.instruments) VoiceProblem.NO_INSTRUMENTS_MODEL else VoiceProblem.NO_MODEL)
+            } catch (e: VoiceSeparator.NotEnoughMemory) {
+                _voice.value = VoiceStatus.Failed(VoiceProblem.NO_MEMORY)
+            } catch (e: VoiceSeparator.NoSpace) {
+                _voice.value = VoiceStatus.Failed(VoiceProblem.NO_SPACE)
+            } catch (e: VoiceSeparator.NoSound) {
+                _voice.value = VoiceStatus.Failed(VoiceProblem.NO_SOUND)
+            } catch (e: Exception) {
+                android.util.Log.w("ConversionViewModel", "Stem tracks failed", e)
+                _voice.value = VoiceStatus.Failed(VoiceProblem.FAILED)
+            }
+        }
+    }
+
+    /** A stem track's name on the timeline: the stem, then its file. */
+    private fun stemTrackName(stem: String, fileName: String): String =
+        if (fileName.isBlank()) stem else "$stem (${fileName.substringBeforeLast('.')})"
+
+    /** Puts away the note of the tracks just placed. */
+    fun dismissStemTracksNote() {
+        if (_voice.value is VoiceStatus.Placed) _voice.value = VoiceStatus.Idle
+    }
+
     /** Stops setting voices apart; the files already done keep theirs. */
     fun stopVoiceSeparation() {
         if (_voice.value is VoiceStatus.Working) voiceStopped = true
@@ -1787,7 +1905,7 @@ class ConversionViewModel(
 
     /** Puts away the message of a failed run. */
     fun dismissVoiceProblem() {
-        if (_voice.value is VoiceStatus.Failed) _voice.value = VoiceStatus.Idle
+        if (_voice.value is VoiceStatus.Failed || _voice.value is VoiceStatus.Placed) _voice.value = VoiceStatus.Idle
     }
 
     /**
@@ -1899,10 +2017,19 @@ class ConversionViewModel(
                     if (originalVoice != null) {
                         for (c in timeline.clips) timeline = timeline.updateEffects(c.id) { it.copy(voiceLevel = originalVoice.coerceIn(0f, VoiceStem.MAX_LEVEL)) }
                     }
+                    // The dialogue laid as a track of its own (placeStemTracks) is the video's voice too:
+                    // it goes to the same level under the dub.
+                    val kept = current.audioClips.filter { !features.dubber.owns(it.uri.path) }.map { sound ->
+                        if (originalVoice != null && features.voiceSeparator.isStemTrack(sound.uri, StemKind.DIALOGUE)) {
+                            sound.copy(volume = originalVoice.coerceIn(0f, VoiceStem.MAX_LEVEL))
+                        } else {
+                            sound
+                        }
+                    }
                     // One dub at a time: the one made before gives way.
                     current.copy(
                         timeline = timeline,
-                        audioClips = current.audioClips.filter { !features.dubber.owns(it.uri.path) } + clip,
+                        audioClips = kept + clip,
                     )
                 }
                 _dub.value = DubStatus.Done(made.lines, made.lengthMs, made.tookMs)
@@ -2598,13 +2725,19 @@ class ConversionViewModel(
         val marked = withAiMarks(initial, logs) ?: return
         // A picture's drawing is made into a picture of its own first, laid over it by
         // FFmpeg; if that fails the picture is exported without it.
-        val drawing = if (format.isImage && marked.imageEdit.strokes.isNotEmpty()) renderDrawing(marked) else null
-        val settings = if (format.isImage && drawing == null) marked.copy(imageEdit = marked.imageEdit.copy(strokes = emptyList())) else marked
+        // Text art: only what its editor shows (no drawing, captions, stickers or canvas), and always
+        // the command the app makes (its PNG is written as text after it).
+        val drawing = if (format.isImage && !format.isTextArt && marked.imageEdit.strokes.isNotEmpty()) renderDrawing(marked) else null
+        val settings = when {
+            format.isTextArt -> marked.forTextArt()
+            format.isImage && drawing == null -> marked.copy(imageEdit = marked.imageEdit.copy(strokes = emptyList()))
+            else -> marked
+        }
         val footage = settings.footage()
         val job = ConversionJob(
             request = settings.toRequest(format, inputName, footage).withEncoders(hardwareEncoder(), cpuSpeed()),
             sources = settings.toSources(footage, format, drawing),
-            mode = settings.commandMode(format),
+            mode = if (format.isTextArt) com.cuscus.ffmpeggui.core.engine.CommandMode.Generated else settings.commandMode(format),
         )
         val outcome = try {
             engine.run(job) { event ->
@@ -2937,7 +3070,7 @@ class ConversionViewModel(
     private fun updateCommandPreview() {
         val format = _selectedFormat.value ?: return
         if (_inputUri.value == null) return
-        val settings = _settings.value
+        val settings = _settings.value.let { if (format.isTextArt) it.forTextArt() else it }
         val inputName = _inputFileName.value
         commandPreviewJob?.cancel()
         commandPreviewJob = viewModelScope.launch {

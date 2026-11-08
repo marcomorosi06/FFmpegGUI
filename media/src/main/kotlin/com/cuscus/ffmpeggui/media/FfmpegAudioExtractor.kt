@@ -51,6 +51,17 @@ class FfmpegAudioExtractor(context: Context, private val executor: FfmpegExecuto
      */
     suspend fun extractStereo(sourceUri: String, target: File, durationMs: Long, rate: Int, onProgress: (Float) -> Unit = {}): ExecutionResult {
         val input = ffmpegReadablePath(appContext, Uri.parse(sourceUri)) ?: return ExecutionResult.Failed(UNREADABLE)
+        return extractStereoFrom(input, target, durationMs, rate, onProgress)
+    }
+
+    /**
+     * As [extractStereo], from a file of the app's own ([source]: a stem it
+     * made, read again at another rate for the next model).
+     */
+    suspend fun extractStereo(source: File, target: File, durationMs: Long, rate: Int, onProgress: (Float) -> Unit = {}): ExecutionResult =
+        extractStereoFrom(source.absolutePath, target, durationMs, rate, onProgress)
+
+    private suspend fun extractStereoFrom(input: String, target: File, durationMs: Long, rate: Int, onProgress: (Float) -> Unit): ExecutionResult {
         target.parentFile?.mkdirs()
         target.delete()
         val command = FfmpegCommand(

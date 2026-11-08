@@ -1,23 +1,24 @@
-@file:OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
 
 package com.cuscus.ffmpeggui.dub
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,17 +28,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.VolumeDown
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Translate
-import androidx.compose.material.icons.automirrored.rounded.VolumeDown
-import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -50,7 +52,6 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,16 +69,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.cuscus.ffmpeggui.R
 import com.cuscus.ffmpeggui.conversion.AutoDubProblem
 import com.cuscus.ffmpeggui.conversion.AutoDubStatus
 import com.cuscus.ffmpeggui.conversion.AutoDubStep
 import com.cuscus.ffmpeggui.core.dub.DubLanguage
+import com.cuscus.ffmpeggui.ui.expressive.ConnectedChoiceGroup
 import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
-import com.cuscus.ffmpeggui.ui.expressive.OptionTileRow
 import com.cuscus.ffmpeggui.ui.expressive.PanelHint
-import com.cuscus.ffmpeggui.ui.expressive.TileOption
 import java.util.Locale
 
 /** The dub in one go: what it needs and does, for the editor's "Dub" tool. */
@@ -100,26 +101,34 @@ class AutoDubUi(
     /** Whether the translation models bring a text in the first language (null: unknown) to the second. */
     val canTranslate: (String?, String) -> Boolean = { _, _ -> false },
     val onStart: (String, DubSpeaker, Float?) -> Unit = { _, _, _ -> },
+    /** A few words in a voice, to hear it: a sound file, or null. */
+    val onSample: suspend (DubSpeaker, Float) -> java.io.File? = { _, _ -> null },
     val onStop: () -> Unit = {},
     val onDismiss: () -> Unit = {},
     val onOpenModels: () -> Unit = {},
 )
 
 /** What becomes of the video's own voice. */
-private enum class Original(val level: Float) { REMOVE(0f), LOWER(0.15f) }
+private enum class Original(val level: Float, val labelRes: Int) {
+    REMOVE(0f, R.string.dub_original_remove),
+    LOWER(0.15f, R.string.dub_original_lower),
+}
 
 /** How a step of the plan is, before or during the run. */
 private enum class StepState { TODO, WORKING, DONE, SKIPPED, MISSING }
 
 /**
- * The editor's "Dub" tool: pick the language and the voice, say what becomes
- * of the video's own voice, and one button does the rest (listen, translate,
- * set the voice apart, dub). Before it starts, the four steps show what each
- * will do and what is missing; while it runs, the same steps tick off.
+ * The editor's "Dub" tool. Before it starts: one group of blocks (the
+ * language to dub into, a strip of tokens; the voice, a carousel of cards
+ * each heard with its own button; what becomes of the video's own voice),
+ * then the plan as four nodes on a rail (what is not needed is struck off,
+ * what is missing says so under it) and the button. While it runs, and after,
+ * the four steps as rows that tick off.
  */
 @Composable
 fun AutoDubSectionContent(ui: AutoDubUi) {
     val scheme = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
     val haptic = LocalHapticFeedback.current
     val status = ui.status
     val working = status is AutoDubStatus.Working
@@ -143,6 +152,7 @@ fun AutoDubSectionContent(ui: AutoDubUi) {
     val voice = voices.firstOrNull { it.key == chosenVoice } ?: voices.firstOrNull()
     var original by rememberSaveable { mutableStateOf(Original.REMOVE) }
     var askingLicence by remember { mutableStateOf(false) }
+    val sampler = rememberDubSampler(ui.onSample)
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
         Hero(status, target, voice)
@@ -155,54 +165,6 @@ fun AutoDubSectionContent(ui: AutoDubUi) {
                 Text(stringResource(R.string.autodub_open_models))
             }
             return@Column
-        }
-
-        if (!working) {
-            Text(stringResource(R.string.autodub_into), style = MaterialTheme.typography.labelLargeEmphasized, color = scheme.onSurfaceVariant)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                languages.forEach { lang ->
-                    DubPill(
-                        badge = lang.uppercase(Locale.ROOT),
-                        label = languageName(lang),
-                        selected = lang == target,
-                        found = false,
-                        enabled = true,
-                    ) {
-                        haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        chosenLanguage = lang
-                    }
-                }
-            }
-            Text(stringResource(R.string.dub_voice), style = MaterialTheme.typography.labelLargeEmphasized, color = scheme.onSurfaceVariant)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                voices.forEach { v ->
-                    DubPill(
-                        badge = when (v.female) {
-                            true -> "\u2640"
-                            false -> "\u2642"
-                            null -> "\u26A1"
-                        },
-                        label = v.label,
-                        selected = v == voice,
-                        found = false,
-                        enabled = true,
-                        caution = v.licence.needsCare,
-                    ) {
-                        haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        chosenVoice = v.key
-                    }
-                }
-            }
-            if (voice != null && voice.licence.needsCare) DubLicenceNote(voice)
-            Text(stringResource(R.string.dub_original), style = MaterialTheme.typography.labelLargeEmphasized, color = scheme.onSurfaceVariant)
-            OptionTileRow(
-                options = listOf(
-                    TileOption(Original.REMOVE, stringResource(R.string.dub_original_remove), Icons.AutoMirrored.Rounded.VolumeOff),
-                    TileOption(Original.LOWER, stringResource(R.string.dub_original_lower), Icons.AutoMirrored.Rounded.VolumeDown),
-                ),
-                selected = original,
-                onSelect = { original = it },
-            )
         }
 
         // The four steps: what each will do and what is missing, then how far each has gone.
@@ -278,24 +240,99 @@ fun AutoDubSectionContent(ui: AutoDubUi) {
                 stateOf(AutoDubStep.DUB, missing = voice == null, notNeeded = false),
             ),
         )
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            steps.forEachIndexed { index, step ->
-                StepRow(step, index, steps.size, if (step.step == running?.step) running.fraction else null)
+        val idle = status is AutoDubStatus.Idle
+        val missing = idle && steps.any { it.state == StepState.MISSING }
+
+        AnimatedVisibility(
+            visible = idle,
+            enter = expandVertically(motion.defaultSpatialSpec()) + fadeIn(motion.defaultEffectsSpec()),
+            exit = shrinkVertically(motion.fastSpatialSpec()) + fadeOut(motion.fastEffectsSpec()),
+        ) {
+            DubGroup {
+                DubBlock(
+                    index = 0,
+                    count = 4,
+                    title = stringResource(R.string.autodub_into),
+                    icon = Icons.Rounded.Translate,
+                    color = scheme.surfaceContainerHigh,
+                    // The language the video was heard in, when it is known.
+                    trailing = if (source != null) {
+                        {
+                            Text(
+                                stringResource(R.string.autodub_from, languageName(source)),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = scheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                ) {
+                    LanguageStrip(languages, target, found = null, enabled = true, onSelect = { chosenLanguage = it })
+                }
+                DubBlock(
+                    index = 1,
+                    count = 4,
+                    title = stringResource(R.string.dub_voice),
+                    icon = Icons.Rounded.RecordVoiceOver,
+                    color = scheme.surfaceContainerHigh,
+                ) {
+                    VoiceCarousel(voices, voice, sampler, speed = 1f, enabled = true, onSelect = { chosenVoice = it.key })
+                    if (voice != null && voice.licence.needsCare) DubLicenceNote(voice)
+                }
+                DubBlock(
+                    index = 2,
+                    count = 4,
+                    title = stringResource(R.string.dub_original),
+                    icon = Icons.AutoMirrored.Rounded.VolumeDown,
+                    color = scheme.surfaceContainerHigh,
+                ) {
+                    ConnectedChoiceGroup(
+                        options = Original.entries,
+                        selected = original,
+                        label = { stringResource(it.labelRes) },
+                        onSelect = { original = it },
+                    )
+                }
+                DubBlock(
+                    index = 3,
+                    count = 4,
+                    title = stringResource(R.string.autodub_plan),
+                    icon = Icons.Rounded.Checklist,
+                    color = scheme.surfaceContainerHigh,
+                ) {
+                    PlanRail(steps)
+                    val gaps = steps.filter { it.state == StepState.MISSING }
+                    if (gaps.isEmpty()) {
+                        PanelHint(stringResource(R.string.autodub_plan_ready))
+                    } else {
+                        gaps.forEach { gap -> PlanGap(gap) }
+                    }
+                }
+            }
+        }
+
+        if (!idle) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                steps.forEachIndexed { index, step ->
+                    StepRow(step, index, steps.size, if (step.step == running?.step) running.fraction else null)
+                }
             }
         }
 
         when (status) {
             is AutoDubStatus.Working -> OutlinedButton(onClick = ui.onStop, shapes = ButtonDefaults.shapes(), modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(stringResource(R.string.dub_stop))
             }
-            is AutoDubStatus.Failed, is AutoDubStatus.Done -> TextButton(onClick = ui.onDismiss, modifier = Modifier.align(Alignment.End)) {
+            is AutoDubStatus.Failed, is AutoDubStatus.Done -> FilledTonalButton(onClick = ui.onDismiss, shapes = ButtonDefaults.shapes(), modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.translate_ok))
             }
             AutoDubStatus.Idle -> Unit
         }
 
-        if (!working) {
-            val missing = steps.any { it.state == StepState.MISSING } && status is AutoDubStatus.Idle
+        if (idle) {
             if (missing) {
                 FilledTonalButton(onClick = ui.onOpenModels, shapes = ButtonDefaults.shapes(), modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -308,6 +345,7 @@ fun AutoDubSectionContent(ui: AutoDubUi) {
                     val v = voice ?: return@Button
                     val to = target ?: return@Button
                     haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                    sampler.stop()
                     if (v.licence.needsCare) {
                         askingLicence = true
                     } else {
@@ -317,9 +355,9 @@ fun AutoDubSectionContent(ui: AutoDubUi) {
                 },
                 enabled = voice != null && target != null && !missing,
                 shapes = ButtonDefaults.shapes(),
-                modifier = Modifier.fillMaxWidth().height(56.dp),
+                modifier = Modifier.fillMaxWidth().height(64.dp),
             ) {
-                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(22.dp))
+                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(24.dp))
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     stringResource(R.string.autodub_start, target?.let { languageName(it) } ?: ""),
@@ -347,6 +385,78 @@ fun AutoDubSectionContent(ui: AutoDubUi) {
                 free?.let { chosenVoice = it.key }
             },
             onDismiss = { askingLicence = false },
+        )
+    }
+}
+
+/**
+ * The plan before it runs: its four steps as nodes on a rail, each with its
+ * icon (a dash where it is not needed, a warning where something is missing)
+ * and its name under it.
+ */
+@Composable
+private fun PlanRail(steps: List<PlanStep>) {
+    val scheme = MaterialTheme.colorScheme
+    Box(modifier = Modifier.fillMaxWidth()) {
+        NodeRail(scheme.outlineVariant, steps.size, y = PLAN_NODE / 2, modifier = Modifier.matchParentSize())
+        Row(modifier = Modifier.fillMaxWidth()) {
+            steps.forEach { step ->
+                val (badge, content) = when (step.state) {
+                    StepState.MISSING -> scheme.errorContainer to scheme.onErrorContainer
+                    StepState.SKIPPED -> scheme.surfaceContainerHighest to scheme.outline
+                    else -> scheme.secondaryContainer to scheme.onSecondaryContainer
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                    MorphingContainer(
+                        from = MaterialShapes.Cookie6Sided,
+                        to = MaterialShapes.Clover4Leaf,
+                        morphed = step.state == StepState.MISSING,
+                        color = badge,
+                        modifier = Modifier.size(PLAN_NODE),
+                    ) {
+                        Icon(
+                            when (step.state) {
+                                StepState.MISSING -> Icons.Rounded.WarningAmber
+                                StepState.SKIPPED -> Icons.Rounded.Remove
+                                else -> step.icon
+                            },
+                            contentDescription = null,
+                            tint = content,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        step.title,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (step.state == StepState.SKIPPED) scheme.outline else scheme.onSurface,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** What a step of the plan is missing, said under the rail. */
+@Composable
+private fun PlanGap(step: PlanStep) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(scheme.errorContainer)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Icon(step.icon, contentDescription = null, tint = scheme.onErrorContainer, modifier = Modifier.size(18.dp))
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            step.title + ": " + step.text,
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onErrorContainer,
         )
     }
 }
@@ -507,3 +617,5 @@ private fun StepRow(step: PlanStep, index: Int, count: Int, fraction: Float?) {
         }
     }
 }
+
+private val PLAN_NODE = 44.dp

@@ -194,9 +194,18 @@ own licences. The AI marks come first (imported before any other model):
                                                        edgetam/LICENSE.txt,
                                                        edgetam/NOTICE.txt
   Opus-MT, by the University of Helsinki ... CC-BY-4.0  (ONNX by Xenova)
-  Spleeter 2stems, by Deezer ............... MIT        (ONNX, int8, by sherpa-onnx,
-                                                       Apache-2.0)
-                                                       spleeter/LICENSE.txt
+  Bandit v2, by Karn N. Watcharasupat,
+  Chih-Wei Wu and Iroro Orife .............. CC-BY-SA-4.0 (the weights; the
+                                                       code Apache-2.0; ONNX by
+                                                       FFmpeg GUI, from the
+                                                       authors' checkpoint, under
+                                                       CC-BY-SA-4.0 too)
+                                                       bandit/LICENSE.txt,
+                                                       bandit/NOTICE.txt
+  Spleeter 5 stems, by Deezer .............. MIT        (ONNX by FFmpeg GUI, from
+                                                       Deezer's checkpoint)
+                                                       spleeter/LICENSE.txt,
+                                                       spleeter/NOTICE.txt
   Kokoro-82M v1.0, by hexgrad .............. Apache-2.0 (multi-language build
                                                        by sherpa-onnx, Apache-2.0, with
                                                        eSpeak NG's data, GPL-3.0, and
@@ -209,20 +218,22 @@ own licences. The AI marks come first (imported before any other model):
   Piper voices (VITS), imported by the user  each its own licence (its
                                                        MODEL_CARD); Piper, MIT
                                                        piper/LICENSE.txt
-BiRefNet-lite and EdgeTAM are converted to ONNX by this project
-(scripts/export-birefnet.py, scripts/export-edgetam.py) and served from its
+BiRefNet-lite, EdgeTAM, Bandit v2 and Spleeter 5 stems are converted to
+ONNX by this project (scripts/export-birefnet.py, scripts/export-edgetam.py,
+scripts/export-bandit.py, scripts/export-spleeter.py) and served from its
 own GitHub releases, with their licence, the notice of what the conversion
 changed and their provenance next to the files and inside them; their
 licences and notices are kept here too, as they are distributed by the same
 hands as the app. SlimSAM (Apache-2.0, ONNX by Xenova), which corrected
-cut-outs before EdgeTAM, is no longer used: the app deletes it from the phone.
+cut-outs before EdgeTAM, and Spleeter 2stems (MIT, ONNX and int8 by
+sherpa-onnx, Apache-2.0), which set voices apart before Bandit v2, are no
+longer used: the app deletes them from the phone.
 The record of every model (licences, sources, SHA-256, training data) is
 docs/MODELS.md in the source.
 The app reads their files with its own code (SentencePiece models and
-vocabularies of Opus-MT included, and Spleeter's spectrogram and masks, as
-sherpa-onnx computes them, written again in Kotlin); nothing of theirs is
-copied into it. Spleeter's licence is kept here all the same, as its
-results (the voices set apart) are made with it. The photos and the video in the store screenshots (fastlane/) come from
+vocabularies of Opus-MT included, and the spectrograms and masks of Bandit
+and Spleeter, written in Kotlin from what their papers and code describe);
+nothing of theirs is copied into it. The photos and the video in the store screenshots (fastlane/) come from
 Pexels, under the Pexels licence: see fastlane/metadata/android/en-US/
 images/CREDITS.txt in the source. Build tools (Gradle, the
 Android Gradle Plugin, R8, the Nix toolchain, GitHub Actions) and test

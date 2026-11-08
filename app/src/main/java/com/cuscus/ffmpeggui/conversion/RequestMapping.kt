@@ -350,3 +350,14 @@ internal fun ImageOverlay.toPlacement(): ImagePlacement = ImagePlacement(
     stackedAlpha = effect != null && EffectLibrary.info(effect)?.alpha == true,
     coverSize = if (effect != null && EffectLibrary.info(effect)?.alpha == true) scaleW.coerceIn(0.05f, 1f) else 1f,
 )
+
+/**
+ * These settings as text art is made from them: the picture alone, as its
+ * editor shows it (no captions, stickers, drawing or canvas; see
+ * ImageEdit.forTextArt).
+ */
+internal fun ConversionSettings.forTextArt(): ConversionSettings = copy(
+    textOverlays = emptyList(),
+    imageOverlays = emptyList(),
+    imageEdit = imageEdit.forTextArt(),
+)

@@ -609,6 +609,98 @@ gradients, dashes, opacity, texts and embedded pictures are drawn there;
 within the same transforms. Clip paths, masks and filters are not drawn while
 editing (they stay in the file).
 
+### ASCII and ANSI art
+
+**Saving one** (`OutputFormat.ASCII`, a `.txt`; `OutputFormat.ANSI`, a
+`.ans`). FFmpeg makes the picture as a PNG, as for an SVG, transparency kept
+(a cut-out's background is left empty in the art); the engine reads it
+(`ImageRecoder.read`) and writes it as text (`core/textart/`,
+`ImageEdit.textArt`). Only what the text-art editor shows goes into the PNG:
+`ConversionSettings.forTextArt` and `ImageEdit.forTextArt` leave out the
+captions, stickers, drawing, border, corners, canvas, HDR look and output
+size, and the command is always the one the app makes. The characters are
+chosen with the system's monospaced font as `AndroidGlyphAtlas` (`:media`,
+behind `GlyphAtlasSource`) measures it: each character the editor offers
+drawn at 96 px and its ink averaged in 4 x 8 sub-cells, the characters it has
+no glyph for and those drawn wider than a cell noted. The editor and the
+export share that one measure, so they choose alike.
+
+`TextArtRenderer.render` (deterministic, no randomness anywhere):
+
+1. the grid: `columns` across, the rows from the picture's shape and a cell's
+   width over its height (the font's, or `cellAspect`), or `rows` when set
+   (the picture then stretched or squeezed to fill the grid);
+2. the picture read once into samples, every pixel into exactly one, its
+   colour weighed by its opacity: one a cell, or a part of one where the mode
+   looks closer (two halves, two by two quadrants, two by four Braille dots,
+   the atlas's sub-cells for shapes);
+3. the tone, on OKLab's lightness: histogram equalisation, brightness,
+   contrast, gamma, a five-point curve, negative, the paper (light ink on a
+   dark page or dark on light), edges sharpened (unsharp mask);
+4. what is left out (`ArtHide`): below the opacity cut, a band of lightness,
+   arcs of hue (only where the chroma is above the band's minimum), colours
+   within a tolerance in OKLab, all of it turned round on asking, then the
+   brush's strokes in order (hiding or showing again);
+5. the characters, by mode: the ramp (the alphabet sorted by measured ink,
+   near duplicates merged), shapes (least squares against each glyph's
+   sub-cells), lines along Sobel edges (`- / | \`, the rest from the ramp),
+   shades, half blocks, quadrants, Braille, or the letters of a phrase; with
+   the alphabet's limits (a bias a character, the largest share of the cells
+   one may take, the longest run) and ordered (Bayer 4 and 8) or error
+   diffusion (Floyd-Steinberg, Atkinson) dithering;
+6. for an ANSI file the colours: saturation, the light left to the
+   characters if asked, k-means down to a number of colours, then matched to
+   16 (a terminal theme's), 256 (xterm's) or true colour by OKLab, CIEDE2000
+   or RGB, entries banned or painted as others, dithered if asked (the error
+   kept small). With the cells coloured too, a cell's two colours are the
+   2-means of its samples, and the glyph is matched to where each sample lies
+   between them; a flat cell is a space on its colour; of two halves or
+   quadrants the lighter is the character, the darker the background (a 16
+   colour background may have only the dark eight).
+
+`TextArtLayout.compose` lays out the frame, margins, title and signature;
+`TextArtWriter` writes UTF-8 text, or ANSI: SGR codes only where they change
+(UTF-8), or a reset and every attribute at each change, bold for the bright
+foregrounds and blink for the bright backgrounds, then the end-of-file mark
+and a 128-byte SAUCE record without a date (code page 437, 16 colours,
+Braille drawn as quadrants). `TextArtReport` is the editor's check: size,
+characters and colours used, and what to look out for where the text is
+going. `TextArtPresets` sets what each place (terminal, editor, Markdown,
+chat, BBS) asks for.
+
+The format picker shows the two among the text formats (`shownCategory`):
+pictures to the engine, text to whoever picks them, offered for a file with
+a picture and no sound (a still, or a silent video: no sound track, or a
+track of silence, as a recording made muted has, found by listening to it
+with `soundIsAudible` in `Waveforms.kt`: its first ten minutes, a peak
+above -54 dBFS is sound, the reading stopping at the first one); a file
+with sound gets the transcripts in Text instead. Then its banner plays the landscape of the
+image film written in characters behind a scan line, coloured as ANSI art
+(`TextArtShowcase` in `FormatShowcase.kt`), and says so; with sound it keeps
+the transcript's film.
+
+**The text-art editor** (`app/.../textart/`) opens instead of the photo editor
+when ASCII or ANSI is picked. Its picture is the photo editor's
+(`PictureRenderer`: the frame of a video, turned, cropped, cut out); the art
+is made off the main thread from it at each change of the settings, laid out,
+written and drawn (`TextArtPainter`: the characters in the monospaced font,
+block elements and Braille dots as their shapes). The stage shows it in a
+terminal window, alone, over the picture or beside it (a divider), typing
+itself in row after row when its kind changes (not when animations are off);
+a tap there picks a colour to leave out, a drag paints with the brush. The
+tools: the picture (frame, turn, crop), the style (where it is going, the
+mode with each drawn small, the size: columns and lines chained to keep the
+picture's shape or set apart, a frame of the grid's shape and common widths;
+the page, the cell's shape), the
+characters (presets, groups, a key for each character with its measured ink,
+switched off with a tap, preferred or avoided with a long press, the safety
+filters and the limits), the light (tone, curve, edges, dithering), the
+colours (ANSI: depth, theme, layers, matching, saturation, reduction, the
+palette with banned and remapped entries), what is left out (the cut-out
+panel of the photo editor, the picture's own colours, the hue ring, the
+lightness band, the brush), the layout and the check (with copying the text,
+as a Markdown code block, or with its colour codes).
+
 ### GIF
 
 A GIF is pictures only. With GIF chosen the editor has no sound tools (no Audio
@@ -1505,6 +1597,7 @@ later ask for the notification permission at the first export.
 | the TV break (technical difficulties) | `scripts/tv_break.py`, `app/.../effects/TransitionEffects.kt` (`tvBreak`), `core/model/Transition.kt` |
 | the picture looks (black and white, glitch...) | `core/model/PictureLook.kt`, `core/look/Looks.kt`, `app/.../PictureLooks.kt` |
 | the SVG editor                              | `core/vector/svg/`, `app/.../svgedit/`               |
+| ASCII and ANSI art (engine, files, editor)  | `core/textart/`, `media/.../AndroidGlyphAtlas.kt`, `app/.../textart/` |
 | subtitle translation (models, text, UI)     | `core/translate/`, `app/.../translate/`              |
 | dubbing in the subtitles' language          | `core/dub/`, `app/.../dub/`                          |
 | the marks of what AI made (AI Act Art. 50)  | `core/provenance/`, `core/marking/`, `seal` in `ConversionEngine.kt`, `app/.../provenance/`, `app/.../marking/`, `scripts/export-ai-markers.py` |
@@ -1550,7 +1643,7 @@ Adding a setting end to end: field in `ConversionSettings` -> setter in
 `./gradlew :core:test` runs on a plain JVM (no emulator). It covers command
 generation for every mode, command-line quoting, the manual command resolver, the command studio (help parsing, suggestions, checker, recipes),
 output naming, duration math, progress parsing, the timeline operations, the
-preview math (with the denoise comparison's command, `DenoiseSampleTest`), subtitle re-timing, the project files (`ProjectJsonTest`: every
+preview math (with the denoise comparison's command, `DenoiseSampleTest`), the text-art engine and its files (`TextArtTest`), subtitle re-timing, the project files (`ProjectJsonTest`: every
 field of every model, filled with random values, must come back from the
 JSON text) and the whole engine workflow with fake ports.
 
@@ -1731,39 +1824,64 @@ files (the project copies it), one step of undo. Spoken subtitles get, line by
 line (as the subtitles show them), the translated words spread over the
 line's time.
 
-## Voice and the rest
+## Voice and the rest, and every part on its own track
 
-The voice of a file set apart from everything else (music, noise), then the
-two at their own levels: Spleeter's two-stem model (Deezer, MIT), as
-converted to ONNX and quantised to int8 by sherpa-onnx. One archive from
-sherpa-onnx's releases on GitHub (the browser downloads it); both networks
-are pinned by their SHA-256 and kept like the speech model's files
-(`VoiceModel`, `SpeechModelStore`).
+The sound of a file split into stems, by two models this project converts
+to ONNX and serves from its releases (`StemModels`, kept like the speech
+model's files by `SpeechModelStore`; docs/MODELS.md has the record):
+Bandit v2 (Watcharasupat, Wu, Orife; weights CC BY-SA 4.0) for the
+dialogue, the music and the effects, and Spleeter's five stems (Deezer, MIT)
+for the music's singing, piano, drums, bass and the rest. They replace
+Spleeter's two stems, which `RetiredModels` deletes from the phone at the
+first start (`RetiredModelsDialog` says so, with a way to the Voice page).
 
-**Separation** (`core/voice/VoiceSeparation.kt`, pure Kotlin, tested). As
-sherpa-onnx computes it: 44.1 kHz stereo, a short-time Fourier transform
-(4096-point periodic Hann window, hop 1024, not centred; `Fft` is the app's
-own radix-2), the magnitudes of the first 1024 bins of both channels shown to
-both networks 512 frames at a time (`x`, 2 x 1 x 512 x 1024), and the voice's
-share of every bin v^2 / (v^2 + a^2). Two differences:
+**Separation** (`core/stems/`, pure Kotlin, tested). `StemSeparation` is
+one engine for both: a short-time Fourier transform of both channels at
+once (left as the real part, right as the imaginary; a periodic Hann window
+every quarter of it; `Fft` is the app's own radix-2), shown to the model a
+window of frames at a time, a complex mask per stem, channel, frame and bin
+back from it, each stem the sound's spectrum times its mask, back to sound by
+overlap-add (the squared windows add up to 1.5). Each window reaches some
+frames past both ends of what is kept of it, so that no mask is cut at its
+edge and a recurrent network hears around; however long the file, memory
+stays the same. One stem, the one of "everything else", is the sound less the
+others: the stems always add up to the sound.
 
-- the networks see each window with 32 frames past both ends of what is kept
-  of it (448 frames, about 10.4 s), so that no mask is cut at a window's edge,
-  and the frames are added back over each other across windows; however long
-  the file, memory stays the same;
-- above the networks' 1024 bins (about 11 kHz) nothing is voice, and the rest
-  is exactly the sound minus the voice: the two always add up to the
-  original (sherpa-onnx drops the top end from both).
+- `BanditMasks`: 48 kHz, 2048 points, hop 512, 1024 frames seen (about
+  10.9 s) of which 96 at each end only heard around. The network is mono: it
+  reads the middle of the two channels, scaled as torchaudio's "normalized"
+  transform, laid out [1][bin][frame][re, im], and its masks are laid on each
+  channel's own spectrum, so the stems stay stereo. Effects take what the
+  dialogue and the music leave. `scripts/export-bandit.py` checks these
+  transforms against the authors' model end to end.
+- `SpleeterMasks`: 44.1 kHz, 4096 points, hop 1024, 512 frames (32 heard
+  around), the magnitudes of the first 1024 bins of both channels; each
+  instrument keeps e^2 / sum(e^2) of every bin. Above the 1024 bins nothing
+  is told apart: that top end goes with "other" (Spleeter drops it).
 
 The sound is padded with N - hop zeros in front, so that every sample lies
-under four frames (their squared windows add up to 1.5).
+under four frames.
 
 **Files** (`VoiceSeparator`). FFmpeg takes the sound out (`s16le`, two
-channels, sample 0 at the file's time 0), the separation writes a WAV of four
-channels (the voice's left and right, then the rest's: `VoiceStem`), FFmpeg
-packs it into FLAC in `files/voice-stems/`, one per media file by its
-address: a file is separated once, for every project. The settings say how
-many are kept and remove them all.
+channels, at the model's rate, sample 0 at the file's time 0); Bandit's run
+writes one stereo WAV per stem and the four-channel one the voice levels
+and the dub read (the dialogue's left and right, then the music's and the
+effects' together: `VoiceStem`), FFmpeg packs each into FLAC in
+`files/voice-stems/`, by the media file's address: a file is split once, for
+every project. The instruments are split from the music stem (read again at
+44.1 kHz), only when asked. One model in memory at a time, through the
+`ModelGate`. Four-channel files left by Spleeter's two stems keep playing;
+asking for tracks makes them again with Bandit. The settings say how many
+files are kept and remove them all.
+
+**Tracks** (`core/stems/StemTracks.kt`, `ConversionViewModel.placeStemTracks`).
+For each clip that plays, the part of its file it plays, from where it starts
+on the output clock, at the speed it plays at: a stem file is on its media
+file's clock, so the same part of it, laid there as an `AudioClip`, plays in
+step with the picture. The clip goes silent; a track takes its clip's volume
+and the voice's or the rest's level. Clips played backwards or on a speed
+curve (or under a whole video so played) are left as they are and counted.
+One step of undo.
 
 **Export** (`CommandBuilder.footage`). A clip whose `Effects.voiceLevel` or
 `backgroundLevel` is not 1 takes its sound from its file's stems
@@ -1778,7 +1896,9 @@ output clock (as the placed sounds do, `SoundVoices`); `StemMixProcessor`
 mixes the four channels down at the two levels for every buffer, so a slider
 is heard at once.
 
-**Where.** The editor's Voice tool, per clip or for every clip.
+**Where.** The editor's Voice tool, per clip or for every clip: the
+separation card, the two levels, then the tracks card (`StemTracksCard`:
+how far to split, which stems, one button).
 
 ## Dubbing
 
@@ -1850,6 +1970,21 @@ voice model, a translation model once the language is known, the voice) is
 said before anything starts; a translation model for a language heard only
 then stops the run after the listening, which stays.
 
+**The two screens** (`DubCard` in the subtitles panel, `AutoDubSectionContent`;
+their pieces in `DubPickers.kt`). Both are one group of joined blocks: the
+language as a single sideways strip of tokens (its code in a shape that
+blooms when chosen; the subtitles' own, found by itself, starred), the voice
+as a carousel of cards (a woman's, a man's or a quick Piper voice, its kind,
+a gavel when its licence has conditions) each with its own button to hear it
+(`DubSampler`: one voice at a time, the card shows it loading and playing),
+then how it sounds (speed and the video's own voice, a connected choice).
+However many voices there are, they take one line; the chosen one is
+scrolled into sight. While the card dubs, the group gives way to the voice
+saying it, its language and speed, the share done and the way to stop. The
+tool shows its plan before it starts as four nodes on a rail (struck off
+where not needed, a warning where something is missing, said in full under
+it); once it runs, the rows that tick off.
+
 **One breath** (`DubTiming.oneBreath`). For eSpeak NG languages sherpa-onnx
 cuts a text at every `.`, `!`, `?` (and `;`), says each piece on its own and
 glues them: the seams are heard, the voice stops and starts again. So inside
@@ -1896,7 +2031,8 @@ and offers its card, a voice free to use, or the dub. Kokoro is Apache 2.0.
 **Speed.** The network runs on the processor's cores; a phone's GPU or NPU
 cannot be used: ONNX Runtime's Android build has no GPU provider, and NNAPI
 takes only fixed shapes, which these networks are not. ONNX Runtime's XNNPACK
-kernels are tried by default for every model (`AiKernels`: one switch at the
+kernels are tried by default for every model but the invisible AI marks'
+(always the plain kernels: see "The invisible marks") (`AiKernels`: one switch at the
 top of the smart features, read by each engine when it loads; the ONNX
 Runtime sessions get the XNNPACK provider with its own threads and ONNX
 Runtime's left not spinning, the sherpa-onnx ones the "xnnpack" provider);
@@ -1928,7 +2064,15 @@ pin as "there" and the card shows what was found.
 dialog with its two brushes: the magic one (EdgeTAM) finds the whole of what
 is tapped or scribbled on, the precise one takes exactly what it covers;
 painted in raspberry, kept in green. It starts from a blank mask
-(`HdrSources.blankMask`), or from the subject the cut-out model finds.
+(`HdrSources.blankMask`), or from the subject the cut-out model finds. The
+dialog (shared by the cut-out and the HDR light) keeps the picture as large
+as it can: its top bar has only Close, the title and Reset; what is going on
+is a pill over the top of the picture (aside while a finger paints); view,
+compare, fit, Undo and Redo float at its bottom, by the thumb; under it one
+tray holds the tool, the brush and its size, and a large button saying what
+it does ("Erase what is painted", or applying the correction). The panel
+puts the two ways in first and the model under them, as two compact rows
+(first, when the chosen model is not on the phone).
 
 **Filling in** (`EraseEngine`, `core/erase/InpaintArea`, tested). The mask
 grown by the picture's side over 150 (an outline or a shadow goes too), a
@@ -1937,7 +2081,13 @@ to the model's square, the model's picture squeezed back and laid only where
 the mask was, faded over the side over 220 outward; the picture's own alpha
 kept. A new PNG in `files/erased/` takes the old picture's place
 (`replacePicture` for the picture itself, the overlay's uri otherwise): one
-step of undo. Through `AiKernels`, like every model.
+step of undo. Through `AiKernels`, like every model. Beside it, in `files/erased/unmarked/`
+under the same name, its twin before the invisible mark: never shared nor
+exported (what leaves the app is the marked PNG), it is what the next erase
+of that picture starts from, so that the result is marked once instead of a
+new mark laid over the old (they add up and show as a pattern; a mark does
+not survive another erase of more than about a twentieth of the picture,
+so it cannot simply be kept).
 
 **Memory** (issue 28). The Java heap is a few hundred megabytes whatever the
 phone's memory, and a photo of 12 megapixels is 50 MB per copy as an int
@@ -1979,6 +2129,11 @@ noise reduction among what is not). `core.provenance`, pure and tested:
   as made with a trained model (IPTC's source type, nothing more), and
   `RequestMapping` sets `aiEditedPictures` (`AiEditLookup`, set from
   `AppContainer.aiMarks`, one read per file).
+- **Pictures in words too.** FFmpeg writes no tags into a picture, so a
+  picture a model changed gets its words after it, in its EXIF
+  `UserComment` ("AI-generated inpainting", before a comment of the user's
+  own; `withAiNote`), written whether or not the user set tags: what
+  galleries and the app's own tag reader show, beside the XMP.
 - **Two layers.** The tags `AI_GENERATED` and `DIGITAL_SOURCE_TYPE`, given
   by `CommandBuilder` after the user's own (MP4 and M4A with
   `use_metadata_tags`; FFmpeg keeps only the last `-movflags`, so the
@@ -2026,7 +2181,16 @@ noise reduction among what is not). `core.provenance`, pure and tested:
   wrong bits right after marking on the export's test photos, often not
   found); with as many ones as zeros it read with none, also after JPEG 75
   and at half the size. Read back at once: at most 3 wrong bits of 96 (BCH
-  corrects 8), or the result is not kept.
+  corrects 8), or the result is not kept. A picture that already reads with
+  at most 3 wrong bits (erased again after a first erase) is not marked
+  again: the marks would add up and start to show. Before the picture is touched the
+  mark is checked twice: its mean strength (at most 0.08 in -1..1 units;
+  TrustMark's own measured 0.001 to 0.04) and its bits on the marked 256
+  square; if either is wrong nothing is laid and nothing is kept. The marks'
+  networks always run on ONNX Runtime's plain kernels, whatever the XNNPACK
+  setting: with XNNPACK, TrustMark's encoder was seen on a phone to give a
+  mark far too strong (burnt colours, bursts of blue). The log says the
+  mark's strength, its wrong bits and the picture's size and colour space.
 - **What was made before** (a dub, an erased picture, from an older version
   or another program that marked it as made with a trained model):
   `MarkGuard`, right before an export, reads its mark and, when it has none,

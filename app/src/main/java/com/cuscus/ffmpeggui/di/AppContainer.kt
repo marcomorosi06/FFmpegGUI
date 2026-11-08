@@ -163,6 +163,9 @@ class AppContainer(
 
     val commandBuilder: CommandBuilder by lazy { CommandBuilder(fontProvider) }
 
+    /** The system's monospaced font measured for text art, the same for the editor and the export. */
+    val glyphAtlas: com.cuscus.ffmpeggui.core.engine.GlyphAtlasSource by lazy { com.cuscus.ffmpeggui.media.AndroidGlyphAtlas() }
+
     val conversionEngine: ConversionEngine by lazy {
         ConversionEngine(
             commandBuilder = commandBuilder,
@@ -176,6 +179,7 @@ class AppContainer(
             pictureTagger = AndroidPictureTagger(),
             fonts = fontProvider,
             hdrMaker = AndroidHdrPictureMaker(stillGainMaps),
+            glyphs = glyphAtlas,
         )
     }
 }

@@ -44,7 +44,7 @@ class MarkEngine(context: Context, private val store: SpeechModelStore) {
     /** The marks' files are not installed (or did not pass their check). */
     class Missing : IOException("The AI marks are not installed")
 
-    /** The mark did not read back after it was written (too short a sound, too small a picture). */
+    /** The mark did not read back after it was written (too short a sound; a picture it does not hold on). */
     class NotHeld(what: String) : IOException("The AI mark does not hold on $what")
 
     /** What the detector found in a sound: the share of its speech marked (null: too little speech), the message. */
@@ -156,14 +156,31 @@ class MarkEngine(context: Context, private val store: SpeechModelStore) {
      * with at most Marks.PICTURE_FRESH_ERRORS wrong bits.
      */
     suspend fun markPicture(picture: Bitmap) = withContext(Dispatchers.Default) {
-        slot.run {
-            val width = picture.width
-            val height = picture.height
-            val region = PictureMarking.region(width, height)
+        slot.run<Unit> {
+            // Already marked and still reading well (a picture erased again: the first
+            // erase marked it, and a small part changed since): laid again, the marks
+            // would add up and start to show as a pattern. Left as it is.
+            val before = Marks.pictureErrors(decode(picture))
+            if (held(before)) {
+                Log.i(TAG, "Picture already marked: reads with $before wrong bits, not laid again")
+                return@run
+            }
+            val region = PictureMarking.region(picture.width, picture.height)
             val cover = squeeze(picture, region, PictureMarking.SIZE)
-            val encoder = session(MarkerModel.ENCODER.name)
-            val stego = encode(encoder, cover)
-            val residual = PictureMarking.residual(stego, cover)
+            val residual = PictureMarking.residual(encode(session(MarkerModel.ENCODER.name), cover), cover)
+            // Checked before the picture is touched: a mark far stronger than TrustMark's
+            // (a wrong computation) would show as burnt colours, and one that does not read
+            // on the 256 square will not read on the picture either.
+            val strength = PictureMarking.meanMagnitude(residual)
+            if (strength > PictureMarking.MOST_MEAN_MAGNITUDE) {
+                Log.w(TAG, "Picture mark is $strength strong on average: not laid")
+                throw NotHeld("this picture")
+            }
+            val square = decodeSquare(PictureMarking.marked(cover, residual))
+            if (square != null && !held(Marks.pictureErrors(square))) {
+                Log.w(TAG, "Picture mark reads ${Marks.pictureErrors(square)} wrong bits on the square: not laid")
+                throw NotHeld("this picture")
+            }
             val feather = PictureMarking.feather(region)
             val row = IntArray(region.width)
             val mark = FloatArray(3 * region.width)
@@ -182,11 +199,32 @@ class MarkEngine(context: Context, private val store: SpeechModelStore) {
                 picture.setPixels(row, 0, region.width, region.left, region.top + y, region.width, 1)
             }
             val errors = Marks.pictureErrors(decode(picture))
-            if (errors == null || errors > Marks.PICTURE_FRESH_ERRORS) {
-                Log.w(TAG, "Picture mark reads back with $errors wrong bits")
+            if (!held(errors)) {
+                Log.w(TAG, "Picture mark reads back with $errors wrong bits (${picture.width}x${picture.height}, ${picture.config}, ${picture.colorSpace?.name})")
                 throw NotHeld("this picture")
             }
-            Log.i(TAG, "Picture marked: reads back with $errors wrong bits")
+            Log.i(TAG, "Picture marked: $strength strong on average, reads back with $errors wrong bits")
+        }
+    }
+
+    /** True when [errors] wrong bits (null: not found) is a mark that holds. */
+    private fun held(errors: Int?): Boolean = errors != null && errors <= Marks.PICTURE_FRESH_ERRORS
+
+    /** The decoder's bits for a square already at its size ([3, SIZE, SIZE], -1..1); null when it takes another size. */
+    private fun decodeSquare(square: FloatArray): FloatArray? {
+        val decoder = session(MarkerModel.DECODER.name)
+        val size = (decoder.inputInfo.values.first().info as? TensorInfo)?.shape?.lastOrNull()?.toInt() ?: PictureMarking.SIZE
+        if (size != PictureMarking.SIZE) return null
+        val env = OrtEnvironment.getEnvironment()
+        val n = PictureMarking.SIZE.toLong()
+        val image = OnnxTensor.createTensor(env, FloatBuffer.wrap(square), longArrayOf(1, 3, n, n))
+        try {
+            decoder.run(mapOf(decoder.inputNames.first() to image)).use { result ->
+                val out = (result.get(0) as OnnxTensor).floatBuffer
+                return FloatArray(out.remaining()).also { out.get(it) }
+            }
+        } finally {
+            image.close()
         }
     }
 
@@ -255,7 +293,10 @@ class MarkEngine(context: Context, private val store: SpeechModelStore) {
         if (!ready) throw Missing()
         val file = File(store.folder, name)
         if (!file.isFile) throw Missing()
-        val opts = options ?: AiKernels.options(threads).also { options = it }
+        // Always ONNX Runtime's plain kernels, whatever the setting: with XNNPACK's, TrustMark's
+        // encoder was seen to give a mark far too strong (burnt colours) on a phone. The marks
+        // must come out as their makers' code makes them; these networks are small.
+        val opts = options ?: AiKernels.options(threads, xnnpack = false).also { options = it }
         return try {
             OrtEnvironment.getEnvironment().createSession(file.absolutePath, opts).also { sessions[name] = it }
         } catch (e: OutOfMemoryError) {

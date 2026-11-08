@@ -1,4 +1,4 @@
-package com.cuscus.ffmpeggui.core.voice
+package com.cuscus.ffmpeggui.core.stems
 
 import kotlin.math.PI
 import kotlin.math.cos

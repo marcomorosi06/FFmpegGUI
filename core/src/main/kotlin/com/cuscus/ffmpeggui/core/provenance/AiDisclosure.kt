@@ -1,6 +1,8 @@
 package com.cuscus.ffmpeggui.core.provenance
 
 import com.cuscus.ffmpeggui.core.model.ConversionRequest
+import com.cuscus.ffmpeggui.core.model.CustomTag
+import com.cuscus.ffmpeggui.core.model.MetadataTags
 
 /**
  * What machines made or changed in a file, said in it as the AI Act asks
@@ -59,3 +61,26 @@ fun ConversionRequest.aiDisclosure(): AiDisclosure = AiDisclosure(
 fun ConversionRequest.aiSources(): AiDisclosure = AiDisclosure(speech = hasAiSpeech(), pictures = aiEditedPictures)
 
 private fun ConversionRequest.hasAiSpeech(): Boolean = sounds.any { !it.aiVoice.isNullOrBlank() }
+
+/** The EXIF tag a picture's disclosure is written in, in words people and programs can read. */
+const val PICTURE_AI_TAG = "UserComment"
+
+/**
+ * [this] picture's tags with [disclosure] said in words, in its EXIF
+ * [PICTURE_AI_TAG], before a comment the user wrote there (kept after it):
+ * what the gallery and most programs show, besides the XMP (which says the
+ * same for the programs that read it, see AiSeal). Unchanged when nothing
+ * a machine made is in the picture.
+ */
+fun MetadataTags.withAiNote(disclosure: AiDisclosure): MetadataTags {
+    if (!disclosure.pictures) return this
+    val note = AiDisclosure.PICTURE_TEXT
+    val own = custom.firstOrNull { it.key.trim() == PICTURE_AI_TAG }?.value?.trim().orEmpty()
+    val value = when {
+        own.isEmpty() -> note
+        // Written already (the tags of a picture exported again): not said twice.
+        own.startsWith(note) -> own
+        else -> "$note. $own"
+    }
+    return copy(custom = custom.filter { it.key.trim() != PICTURE_AI_TAG } + CustomTag(PICTURE_AI_TAG, value))
+}

@@ -19,14 +19,29 @@ object RetiredModels {
     /**
      * A model the app used before: its [name], the [folder] (inside the app's
      * private files) and the settings file ([prefs]) it was kept in, and the
-     * [replacement]'s name.
+     * [replacement]'s name, and the [area] of Smart features where that is set up.
      */
-    class Retired(val id: String, val name: String, val folder: String, val prefs: String, val replacement: String, val reason: Reason)
+    class Retired(
+        val id: String,
+        val name: String,
+        val folder: String,
+        val prefs: String,
+        val replacement: String,
+        val reason: Reason,
+        val area: Area = Area.CUTOUT,
+        val leftovers: List<String> = emptyList(),
+    )
+
+    /** Where in Smart features the replacement is set up: what "Set up" in the dialog opens. */
+    enum class Area { CUTOUT, VOICE }
 
     /** Why it was retired, for the words the dialog says. */
     enum class Reason {
         /** A newer model does the same work better. */
         SUPERSEDED,
+
+        /** Newer models do the same work better, and more of it (a voice from the rest: every stem). */
+        EXTENDED,
     }
 
     /** What [sweep] deleted: which model, and how much space it gave back. */
@@ -43,6 +58,19 @@ object RetiredModels {
             replacement = RefineModel.NAME,
             reason = Reason.SUPERSEDED,
         ),
+        // Spleeter's two stems as sherpa-onnx's int8 files (the voice separation until Bandit v2,
+        // with Spleeter's five stems for the instruments, took its place). What it made stays: the
+        // voices already set apart are results, kept in "voice-stems", not the model.
+        Retired(
+            id = "spleeter-2stems-int8",
+            name = "Spleeter 2stems",
+            folder = "voice/spleeter-2stems-int8",
+            prefs = "voice_model",
+            replacement = com.cuscus.ffmpeggui.voice.StemModels.BANDIT_NAME,
+            reason = Reason.EXTENDED,
+            area = Area.VOICE,
+            leftovers = listOf("voice/importing-voice"),
+        ),
     )
 
     private const val PREFS = "retired_models"
@@ -54,9 +82,13 @@ object RetiredModels {
         val removed = ArrayList<Removed>()
         for (retired in ALL) {
             val folder = File(app.filesDir, retired.folder)
+            // A half-finished import of it, next to it, goes without a word.
+            retired.leftovers.forEach { File(app.filesDir, it).deleteRecursively() }
             if (!folder.exists()) continue
             val bytes = folder.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
             if (folder.deleteRecursively()) {
+                // Its parent too, when nothing else is left in it (a delete of a folder that is not empty fails).
+                folder.parentFile?.takeIf { it != app.filesDir }?.delete()
                 app.deleteSharedPreferences(retired.prefs)
                 Log.i(TAG, "Deleted ${retired.name}, retired: ${bytes} bytes freed")
                 removed += Removed(retired, bytes)

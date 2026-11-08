@@ -20,7 +20,7 @@ import com.cuscus.ffmpeggui.marking.MarkingSweep
 import com.cuscus.ffmpeggui.translate.TranslationEngine
 import com.cuscus.ffmpeggui.translate.TranslationModelStore
 import com.cuscus.ffmpeggui.media.FfmpegAudioExtractor
-import com.cuscus.ffmpeggui.voice.VoiceModel
+import com.cuscus.ffmpeggui.voice.StemModels
 import com.cuscus.ffmpeggui.dub.DubEngine
 import com.cuscus.ffmpeggui.erase.EraseEngine
 import com.cuscus.ffmpeggui.erase.EraseModel
@@ -219,14 +219,20 @@ class SmartFeatures(
     /** Translates subtitles with them. */
     val translator = TranslationEngine(context, translationStore)
 
-    /** Spleeter, which sets a voice apart from the rest of a sound (see VoiceModel). */
-    val voiceStore = SpeechModelStore(context, VoiceModel.FILES)
+    /** Bandit v2, which splits a sound into dialogue, music and effects (see StemModels). */
+    val voiceStore = SpeechModelStore(context, StemModels.SCENE)
 
-    /** Where the voice model is. */
+    /** Where Bandit is. */
     val voiceState: StateFlow<SpeechModelStore.State> get() = voiceStore.state
 
-    /** Sets voices apart with it, and keeps what it found. */
-    val voiceSeparator = VoiceSeparator(context, voiceStore, extractor)
+    /** Spleeter's five stems, which split the music into its instruments (see StemModels). */
+    val instrumentsStore = SpeechModelStore(context, StemModels.INSTRUMENTS)
+
+    /** Where Spleeter is. */
+    val instrumentsState: StateFlow<SpeechModelStore.State> get() = instrumentsStore.state
+
+    /** Splits sounds with them, and keeps what they found. */
+    val voiceSeparator = VoiceSeparator(context, voiceStore, instrumentsStore, extractor)
 
     /** Kokoro, which dubs the video in the subtitles' language (see DubModel). */
     val dubStore = DubModelStore(context)
@@ -280,6 +286,7 @@ class SmartFeatures(
         refineStore.delete()
         eraseStores.values.forEach { it.delete() }
         voiceStore.delete()
+        instrumentsStore.delete()
         dubStore.delete()
         piperStore.voices.value.forEach { piperStore.delete(it.id) }
         translationStore.models.value.forEach { translationStore.delete(it.id) }
@@ -304,10 +311,16 @@ class SmartFeatures(
         dubStore.delete()
     }
 
-    /** Removes the voice model (the voices already set apart stay: projects use them). */
+    /** Removes Bandit (the stems already made stay: projects use them). */
     fun deleteVoiceModel() {
         voiceSeparator.unload()
         voiceStore.delete()
+    }
+
+    /** Removes Spleeter's five stems (the instruments already split stay: projects use them). */
+    fun deleteInstrumentsModel() {
+        voiceSeparator.unload()
+        instrumentsStore.delete()
     }
 
     /** Removes the correcting model (the corrected masks stay: projects use them). */
@@ -477,7 +490,8 @@ class SmartFeatures(
             eraseStores.forEach { (variant, store) ->
                 report(store.state, WorkNotifier.Kind.CUTOUT_MODEL, app.getString(R.string.work_model_erase_title, EraseModel.of(variant).name), store::stop)
             }
-            report(voiceStore.state, WorkNotifier.Kind.VOICE_MODEL, app.getString(R.string.work_model_voice_title, VoiceModel.NAME), voiceStore::stop)
+            report(voiceStore.state, WorkNotifier.Kind.VOICE_MODEL, app.getString(R.string.work_model_voice_title, StemModels.BANDIT_NAME), voiceStore::stop)
+            report(instrumentsStore.state, WorkNotifier.Kind.VOICE_MODEL, app.getString(R.string.work_model_voice_title, StemModels.SPLEETER_NAME), instrumentsStore::stop)
             report(dubStore.state, WorkNotifier.Kind.DUB_MODEL, app.getString(R.string.work_model_dub_title, DubModel.NAME), dubStore::stop)
         }
         // What was just imported is chosen when the chosen one is not there.

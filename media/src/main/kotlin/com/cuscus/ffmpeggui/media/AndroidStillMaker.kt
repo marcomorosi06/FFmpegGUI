@@ -104,6 +104,13 @@ class AndroidStillMaker(
         if (w <= 0f || h <= 0f) return null
         // Without a view box the drawing would not scale: its own size becomes one.
         if (box == null) svg.setDocumentViewBox(0f, 0f, w, h)
+        // A width and a height of its own on the root take the place of the viewport
+        // renderToCanvas is given (AndroidSVG sizes the root by them): a 4096 px drawing
+        // would show only its top left quarter in the 2048 px bitmap, a 1024 px one
+        // would fill only a quarter of it (issue #36). At 100 % the root fills the
+        // viewport, and the view box scales the drawing to it.
+        svg.setDocumentWidth("100%")
+        svg.setDocumentHeight("100%")
         val scale = SVG_SIDE_PX / max(w, h)
         val width = (w * scale).roundToInt().coerceAtLeast(1)
         val height = (h * scale).roundToInt().coerceAtLeast(1)

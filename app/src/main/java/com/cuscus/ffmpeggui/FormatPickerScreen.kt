@@ -107,8 +107,13 @@ fun FormatPickerScreen(
     transcriptReady: Boolean = false,
     /** Where the speech model is set up (Smart features). */
     onOpenSmartFeatures: () -> Unit = {},
+    /**
+     * Whether the file's sound can be heard: false for a recording made muted
+     * (a track of silence), null while it is being listened to or not known.
+     */
+    audible: Boolean? = null,
 ) {
-    val groupedFormats = OutputFormat.entries.groupBy { it.category }
+    val groupedFormats = OutputFormat.entries.groupBy { shownCategory(it) }
     val suggestion = suggestedFormat(mediaInfo)
     // More formats in a row as the window widens (a phone on its side, a tablet), kept
     // together in the middle of a monitor.
@@ -147,14 +152,25 @@ fun FormatPickerScreen(
             // sound cannot become a picture, a photo (or a silent video) cannot become sound.
             if (category == FormatCategory.IMAGE && mediaInfo != null && !mediaInfo.isVideo) return@forEach
             if (category == FormatCategory.AUDIO && mediaInfo != null && !mediaInfo.hasAudio) return@forEach
-            // A transcript needs something said: a file with sound.
-            if (category == FormatCategory.TEXT && mediaInfo != null && !mediaInfo.hasAudio) return@forEach
-            val formats = groupedFormats[category] ?: return@forEach
+            // Text holds two kinds: with sound it is what is said (transcripts and
+            // subtitles); without, a picture or a silent video (no track, or a track
+            // of silence: a recording made muted), it is the picture written in
+            // characters (ASCII and ANSI art).
+            val formats = (groupedFormats[category] ?: return@forEach).filter { format ->
+                mediaInfo == null || when {
+                    format.isTranscript -> mediaInfo.hasAudio && audible != false
+                    format.isTextArt -> mediaInfo.isVideo && (!mediaInfo.hasAudio || audible == false)
+                    else -> true
+                }
+            }
+            if (formats.isEmpty()) return@forEach
             val bannerAt = order++
             item(span = { GridItemSpan(columns) }, key = category) {
                 CategoryBanner(
                     category = category,
                     count = formats.size,
+                    // Without sound Text holds only ASCII and ANSI art: its film and words say so.
+                    pictures = category == FormatCategory.TEXT && formats.all { it.isTextArt },
                     modifier = Modifier.enterOnce(category, bannerAt, entrance),
                 )
             }
@@ -297,7 +313,7 @@ private fun SuggestedCard(format: OutputFormat, onClick: () -> Unit, modifier: M
  * many formats it has. The tiles of its formats follow under it.
  */
 @Composable
-private fun CategoryBanner(category: FormatCategory, count: Int, modifier: Modifier = Modifier) {
+private fun CategoryBanner(category: FormatCategory, count: Int, modifier: Modifier = Modifier, pictures: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
     val colors = categoryColors(category)
     val reduced = rememberReducedMotion()
@@ -324,7 +340,7 @@ private fun CategoryBanner(category: FormatCategory, count: Int, modifier: Modif
                 .height(BANNER_FILM_HEIGHT)
                 .clip(RoundedCornerShape(24.dp)),
         ) {
-            CategoryShowcase(category, modifier = Modifier.fillMaxSize())
+            CategoryShowcase(category, modifier = Modifier.fillMaxSize(), pictures = pictures)
             MorphingContainer(
                 from = categoryShape(category),
                 to = MaterialShapes.Circle,
@@ -347,7 +363,7 @@ private fun CategoryBanner(category: FormatCategory, count: Int, modifier: Modif
                     modifier = Modifier.semantics { heading() },
                 )
                 Text(
-                    text = stringResource(categoryHintRes(category)),
+                    text = stringResource(if (pictures) R.string.format_category_text_art_hint else categoryHintRes(category)),
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant,
                 )

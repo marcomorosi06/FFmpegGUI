@@ -71,13 +71,16 @@ import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Undo
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.Button
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -332,55 +335,42 @@ internal fun RefineMaskDialog(
                     color = scheme.onSurface,
                     modifier = Modifier.weight(1f).padding(start = 4.dp),
                 )
+                // Every correction undone at once (Undo and Redo are by the picture, under the thumb).
                 IconButton(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
-                        undone.add(edits.removeAt(edits.lastIndex))
+                        undone.clear()
+                        undone.addAll(edits.asReversed())
+                        edits.clear()
                         notice = null
                         replay()
                     },
                     enabled = ready && !working && edits.isNotEmpty(),
-                ) { Icon(Icons.Rounded.Undo, contentDescription = stringResource(R.string.editor_undo)) }
-                IconButton(
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
-                        edits.add(undone.removeAt(undone.lastIndex))
-                        notice = null
-                        replay()
-                    },
-                    enabled = ready && !working && undone.isNotEmpty(),
-                ) { Icon(Icons.Rounded.Redo, contentDescription = stringResource(R.string.editor_redo)) }
-                FilledIconButton(
-                    onClick = {
-                        val now = opened ?: return@FilledIconButton
-                        // The eraser may start from a whole subject: nothing changed is still something to erase.
-                        if (edits.isEmpty() && kind != MaskKind.ERASE) {
-                            currentOnDismiss()
-                            return@FilledIconButton
-                        }
-                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                        val taken = edits.toList()
-                        scope.launch {
-                            saving = true
-                            try {
-                                onDone(refiner.save(now, taken).path)
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                android.util.Log.w("RefineMaskDialog", "Could not save the corrected mask", e)
-                                problem = R.string.refine_failed
-                                saving = false
-                            }
-                        }
-                    },
-                    enabled = ready && !working,
-                    modifier = Modifier.padding(end = 8.dp),
-                ) { Icon(Icons.Rounded.Check, contentDescription = stringResource(R.string.refine_apply)) }
+                    modifier = Modifier.padding(end = 4.dp),
+                ) { Icon(Icons.Rounded.RestartAlt, contentDescription = stringResource(R.string.refine_reset)) }
             }
-            if (saving) {
-                LinearWavyProgressIndicator(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-            } else {
-                Spacer(modifier = Modifier.height(10.dp))
+
+            /** Writes the mask and hands it over (the eraser may start from a whole subject: nothing changed is still something to erase). */
+            fun finish() {
+                val now = opened ?: return
+                if (edits.isEmpty() && kind != MaskKind.ERASE) {
+                    currentOnDismiss()
+                    return
+                }
+                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                val taken = edits.toList()
+                scope.launch {
+                    saving = true
+                    try {
+                        onDone(refiner.save(now, taken).path)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        android.util.Log.w("RefineMaskDialog", "Could not save the corrected mask", e)
+                        problem = R.string.refine_failed
+                        saving = false
+                    }
+                }
             }
 
             val keepColor = when (kind) {
@@ -411,8 +401,8 @@ internal fun RefineMaskDialog(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = modifier
-                        .padding(16.dp)
-                        .clip(RoundedCornerShape(28.dp))
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(32.dp))
                         .background(scheme.surfaceContainerHighest)
                         .border(3.dp, brushColor.copy(alpha = if (ready) 0.9f else 0.25f), RoundedCornerShape(28.dp)),
                 ) {
@@ -625,7 +615,60 @@ internal fun RefineMaskDialog(
                                 },
                                 enabled = zoom > 1.01f,
                             ) { Icon(Icons.Rounded.FitScreen, contentDescription = stringResource(R.string.refine_fit)) }
+                            VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
+                            IconButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                    undone.add(edits.removeAt(edits.lastIndex))
+                                    notice = null
+                                    replay()
+                                },
+                                enabled = ready && !working && edits.isNotEmpty(),
+                            ) { Icon(Icons.Rounded.Undo, contentDescription = stringResource(R.string.editor_undo)) }
+                            IconButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                    edits.add(undone.removeAt(undone.lastIndex))
+                                    notice = null
+                                    replay()
+                                },
+                                enabled = ready && !working && undone.isNotEmpty(),
+                            ) { Icon(Icons.Rounded.Redo, contentDescription = stringResource(R.string.editor_redo)) }
                         }
+                        // What happens, as a pill at the top of the picture: the brush's colour
+                        // in its badge, the problem in the error colours.
+                        StatusPill(
+                            text = stringResource(
+                                problem ?: notice ?: when {
+                                    studying -> R.string.refine_studying
+                                    saving -> R.string.refine_saving
+                                    working && tool == MaskRefiner.Tool.MAGIC -> R.string.refine_working
+                                    kind == MaskKind.ERASE -> when {
+                                        tool == MaskRefiner.Tool.MAGIC && brush == MaskRefiner.Brush.KEEP -> R.string.erase_hint_magic_add
+                                        tool == MaskRefiner.Tool.MAGIC -> R.string.erase_hint_magic_remove
+                                        brush == MaskRefiner.Brush.KEEP -> R.string.erase_hint_precise_add
+                                        else -> R.string.erase_hint_precise_remove
+                                    }
+                                    kind == MaskKind.LIGHT -> when {
+                                        tool == MaskRefiner.Tool.MAGIC && brush == MaskRefiner.Brush.KEEP -> R.string.light_hint_magic_add
+                                        tool == MaskRefiner.Tool.MAGIC -> R.string.light_hint_magic_remove
+                                        brush == MaskRefiner.Brush.KEEP -> R.string.light_hint_precise_add
+                                        else -> R.string.light_hint_precise_remove
+                                    }
+                                    tool == MaskRefiner.Tool.MAGIC && brush == MaskRefiner.Brush.KEEP -> R.string.refine_hint_magic_keep
+                                    tool == MaskRefiner.Tool.MAGIC -> R.string.refine_hint_magic_remove
+                                    brush == MaskRefiner.Brush.KEEP -> R.string.refine_hint_precise_keep
+                                    else -> R.string.refine_hint_precise_remove
+                                },
+                            ),
+                            badge = if (problem != null) scheme.error else brushColor,
+                            icon = if (tool == MaskRefiner.Tool.MAGIC) Icons.Rounded.AutoFixHigh else Icons.Rounded.Brush,
+                            busy = working || studying,
+                            problem = problem != null,
+                            // Out of the way of the loupe while a finger paints.
+                            visible = touch == null,
+                            modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp, start = 12.dp, end = 12.dp),
+                        )
                         if (studying || working) {
                             ContainedLoadingIndicator(modifier = Modifier.align(Alignment.Center).size(64.dp))
                         }
@@ -633,118 +676,68 @@ internal fun RefineMaskDialog(
                 }
             }
             val controlsArea: @Composable ColumnScope.() -> Unit = {
-                // What happens: a hint in a card, its badge in the brush's colour.
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                // The tools, in one tray under the picture: how it paints, what it does, and the big button.
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(if (problem != null) scheme.errorContainer else scheme.surfaceContainer)
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
-                        .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .clip(RoundedCornerShape(32.dp))
+                        .background(scheme.surfaceContainer)
+                        .padding(12.dp),
                 ) {
-                    MorphingContainer(
-                        from = MaterialShapes.Cookie9Sided,
-                        to = MaterialShapes.Circle,
-                        morphed = working || studying,
-                        color = if (problem != null) scheme.error else brushColor,
-                        modifier = Modifier.size(36.dp),
-                    ) {
-                        Icon(
-                            if (tool == MaskRefiner.Tool.MAGIC) Icons.Rounded.AutoFixHigh else Icons.Rounded.Brush,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp),
+                    // The tool: magic or precise (without the model, the precise brush is the only one).
+                    if (engine != null) {
+                        ConnectedPair(
+                            first = Choice(stringResource(R.string.refine_tool_magic), Icons.Rounded.AutoFixHigh),
+                            second = Choice(stringResource(R.string.refine_tool_precise), Icons.Rounded.Brush),
+                            firstChosen = tool == MaskRefiner.Tool.MAGIC,
+                            onChoose = { magic ->
+                                haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                tool = if (magic) MaskRefiner.Tool.MAGIC else MaskRefiner.Tool.PRECISE
+                                notice = null
+                            },
+                            height = 44.dp,
                         )
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = stringResource(
-                            problem ?: notice ?: when {
-                                studying -> R.string.refine_studying
-                                saving -> R.string.refine_saving
-                                working && tool == MaskRefiner.Tool.MAGIC -> R.string.refine_working
-                                kind == MaskKind.ERASE -> when {
-                                    tool == MaskRefiner.Tool.MAGIC && brush == MaskRefiner.Brush.KEEP -> R.string.erase_hint_magic_add
-                                    tool == MaskRefiner.Tool.MAGIC -> R.string.erase_hint_magic_remove
-                                    brush == MaskRefiner.Brush.KEEP -> R.string.erase_hint_precise_add
-                                    else -> R.string.erase_hint_precise_remove
-                                }
-                                kind == MaskKind.LIGHT -> when {
-                                    tool == MaskRefiner.Tool.MAGIC && brush == MaskRefiner.Brush.KEEP -> R.string.light_hint_magic_add
-                                    tool == MaskRefiner.Tool.MAGIC -> R.string.light_hint_magic_remove
-                                    brush == MaskRefiner.Brush.KEEP -> R.string.light_hint_precise_add
-                                    else -> R.string.light_hint_precise_remove
-                                }
-                                tool == MaskRefiner.Tool.MAGIC && brush == MaskRefiner.Brush.KEEP -> R.string.refine_hint_magic_keep
-                                tool == MaskRefiner.Tool.MAGIC -> R.string.refine_hint_magic_remove
-                                brush == MaskRefiner.Brush.KEEP -> R.string.refine_hint_precise_keep
-                                else -> R.string.refine_hint_precise_remove
-                            },
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (problem != null) scheme.onErrorContainer else scheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                // The tool: magic or precise (without the model, the precise brush is the only one).
-                if (engine != null) {
+                    // The brush: what it does, in its colour.
                     ConnectedPair(
-                        first = Choice(stringResource(R.string.refine_tool_magic), Icons.Rounded.AutoFixHigh),
-                        second = Choice(stringResource(R.string.refine_tool_precise), Icons.Rounded.Brush),
-                        firstChosen = tool == MaskRefiner.Tool.MAGIC,
-                        onChoose = { magic ->
+                        first = Choice(
+                            stringResource(
+                                when (kind) {
+                                    MaskKind.LIGHT -> R.string.light_brush_add
+                                    MaskKind.ERASE -> R.string.erase_brush_add
+                                    MaskKind.CUTOUT -> R.string.refine_brush_keep
+                                },
+                            ),
+                            Icons.Rounded.Add,
+                            keepColor,
+                        ),
+                        second = Choice(
+                            stringResource(
+                                when (kind) {
+                                    MaskKind.LIGHT -> R.string.light_brush_remove
+                                    MaskKind.ERASE -> R.string.erase_brush_remove
+                                    MaskKind.CUTOUT -> R.string.refine_brush_remove
+                                },
+                            ),
+                            Icons.Rounded.Remove,
+                            removeColor,
+                        ),
+                        firstChosen = brush == MaskRefiner.Brush.KEEP,
+                        onChoose = { keep ->
                             haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                            tool = if (magic) MaskRefiner.Tool.MAGIC else MaskRefiner.Tool.PRECISE
+                            brush = if (keep) MaskRefiner.Brush.KEEP else MaskRefiner.Brush.REMOVE
                             notice = null
                         },
-                        height = 48.dp,
-                        modifier = Modifier.padding(horizontal = 16.dp),
+                        height = 56.dp,
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-                // The brush: what it does, in its colour.
-                ConnectedPair(
-                    first = Choice(
-                        stringResource(
-                            when (kind) {
-                                MaskKind.LIGHT -> R.string.light_brush_add
-                                MaskKind.ERASE -> R.string.erase_brush_add
-                                MaskKind.CUTOUT -> R.string.refine_brush_keep
-                            },
-                        ),
-                        Icons.Rounded.Add,
-                        keepColor,
-                    ),
-                    second = Choice(
-                        stringResource(
-                            when (kind) {
-                                MaskKind.LIGHT -> R.string.light_brush_remove
-                                MaskKind.ERASE -> R.string.erase_brush_remove
-                                MaskKind.CUTOUT -> R.string.refine_brush_remove
-                            },
-                        ),
-                        Icons.Rounded.Remove,
-                        removeColor,
-                    ),
-                    firstChosen = brush == MaskRefiner.Brush.KEEP,
-                    onChoose = { keep ->
-                        haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        brush = if (keep) MaskRefiner.Brush.KEEP else MaskRefiner.Brush.REMOVE
-                        notice = null
-                    },
-                    height = 56.dp,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                // The precise brush's size, shown on the picture while it is set.
-                AnimatedVisibility(
-                    visible = tool == MaskRefiner.Tool.PRECISE,
-                    enter = expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(),
-                    exit = shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeOut(),
-                ) {
-                    Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)) {
+                    // The precise brush's size, shown on the picture while it is set.
+                    AnimatedVisibility(
+                        visible = tool == MaskRefiner.Tool.PRECISE,
+                        enter = expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(),
+                        exit = shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeOut(),
+                    ) {
                         ValueSlider(
                             label = stringResource(R.string.refine_brush_size),
                             valueText = stringResource(R.string.value_dp, brushDp.roundToInt()),
@@ -758,23 +751,24 @@ internal fun RefineMaskDialog(
                             defaultValue = DEFAULT_BRUSH_DP,
                         )
                     }
-                }
-                TextButton(
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
-                        undone.clear()
-                        undone.addAll(edits.asReversed())
-                        edits.clear()
-                        notice = null
-                        replay()
-                    },
-                    enabled = ready && !working && edits.isNotEmpty(),
-                    shapes = ButtonDefaults.shapes(),
-                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 8.dp),
-                ) {
-                    Icon(Icons.Rounded.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(stringResource(R.string.refine_reset))
+                    // Done: what it does, said on the button, where the thumb is.
+                    Button(
+                        onClick = { finish() },
+                        enabled = ready && !working,
+                        shapes = ButtonDefaults.shapes(),
+                        modifier = Modifier.fillMaxWidth().height(60.dp),
+                    ) {
+                        if (saving) {
+                            LoadingIndicator(color = scheme.onPrimary, modifier = Modifier.size(28.dp))
+                        } else {
+                            Icon(if (kind == MaskKind.ERASE) Icons.Rounded.AutoFixHigh else Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(22.dp))
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            stringResource(if (kind == MaskKind.ERASE) R.string.erase_apply else R.string.refine_apply),
+                            style = MaterialTheme.typography.titleMediumEmphasized,
+                        )
+                    }
                 }
             }
             if (LocalWindowLayout.current.let { it.isLandscape && it.width >= SIDE_CONTROLS_MIN_WIDTH }) {
@@ -791,6 +785,59 @@ internal fun RefineMaskDialog(
             } else {
                 pictureArea(Modifier.weight(1f).fillMaxWidth())
                 controlsArea()
+            }
+        }
+    }
+}
+
+/**
+ * What the dialog is doing or what the brush will do, as a pill over the top
+ * of the picture: a badge in [badge] (turning into a circle while it works),
+ * the words, the error colours for a [problem]. It steps aside while [visible] is false.
+ */
+@Composable
+private fun StatusPill(text: String, badge: Color, icon: ImageVector, busy: Boolean, problem: Boolean, visible: Boolean, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(motion.fastEffectsSpec()) + expandVertically(motion.fastSpatialSpec()),
+        exit = fadeOut(motion.fastEffectsSpec()) + shrinkVertically(motion.fastSpatialSpec()),
+        modifier = modifier,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clip(CircleShape)
+                .background((if (problem) scheme.errorContainer else scheme.surfaceContainerHighest).copy(alpha = 0.94f))
+                .padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 6.dp)
+                .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+        ) {
+            MorphingContainer(
+                from = MaterialShapes.Cookie9Sided,
+                to = MaterialShapes.Circle,
+                morphed = busy,
+                color = badge,
+                modifier = Modifier.size(32.dp),
+            ) {
+                if (busy) {
+                    LoadingIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                } else {
+                    Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                }
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            AnimatedContent(
+                targetState = text,
+                transitionSpec = { fadeIn(motion.fastEffectsSpec()) togetherWith fadeOut(motion.fastEffectsSpec()) },
+                label = "refineStatus",
+            ) { shown ->
+                Text(
+                    shown,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (problem) scheme.onErrorContainer else scheme.onSurface,
+                    maxLines = 2,
+                )
             }
         }
     }

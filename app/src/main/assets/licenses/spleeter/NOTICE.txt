@@ -1,0 +1,22 @@
+Spleeter 5 stems, ONNX file of FFmpeg GUI
+https://github.com/marcomorosi06/FFmpegGUI
+
+spleeter-5stems.onnx is Spleeter's five-stem model by Deezer
+(https://github.com/deezer/spleeter, commit 6f2c8a2e283914faa544631430f65b793f1b1218; weights 5stems.tar.gz
+of release v1.4.0, SHA-256 25a1e87eb5f75cc72a4d2d5467a0a50ac75f05611f877c278793742513cc7218), Copyright (c) 2019-present,
+Deezer SA, under the MIT License: see LICENSE, next to it. It must go
+together with that LICENSE wherever it is copied.
+
+What was done to it (scripts/export-spleeter.py of FFmpeg GUI):
+- The weights of the TensorFlow checkpoint were read as they are into the
+  same five U-Nets written in PyTorch, with the softmax across the
+  instruments of Spleeter's softmax_unet, and converted to ONNX, opset
+  17.
+- The file takes the spectrogram's magnitudes and gives each instrument's
+  (vocals, piano, drums, bass, other); the transforms between sound and
+  spectrogram are left to the program that runs the file.
+- No weight was trained, fine-tuned, pruned or quantised.
+
+Deezer has not reviewed or endorsed this file. It comes with no warranty
+(see LICENSE). Deezer trained the model on music of its own catalogue; see
+docs/MODELS.md of FFmpeg GUI.

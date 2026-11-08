@@ -24,9 +24,10 @@ object AiKernels {
 
     /**
      * Session options on [threads] threads, every optimisation on, with the
-     * XNNPACK kernels when the setting asks for them and they are there.
+     * XNNPACK kernels when [xnnpack] (the setting, unless a caller needs the
+     * plain ones) asks for them and they are there.
      */
-    fun options(threads: Int): OrtSession.SessionOptions {
+    fun options(threads: Int, xnnpack: Boolean = fast): OrtSession.SessionOptions {
         val options = OrtSession.SessionOptions()
         try {
             options.setIntraOpNumThreads(threads)
@@ -35,7 +36,7 @@ object AiKernels {
             options.close()
             throw e
         }
-        if (fast) {
+        if (xnnpack) {
             try {
                 // XNNPACK has threads of its own: ONNX Runtime's are not left spinning beside them.
                 options.addConfigEntry("session.intra_op.allow_spinning", "0")

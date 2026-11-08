@@ -85,7 +85,8 @@ internal fun encoderArguments(
             args += sampleRate(audio)
             args += listOf(containerFlag, "wav")
         }
-        OutputFormat.JPG, OutputFormat.PNG, OutputFormat.WEBP, OutputFormat.BMP, OutputFormat.TIFF, OutputFormat.SVG ->
+        OutputFormat.JPG, OutputFormat.PNG, OutputFormat.WEBP, OutputFormat.BMP, OutputFormat.TIFF, OutputFormat.SVG,
+        OutputFormat.ASCII, OutputFormat.ANSI ->
             args += imageEncoderArguments(format, quality)
         // A transcript is written by the speech model, never by FFmpeg.
         OutputFormat.TXT, OutputFormat.SRT -> Unit
@@ -111,8 +112,9 @@ internal fun imageEncoderArguments(format: OutputFormat, quality: Float, alpha: 
     return when (format) {
         OutputFormat.JPG -> listOf("-c:v", "mjpeg", "-q:v", qualityToJpegScale(quality).toString(), "-pix_fmt", "yuvj444p")
         OutputFormat.PNG -> listOf("-c:v", "png", "-pix_fmt", rgb)
-        // Written as a PNG: the platform encodes the WEBP, the tracer draws the SVG.
-        OutputFormat.WEBP, OutputFormat.SVG -> listOf("-c:v", "png", "-pix_fmt", rgb, "-f", "image2")
+        // Written as a PNG: the platform encodes the WEBP, the tracer draws the SVG, the
+        // text-art engine writes the ASCII and ANSI art (the cut-out's transparency kept).
+        OutputFormat.WEBP, OutputFormat.SVG, OutputFormat.ASCII, OutputFormat.ANSI -> listOf("-c:v", "png", "-pix_fmt", rgb, "-f", "image2")
         OutputFormat.BMP -> listOf("-c:v", "bmp", "-pix_fmt", "bgr24")
         OutputFormat.TIFF -> listOf("-c:v", "tiff", "-pix_fmt", rgb, "-compression_algo", "deflate")
         else -> throw IllegalArgumentException("$format is not a picture format")

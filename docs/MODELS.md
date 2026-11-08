@@ -25,10 +25,11 @@ drift apart.
   not match is refused. "Check again" in the settings re-reads every file.
 - **Two kinds of file.** Most are published by their makers or by a known
   converter (rembg, sherpa-onnx, Xenova, Carve): the app only points to them.
-  Two are converted to ONNX **by this project** and served from its own
-  releases, because their makers publish them for PyTorch only, or in a form a
-  phone cannot run: EdgeTAM and BiRefNet-lite. For those two the project is a
-  distributor, and keeps every condition of their licences (below).
+  Four are converted to ONNX **by this project** and served from its own
+  releases, because their makers publish them for PyTorch or TensorFlow only,
+  or in a form a phone cannot run: EdgeTAM, BiRefNet-lite, Bandit v2 and
+  Spleeter's five stems. For those the project is a distributor, and keeps
+  every condition of their licences (below).
 
 ## At a glance
 
@@ -41,7 +42,8 @@ drift apart.
 | Cut-out correction, lift the subject | EdgeTAM | Meta | Apache 2.0 | **this project** | **this repository's releases** |
 | Magic eraser, quick | MI-GAN | Picsart AI Research | MIT | its author | Hugging Face |
 | Magic eraser, precise | LaMa (big-lama) | Samsung AI Center | Apache 2.0 | Carve | Hugging Face |
-| Voice separation | Spleeter 2stems | Deezer | MIT | sherpa-onnx (Apache 2.0) | sherpa-onnx's GitHub releases |
+| Stems: dialogue, music, effects (the voice levels, the dub, the tracks) | Bandit v2 (multilingual) | Karn N. Watcharasupat, Chih-Wei Wu, Iroro Orife | CC BY-SA 4.0 (weights), Apache 2.0 (code) | **this project** | **this repository's releases** |
+| Stems: the music's instruments | Spleeter 5 stems | Deezer | MIT | **this project** | **this repository's releases** |
 | AI dubbing | Kokoro-82M v1.0 | hexgrad | Apache 2.0 | sherpa-onnx (Apache 2.0) | sherpa-onnx's GitHub releases |
 | AI dubbing, extra voices | Piper voices | their authors | each its own | Piper / sherpa-onnx | Hugging Face, GitHub |
 | Subtitle translation | Opus-MT | University of Helsinki | CC BY 4.0 | Xenova | Hugging Face |
@@ -169,6 +171,115 @@ the cut-out's "Finest" choice.
   datasets: this project uses none of them, only the weights, under the
   licence their author gave them.
 
+### Bandit v2: our ONNX file
+
+Bandit v2 (["Remastering Divide and Remaster: A Cinematic Audio Source
+Separation Dataset with Multilingual Support"](https://arxiv.org/abs/2407.07275),
+Karn N. Watcharasupat, Chih-Wei Wu and Iroro Orife, IEEE IS2 2024) splits
+any sound into its dialogue, its music and its effects. The app uses it to
+set the voice apart (the voice levels, the dub keeping or lowering the
+original voice) and to lay each part on the video as a track of its own.
+It replaced Spleeter's two stems (see "Retired models").
+
+- **Licences.** The weights: Creative Commons Attribution-ShareAlike 4.0
+  International (CC BY-SA 4.0), as Zenodo record
+  [12701995](https://zenodo.org/records/12701995) gives them; its legal code
+  as SPDX keeps it (`CC-BY-SA-4.0.txt`, SPDX license list v3.27.0), SHA-256
+  `cde7883b9050a1104f4ac19a1572aafd6e5d7323b68351aaf51fbf4beba54966`. The
+  code: Apache 2.0, its `LICENSE` SHA-256
+  `c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4`. CC
+  BY-SA allows commercial use; it asks for the attribution, a link to the
+  licence, a note of the changes, and that an adaptation goes out under the
+  same licence: the ONNX file is an adaptation and goes out under CC BY-SA
+  4.0 too. It reaches only the model's file, never the sound a user makes
+  with it, nor FFmpeg GUI's own code.
+- **Made from**, all pinned in `scripts/bandit-onnx.lock`: the repository
+  https://github.com/kwatcharasupat/bandit-v2 at commit
+  `d5563d9031e95fdaa3e5a73d5020b9a0df61adb6` and the multilingual
+  checkpoint `checkpoint-multi.ckpt` (MD5 `fea2868787551b0cff36cfcf7c3622a3`, SHA-256
+  `0000000000000000000000000000000000000000000000000000000000000000`), the
+  MD5 as Zenodo gives it, the SHA-256 learned by the first build
+  (`scripts/pin-stems.py`).
+- **Why our own file.** The authors publish a PyTorch Lightning checkpoint
+  only, and their model builds its masks as complex tensors, which ONNX does
+  not have.
+- **What the conversion does** (`scripts/export-bandit.py`): it builds the
+  authors' model as `configs/models/bandit-mus64.yaml` does (48 kHz),
+  loads the checkpoint strictly, and writes the network from the
+  spectrogram to the three complex masks with real numbers only: the same
+  layers, in the same order, with the same weights, ONNX opset 17. The
+  short-time Fourier transforms stay out of the file: the app does them
+  (`core/stems/StemSeparation.kt`, `BanditMasks.kt`), as the script's
+  `stft()` and `istft()`, which each build checks against the authors' own
+  model end to end. No weight is trained, fine-tuned, pruned or quantised.
+  The model is mono: the app runs it on the middle of the two channels and
+  lays its masks on each channel, so the stems stay stereo.
+- **The file**, pinned in `app/.../voice/StemModels.kt` (`BANDIT`):
+
+  | File | SHA-256 | Bytes |
+  |---|---|---|
+  | `bandit-v2-multi.onnx` | `0000000000000000000000000000000000000000000000000000000000000000` | 0 |
+
+  Zeros until its first build: `.github/workflows/models-onnx.yml` (without
+  publishing) builds it twice, the two must be byte-identical, then
+  `scripts/pin-stems.py bandit <the build's folder>` writes the pins here,
+  in the lock, in the app and in the bundled NOTICE; the next run publishes
+  the pre-release
+  [`bandit-onnx-1`](https://github.com/marcomorosi06/FFmpegGUI/releases/tag/bandit-onnx-1).
+  Until then the app says the model is on its way and imports nothing.
+- **How CC BY-SA 4.0 is kept**: the attribution (the authors, the title of
+  the work, the record's address), the licence's legal code and the note of
+  the changes are in the release (`LICENSE.txt`, `NOTICE.txt`), inside the
+  ONNX file (metadata `license`, `notice`) and in the app
+  (`assets/licenses/bandit/`, shown in About, Licences); no technical measure
+  restricts the file.
+- **Training data.** Divide and Remaster v3, the authors' dataset: synthetic
+  mixtures of speech in more than 30 languages, music and effects, which the
+  paper says it drew only from content that permits commercial use (for the
+  music, the Free Music Archive's public-domain and CC BY, CC BY-SA, Open
+  Audio and Free Art tracks). This project uses none of it, only the weights.
+
+### Spleeter 5 stems: our ONNX file
+
+Spleeter (["Spleeter: a fast and efficient music source separation tool with
+pre-trained models"](https://doi.org/10.21105/joss.02154), Romain Hennequin
+et al., Deezer Research, JOSS 2020), its five-stem model: singing, piano,
+drums, bass and the rest. The app runs it on the music Bandit finds, to lay
+each instrument on the video as a track of its own.
+
+- **Licence.** MIT ("Copyright (c) 2019-present, Deezer SA"); its `LICENSE`,
+  SHA-256 `b15e40c921ec6fe997e0d88ddab9c26fb915bebbbb9496530d3f98f317d4325a`.
+- **Made from**, all pinned in `scripts/spleeter-onnx.lock`: the repository
+  https://github.com/deezer/spleeter at commit
+  `6f2c8a2e283914faa544631430f65b793f1b1218`, Deezer's TensorFlow
+  checkpoints `5stems.tar.gz` and (to check the conversion) `2stems.tar.gz`
+  of release v1.4.0, and sherpa-onnx's ONNX of the two-stem model, as the
+  lock pins them.
+- **Why our own file.** Deezer publishes TensorFlow checkpoints only, and
+  sherpa-onnx converted the two-stem model alone.
+- **What the conversion does** (`scripts/export-spleeter.py`): it reads the
+  checkpoints' weights without TensorFlow (the tensor bundle format) into
+  the same five U-Nets written in PyTorch (ELU, softmax across the
+  instruments, as Spleeter's `configs/5stems`) and writes them as one ONNX
+  file, opset 17. The same code must give, on the two-stem model, what
+  sherpa-onnx's files give; then the five-stem file is checked against
+  PyTorch. No weight is trained, changed or quantised.
+- **The file**, pinned in `app/.../voice/StemModels.kt` (`INSTRUMENTS_FILE`):
+
+  | File | SHA-256 | Bytes |
+  |---|---|---|
+  | `spleeter-5stems.onnx` | `533f0f260e6bfd14f55027594ba443e9d5c1cd8a1507a67000fa312d5b2374cf` | 196,647,290 |
+
+  Served as the pre-release
+  [`spleeter-onnx-1`](https://github.com/marcomorosi06/FFmpegGUI/releases/tag/spleeter-onnx-1)
+  of this repository, made by `.github/workflows/models-onnx.yml`, built twice
+  to the same bytes.
+- **How the MIT License is kept**: the `LICENSE` is in the release, inside the
+  file (metadata `license`) and in the app (`assets/licenses/spleeter/`), with
+  a `NOTICE` of the conversion.
+- **Training data.** Deezer's own, as its paper says (not published). This
+  project uses only the weights, under the licence Deezer gave them.
+
 ### The AI marks: AudioSeal and TrustMark
 
 What the app's models make carries a mark that cannot be seen or heard (EU
@@ -291,16 +402,6 @@ rembg takes them, as covered by the repository's.
   afterwards.
 - Both learnt from Places2, a set of photos published for research.
 
-### Spleeter 2stems (voice separation)
-
-By Deezer, MIT (https://github.com/deezer/spleeter), as converted to ONNX and
-quantised by sherpa-onnx (Apache 2.0), from its `source-separation-models`
-release: the archive `sherpa-onnx-spleeter-2stems-int8.tar.bz2`
-`c5dc8edfa08cc9a6d82670fcca15cfe671e446385e1a28c9da8c1816d238ea17`, holding
-`vocals.int8.onnx` `6e9721864c0c1a6d86eaae92de71637b2daeb3df769c9c536053b46be8dd10aa`
-and `accompaniment.int8.onnx` `53a96a0d1520b45b8f3cc53262e3725defb686fc3a17490932f050721f4583f1`.
-Its licence is kept in the app (`assets/licenses/spleeter/LICENSE.txt`).
-
 ### Kokoro-82M (AI dubbing)
 
 By hexgrad, Apache 2.0 (https://huggingface.co/hexgrad/Kokoro-82M), in the
@@ -342,6 +443,11 @@ with what took its place and how much space came back
 | Model | Licence | Was used for | Folder deleted | Replaced by |
 |---|---|---|---|---|
 | SlimSAM-77 (Zigeng Chen et al., ONNX by Xenova) | Apache 2.0 | cut-out correction | `files/refine/slimsam-77` | EdgeTAM |
+| Spleeter 2stems (Deezer, MIT; int8 ONNX by sherpa-onnx, Apache 2.0: `sherpa-onnx-spleeter-2stems-int8.tar.bz2` `c5dc8edfa08cc9a6d82670fcca15cfe671e446385e1a28c9da8c1816d238ea17`, `vocals.int8.onnx` `6e9721864c0c1a6d86eaae92de71637b2daeb3df769c9c536053b46be8dd10aa`, `accompaniment.int8.onnx` `53a96a0d1520b45b8f3cc53262e3725defb686fc3a17490932f050721f4583f1`) | MIT | voice separation | `files/voice/spleeter-2stems-int8` | Bandit v2, and Spleeter 5 stems for the instruments |
+
+The voices Spleeter's two stems set apart stay (they are results, in
+`files/voice-stems`): projects keep using them; splitting such a file into
+tracks makes it again with Bandit.
 
 ## Considered and left out
 
@@ -389,6 +495,11 @@ git clone https://github.com/ZhengPeng7/BiRefNet && git -C BiRefNet checkout f70
 curl -LO https://github.com/ZhengPeng7/BiRefNet/releases/download/v1/BiRefNet-general-bb_swin_v1_tiny-epoch_232.pth
 venv/bin/python -I scripts/export-birefnet.py --birefnet BiRefNet --weights BiRefNet-general-bb_swin_v1_tiny-epoch_232.pth --out out-birefnet
 python3 scripts/check-model-pins.py --release-dir edgetam=out-edgetam --release-dir birefnet=out-birefnet
+# The stems (the upstream files as the locks and models-onnx.yml say):
+git clone https://github.com/kwatcharasupat/bandit-v2 && git -C bandit-v2 checkout d5563d9031e95fdaa3e5a73d5020b9a0df61adb6
+venv/bin/python -I scripts/export-bandit.py --bandit bandit-v2 --checkpoint checkpoint-multi.ckpt --licence CC-BY-SA-4.0.txt --out out-bandit
+venv/bin/python -I scripts/export-spleeter.py --checkpoint 5stems --two-stems 2stems --sherpa sherpa-onnx-spleeter-2stems --licence spleeter/LICENSE --out out-spleeter
+python3 scripts/check-model-pins.py --release-dir bandit=out-bandit --release-dir spleeter=out-spleeter
 # The AI marks (needs espeak-ng and ffmpeg; the upstream files as the lock and ai-markers.yml say):
 venv/bin/python -I scripts/export-ai-markers.py --generator generator_base.pth --detector detector_base.pth \
   --encoder encoder_Q.onnx --decoder decoder_Q.onnx --audioseal-licence LICENSE-audioseal --trustmark trustmark \

@@ -90,6 +90,16 @@ fun interface ImageRecoder {
 }
 
 /**
+ * The system's monospaced font measured for text art (see
+ * [com.cuscus.ffmpeggui.core.textart.GlyphAtlas]): the font the editor shows
+ * the art with, so that the export chooses as the editor did.
+ */
+fun interface GlyphAtlasSource {
+    /** The measured font; null when it cannot be measured. */
+    fun atlas(): com.cuscus.ffmpeggui.core.textart.GlyphAtlas?
+}
+
+/**
  * Draws the drawing of a picture ([com.cuscus.ffmpeggui.core.model.ImageEdit.strokes])
  * on a transparent PNG, which the export lays over the picture like any other.
  */

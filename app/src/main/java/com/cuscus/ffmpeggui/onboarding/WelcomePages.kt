@@ -138,6 +138,7 @@ import com.cuscus.ffmpeggui.R
 import com.cuscus.ffmpeggui.ToneColors
 import com.cuscus.ffmpeggui.categoryColors
 import com.cuscus.ffmpeggui.categoryShape
+import com.cuscus.ffmpeggui.shownCategory
 import com.cuscus.ffmpeggui.core.model.CpuEncoderSpeed
 import com.cuscus.ffmpeggui.core.model.FormatCategory
 import com.cuscus.ffmpeggui.core.model.OutputFormat
@@ -416,7 +417,7 @@ internal fun FormatsPage(motion: PageMotion) {
             label = "formatCaption",
             modifier = Modifier.enter(motion, 9),
         ) { format ->
-            val tone = categoryColors(format.category)
+            val tone = categoryColors(shownCategory(format))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier

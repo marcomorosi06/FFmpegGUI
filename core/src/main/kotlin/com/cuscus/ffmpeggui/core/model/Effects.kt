@@ -33,7 +33,7 @@ data class Effects(
     /**
      * The voice and the rest of the clip's sound at their own levels (linear,
      * 0..2, 1 = as recorded), once its file's voice has been separated (see
-     * VoiceSeparation): the clip's sound then comes from that file's stems.
+     * core.stems.StemSeparation, VoiceStem): the clip's sound then comes from that file's stems.
      * On a clip only.
      */
     val voiceLevel: Float = 1f,

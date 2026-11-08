@@ -17,8 +17,10 @@ import kotlin.math.roundToInt
  *  - the mark stretched back over the region ([residualRow], bilinear as
  *    PyTorch's interpolate) and added at [STRENGTH]; for the last [feather]
  *    pixels of each edge it fades into the picture as it was ([weight]);
- *  - checking: the region squeezed to the decoder's size, its bits read
- *    (Marks.pictureErrors).
+ *  - checking: before the picture is touched, the mark's strength
+ *    ([meanMagnitude], at most [MOST_MEAN_MAGNITUDE]) and its bits on the
+ *    marked square ([marked]); after, the region squeezed to the decoder's
+ *    size, its bits read (Marks.pictureErrors).
  *
  * The transparency of a picture is left as it was. Pure, tested.
  */
@@ -27,6 +29,14 @@ object PictureMarking {
 
     /** TrustMark's own default for its Q model. */
     const val STRENGTH = 1.0f
+
+    /**
+     * The strongest a mark may be on average (-1..1 units, about 10 of 255
+     * levels). TrustMark's own measured 0.001 to 0.04 (a black or flat page,
+     * photos about 0.01, pure noise the most); more is a wrong computation,
+     * which would show as burnt colours.
+     */
+    const val MOST_MEAN_MAGNITUDE = 0.08f
 
     private const val ASPECT_LIMIT = 2.0f
     private const val FEATHER_SHARE = 0.01f
@@ -83,6 +93,19 @@ object PictureMarking {
             for (i in 0 until plane) out[c * plane + i] -= mean
         }
         return out
+    }
+
+    /** The mark's mean absolute value over its three colours. */
+    fun meanMagnitude(residual: FloatArray): Float {
+        var sum = 0.0
+        for (v in residual) sum += kotlin.math.abs(v)
+        return if (residual.isEmpty()) 0f else (sum / residual.size).toFloat()
+    }
+
+    /** The [SIZE] square [cover] with the mark [residual] added at [STRENGTH], in -1..1: what the decoder should read. */
+    fun marked(cover: FloatArray, residual: FloatArray): FloatArray {
+        require(cover.size == residual.size)
+        return FloatArray(cover.size) { i -> (cover[i] + residual[i] * STRENGTH).coerceIn(-1f, 1f) }
     }
 
     /**

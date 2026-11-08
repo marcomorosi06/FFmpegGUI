@@ -446,9 +446,23 @@ fun AboutScreen(versionName: String, onBack: () -> Unit, life: FfmpegLife? = nul
                         }
                     },
                     { shape ->
-                        // The voice model: downloaded by the user, credited as its licence asks.
-                        LicenceRow(shape, stringResource(R.string.about_licence_spleeter), stringResource(R.string.about_licence_mit)) {
-                            openLink(context, com.cuscus.ffmpeggui.voice.VoiceModel.MODEL_PAGE_URL)
+                        // The stems: Bandit v2 converted here (weights CC BY-SA 4.0: the attribution and
+                        // the changes are in its NOTICE, the legal code next to it), and Spleeter's five stems.
+                        val name = stringResource(R.string.about_licence_bandit)
+                        LicenceRow(shape, name, stringResource(R.string.about_licence_ours_cc_by_sa), local = true) {
+                            licenceFile = LicenceFile(name, "bandit/NOTICE.txt")
+                        }
+                    },
+                    { shape ->
+                        val name = stringResource(R.string.about_licence_bandit_legal)
+                        LicenceRow(shape, name, stringResource(R.string.about_licence_cc_by_sa), local = true) {
+                            licenceFile = LicenceFile(name, "bandit/LICENSE.txt")
+                        }
+                    },
+                    { shape ->
+                        val name = stringResource(R.string.about_licence_spleeter)
+                        LicenceRow(shape, name, stringResource(R.string.about_licence_ours_mit), local = true) {
+                            licenceFile = LicenceFile(name, "spleeter/NOTICE.txt")
                         }
                     },
                     { shape ->

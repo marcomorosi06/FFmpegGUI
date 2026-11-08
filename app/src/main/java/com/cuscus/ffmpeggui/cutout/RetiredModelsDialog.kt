@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
 
 package com.cuscus.ffmpeggui.cutout
 
@@ -15,6 +15,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,6 +31,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Piano
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material3.Button
@@ -63,6 +70,15 @@ import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
 import com.cuscus.ffmpeggui.ui.expressive.PolygonShape
 import kotlinx.coroutines.delay
 
+/** The parts the stem models split a sound into, as the dialog shows them: dialogue, music, effects, instruments. */
+private val NEW_PARTS = listOf(
+    Icons.Rounded.RecordVoiceOver to MaterialShapes.Cookie9Sided,
+    Icons.Rounded.MusicNote to MaterialShapes.Flower,
+    Icons.Rounded.Bolt to MaterialShapes.SoftBurst,
+    Icons.Rounded.Piano to MaterialShapes.Clover8Leaf,
+    Icons.Rounded.GraphicEq to MaterialShapes.Sunny,
+)
+
 /**
  * Said once after old models were deleted from the phone (see RetiredModels):
  * which ones, what took their place and how much space came back, with a way
@@ -75,7 +91,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun RetiredModelsDialog(
     removed: List<RetiredModels.Removed>,
-    onSetUp: () -> Unit,
+    onSetUp: (RetiredModels.Area) -> Unit,
     onDismiss: () -> Unit,
 ) {
     if (removed.isEmpty()) return
@@ -221,7 +237,7 @@ fun RetiredModelsDialog(
                 Button(
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                        onSetUp()
+                        onSetUp(removed.first().retired.area)
                     },
                     shapes = ButtonDefaults.shapes(),
                     modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -281,35 +297,85 @@ private fun RetiredRow(item: RetiredModels.Removed, visible: Boolean, first: Boo
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Old name, then arrow and new name as one piece: when both do not fit on a line, the
+            // new one goes whole to the next line instead of being squeezed a few letters at a time.
+            FlowRow(verticalArrangement = Arrangement.Center) {
                 Text(
                     item.retired.name,
                     style = MaterialTheme.typography.titleSmall.copy(textDecoration = TextDecoration.LineThrough),
                     color = scheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.CenterVertically),
                 )
-                Icon(
-                    Icons.AutoMirrored.Rounded.ArrowForward,
-                    contentDescription = null,
-                    tint = scheme.primary,
-                    modifier = Modifier.padding(horizontal = 8.dp).size(16.dp),
-                )
-                Text(item.retired.replacement, style = MaterialTheme.typography.titleSmallEmphasized, color = scheme.onSurface)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.align(Alignment.CenterVertically)) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowForward,
+                        contentDescription = null,
+                        tint = scheme.primary,
+                        modifier = Modifier.padding(horizontal = 8.dp).size(16.dp),
+                    )
+                    Text(
+                        item.retired.replacement,
+                        style = MaterialTheme.typography.titleSmallEmphasized,
+                        color = scheme.onSurface,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
             }
             Text(
                 stringResource(
                     when (item.retired.reason) {
                         RetiredModels.Reason.SUPERSEDED -> R.string.retired_reason_superseded
+                        RetiredModels.Reason.EXTENDED -> R.string.retired_reason_extended
                     },
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = scheme.onSurfaceVariant,
             )
+            if (item.retired.reason == RetiredModels.Reason.EXTENDED) {
+                // What the new models give where the old one gave a voice: each part, popping in.
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    NEW_PARTS.forEachIndexed { i, (icon, shape) ->
+                        val part by animateFloatAsState(
+                            if (visible) 1f else 0f,
+                            motion.defaultSpatialSpec(),
+                            label = "retiredPart$i",
+                        )
+                        var popped by remember { mutableStateOf(false) }
+                        LaunchedEffect(visible) {
+                            if (visible) {
+                                delay(120L + 90L * i)
+                                popped = true
+                            }
+                        }
+                        val pop by animateFloatAsState(if (popped) 1f else 0f, motion.fastSpatialSpec(), label = "retiredPop$i")
+                        MorphingContainer(
+                            from = shape,
+                            to = MaterialShapes.Circle,
+                            morphed = !popped,
+                            color = if (i == 0) scheme.primary else scheme.tertiaryContainer,
+                            modifier = Modifier
+                                .graphicsLayer {
+                                    scaleX = pop * part
+                                    scaleY = pop * part
+                                    alpha = pop
+                                }
+                                .size(28.dp),
+                        ) {
+                            Icon(icon, contentDescription = null, tint = if (i == 0) scheme.onPrimary else scheme.onTertiaryContainer, modifier = Modifier.size(15.dp))
+                        }
+                    }
+                }
+            }
         }
         Spacer(modifier = Modifier.width(12.dp))
         Text(
             Formatter.formatShortFileSize(context, item.bytes),
             style = MaterialTheme.typography.labelLarge,
             color = scheme.primary,
+            maxLines = 1,
+            softWrap = false,
         )
     }
 }

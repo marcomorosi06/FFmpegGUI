@@ -47,15 +47,26 @@ CODE BASED ON OTHER PROJECTS
   licence: EUPL-1.2, its text as that repository has it in
   ../wifi-audio-streaming/LICENSE.txt. The glyph in it, its scale and the
   colours are FFmpeg GUI's own.
-- The voice separation (core/voice) computes Spleeter's spectrogram, masks
-  and overlap-add the way sherpa-onnx does (Apache-2.0, ../sherpa-onnx/
-  LICENSE.txt), written again in Kotlin; the model is Spleeter's, by
-  Deezer (MIT, ../spleeter/LICENSE.txt), downloaded by the user.
+- The stem separation (core/stems) computes the spectrograms and masks of
+  Bandit v2 (torchaudio's transform as the authors' configuration sets it;
+  code Apache-2.0, weights CC-BY-SA-4.0, ../bandit/) and of Spleeter's five
+  stems (as Spleeter computes them; MIT, ../spleeter/LICENSE.txt), written
+  in Kotlin; the models are downloaded by the user. Its overlap-add across
+  windows started from the way sherpa-onnx (Apache-2.0, ../sherpa-onnx/
+  LICENSE.txt) runs Spleeter's two stems, which the app used before.
 - The live preview of the transitions between clips (core/preview/
   TransitionLook.kt, and the recipes of the transitions FFmpeg's xfade has,
   core/transition/Recipes.kt) works out the math of FFmpeg's xfade filter
   (libavfilter/vf_xfade.c, LGPL-2.1-or-later, ../ffmpeg/LICENSE.md), written
   again in Kotlin and AGSL; the other transitions are this project's own.
+- The text-art engine (core/textart) is this project's own code; it follows
+  published definitions: OKLab's matrices as Bjorn Ottosson published them
+  (https://bottosson.github.io/posts/oklab/, code in the public domain),
+  CIEDE2000 as Sharma, Wu and Dalal formulated it (2005), Bayer's ordered
+  dithering and the Floyd-Steinberg and Atkinson error diffusion, Paul
+  Bourke's seventy-step character ramp, xterm's 256-colour palette and the
+  terminal themes' colour values, IBM code page 437's character table and
+  the SAUCE record as the ANSI art scene specified it.
 - The dubbing runs Kokoro-82M (hexgrad, Apache-2.0, ../kokoro/LICENSE.txt)
   through sherpa-onnx's own text-to-speech, already in the APK; the model
   and its eSpeak NG data are downloaded by the user.

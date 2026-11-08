@@ -29,6 +29,16 @@ import com.cuscus.ffmpeggui.core.model.MediaInfo
 import com.cuscus.ffmpeggui.core.model.MetadataTags
 import com.cuscus.ffmpeggui.core.model.CustomTag
 import com.cuscus.ffmpeggui.core.model.PictureCanvas
+import com.cuscus.ffmpeggui.core.textart.Alphabet
+import com.cuscus.ffmpeggui.core.textart.ArtHide
+import com.cuscus.ffmpeggui.core.textart.ArtLayout
+import com.cuscus.ffmpeggui.core.textart.ArtPalette
+import com.cuscus.ffmpeggui.core.textart.ArtStroke
+import com.cuscus.ffmpeggui.core.textart.ArtTone
+import com.cuscus.ffmpeggui.core.textart.GlyphFilter
+import com.cuscus.ffmpeggui.core.textart.GlyphGroup
+import com.cuscus.ffmpeggui.core.textart.HueBand
+import com.cuscus.ffmpeggui.core.textart.TextArtSettings
 import com.cuscus.ffmpeggui.core.vector.TraceSettings
 import com.cuscus.ffmpeggui.core.model.Modulation
 import com.cuscus.ffmpeggui.core.model.ModulationKind
@@ -634,6 +644,191 @@ object ModelJson {
         )
     }
 
+    // -----------------------------------------------------------------
+    // Text art (ASCII and ANSI)
+    // -----------------------------------------------------------------
+
+    fun write(t: TextArtSettings): Json.Obj = jsonObject {
+        put("mode", t.mode)
+        put("columns", t.columns)
+        put("rows", t.rows)
+        put("cellAspect", t.cellAspect)
+        put("paper", t.paper)
+        put("alphabet", jsonObject {
+            val a = t.alphabet
+            putList("groups", a.groups.toList()) { Json.of(it) }
+            put("extra", a.extra)
+            put("removed", a.removed)
+            putList("filters", a.filters.toList()) { Json.of(it) }
+            put("dedupe", a.dedupe)
+            putList("bias", a.bias.entries.toList()) { entry -> jsonObject { put("char", entry.key); put("value", entry.value) } }
+            put("maxShare", a.maxShare)
+            put("maxRun", a.maxRun)
+        })
+        put("tone", jsonObject {
+            val n = t.tone
+            put("brightness", n.brightness)
+            put("contrast", n.contrast)
+            put("gamma", n.gamma)
+            putList("curve", n.curve) { Json.of(it) }
+            put("equalize", n.equalize)
+            put("invert", n.invert)
+            put("edgeBoost", n.edgeBoost)
+            put("edgeThreshold", n.edgeThreshold)
+            put("edgeFill", n.edgeFill)
+        })
+        put("dither", t.dither)
+        put("ditherStrength", t.ditherStrength)
+        put("ditherTarget", t.ditherTarget)
+        put("palette", jsonObject {
+            val p = t.palette
+            put("depth", p.depth)
+            put("theme", p.theme)
+            put("layer", p.layer)
+            put("match", p.match)
+            putList("banned", p.banned.toList()) { Json.of(it) }
+            putList("remap", p.remap.entries.toList()) { entry -> jsonObject { put("from", entry.key); put("to", entry.value) } }
+            put("reduceTo", p.reduceTo)
+            put("saturation", p.saturation)
+            put("bright", p.bright)
+            put("iceColors", p.iceColors)
+            put("lightFromGlyph", p.lightFromGlyph)
+        })
+        put("hide", jsonObject {
+            val h = t.hide
+            put("alphaCut", h.alphaCut)
+            put("lightFrom", h.lightFrom)
+            put("lightTo", h.lightTo)
+            putList("hues", h.hues) { band -> jsonObject { put("start", band.start); put("end", band.end); put("minChroma", band.minChroma) } }
+            putList("colors", h.colors) { Json.of(it) }
+            put("tolerance", h.tolerance)
+            put("invert", h.invert)
+            putList("strokes", h.strokes) { stroke ->
+                jsonObject {
+                    putList("points", stroke.points) { Json.of(it) }
+                    put("radius", stroke.radius)
+                    put("show", stroke.show)
+                }
+            }
+        })
+        put("layout", jsonObject {
+            val l = t.layout
+            put("frame", l.frame)
+            put("margin", l.margin)
+            put("title", l.title)
+            put("signature", l.signature)
+            put("group", l.group)
+            put("trimTrailing", l.trimTrailing)
+            put("lineEnding", l.lineEnding)
+            put("bom", l.bom)
+            put("encoding", l.encoding)
+            put("resetEachLine", l.resetEachLine)
+            put("maxWidth", l.maxWidth)
+        })
+        put("phrase", t.phrase)
+        put("target", t.target)
+    }
+
+    fun textArt(o: Json.Obj): TextArtSettings {
+        val d = TextArtSettings()
+        fun floats(j: Json.Obj, key: String, default: List<Float>) = j.list(key, default) { it.asDouble()?.toFloat() }
+        return TextArtSettings(
+            mode = o.enum("mode", d.mode),
+            columns = o.int("columns", d.columns),
+            rows = o.int("rows", d.rows),
+            cellAspect = o.float("cellAspect", d.cellAspect),
+            paper = o.enum("paper", d.paper),
+            alphabet = o.obj("alphabet")?.let { a ->
+                val n = Alphabet()
+                Alphabet(
+                    groups = a.list("groups", n.groups.toList()) { j -> (j as? Json.Str)?.value?.let { name -> GlyphGroup.entries.firstOrNull { it.name == name } } }.toSet(),
+                    extra = a.string("extra", n.extra),
+                    removed = a.string("removed", n.removed),
+                    filters = a.list("filters", n.filters.toList()) { j -> (j as? Json.Str)?.value?.let { name -> GlyphFilter.entries.firstOrNull { it.name == name } } }.toSet(),
+                    dedupe = a.float("dedupe", n.dedupe),
+                    bias = a.list("bias", emptyList<Pair<String, Float>>()) { j ->
+                        (j as? Json.Obj)?.let { e -> e.stringOrNull("char")?.let { c -> c to e.float("value", 0f) } }
+                    }.toMap(),
+                    maxShare = a.float("maxShare", n.maxShare),
+                    maxRun = a.int("maxRun", n.maxRun),
+                )
+            } ?: d.alphabet,
+            tone = o.obj("tone")?.let { t ->
+                val n = ArtTone()
+                ArtTone(
+                    brightness = t.float("brightness", n.brightness),
+                    contrast = t.float("contrast", n.contrast),
+                    gamma = t.float("gamma", n.gamma),
+                    curve = floats(t, "curve", n.curve),
+                    equalize = t.bool("equalize", n.equalize),
+                    invert = t.bool("invert", n.invert),
+                    edgeBoost = t.float("edgeBoost", n.edgeBoost),
+                    edgeThreshold = t.float("edgeThreshold", n.edgeThreshold),
+                    edgeFill = t.bool("edgeFill", n.edgeFill),
+                )
+            } ?: d.tone,
+            dither = o.enum("dither", d.dither),
+            ditherStrength = o.float("ditherStrength", d.ditherStrength),
+            ditherTarget = o.enum("ditherTarget", d.ditherTarget),
+            palette = o.obj("palette")?.let { p ->
+                val n = ArtPalette()
+                ArtPalette(
+                    depth = p.enum("depth", n.depth),
+                    theme = p.enum("theme", n.theme),
+                    layer = p.enum("layer", n.layer),
+                    match = p.enum("match", n.match),
+                    banned = p.list("banned", n.banned.toList()) { it.asLong()?.toInt() }.toSet(),
+                    remap = p.list("remap", emptyList<Pair<Int, Int>>()) { j ->
+                        (j as? Json.Obj)?.let { e -> e.intOrNull("from")?.let { from -> e.intOrNull("to")?.let { to -> from to to } } }
+                    }.toMap(),
+                    reduceTo = p.int("reduceTo", n.reduceTo),
+                    saturation = p.float("saturation", n.saturation),
+                    bright = p.enum("bright", n.bright),
+                    iceColors = p.bool("iceColors", n.iceColors),
+                    lightFromGlyph = p.bool("lightFromGlyph", n.lightFromGlyph),
+                )
+            } ?: d.palette,
+            hide = o.obj("hide")?.let { h ->
+                val n = ArtHide()
+                ArtHide(
+                    alphaCut = h.float("alphaCut", n.alphaCut),
+                    lightFrom = h.float("lightFrom", n.lightFrom),
+                    lightTo = h.float("lightTo", n.lightTo),
+                    hues = h.list("hues", n.hues) { j ->
+                        (j as? Json.Obj)?.let { b -> val m = HueBand(); HueBand(b.float("start", m.start), b.float("end", m.end), b.float("minChroma", m.minChroma)) }
+                    },
+                    colors = h.list("colors", n.colors) { it.asLong() },
+                    tolerance = h.float("tolerance", n.tolerance),
+                    invert = h.bool("invert", n.invert),
+                    strokes = h.list("strokes", n.strokes) { j ->
+                        (j as? Json.Obj)?.let { s ->
+                            val m = ArtStroke()
+                            ArtStroke(floats(s, "points", m.points), s.float("radius", m.radius), s.bool("show", m.show))
+                        }
+                    },
+                )
+            } ?: d.hide,
+            layout = o.obj("layout")?.let { l ->
+                val n = ArtLayout()
+                ArtLayout(
+                    frame = l.enum("frame", n.frame),
+                    margin = l.int("margin", n.margin),
+                    title = l.string("title", n.title),
+                    signature = l.string("signature", n.signature),
+                    group = l.string("group", n.group),
+                    trimTrailing = l.bool("trimTrailing", n.trimTrailing),
+                    lineEnding = l.enum("lineEnding", n.lineEnding),
+                    bom = l.bool("bom", n.bom),
+                    encoding = l.enum("encoding", n.encoding),
+                    resetEachLine = l.bool("resetEachLine", n.resetEachLine),
+                    maxWidth = l.int("maxWidth", n.maxWidth),
+                )
+            } ?: d.layout,
+            phrase = o.string("phrase", d.phrase),
+            target = o.enum("target", d.target),
+        )
+    }
+
     fun write(e: ImageEdit): Json.Obj = jsonObject {
         put("frameMs", e.frameMs)
         put("perspectiveH", e.perspectiveH)
@@ -664,6 +859,7 @@ object ModelJson {
             put("maxSide", e.trace.maxSide)
             put("gradients", e.trace.gradients)
         })
+        put("textArt", write(e.textArt))
         put("canvas", e.canvas) { c ->
             jsonObject {
                 put("width", c.width)
@@ -724,6 +920,7 @@ object ModelJson {
                     gradients = t.bool("gradients", n.gradients),
                 )
             } ?: d.trace,
+            textArt = o.obj("textArt")?.let(::textArt) ?: d.textArt,
             canvas = o.objOrNull("canvas", d.canvas) { c ->
                 val n = PictureCanvas()
                 PictureCanvas(

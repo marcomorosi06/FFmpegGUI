@@ -65,9 +65,9 @@ Don't trust AI-generated code? Verify it yourself or don't install it at all.
 | Editor | What it does |
 |---|---|
 | **Video** | Timeline of clips, speed curves, 101 transitions, keyframes, texts, overlays, effects, chroma key, denoise, subtitles, HDR |
-| **Smart features** | Subtitles from speech, transcripts, subject cut-out (and a long press that lifts a subject off a photo), translation, AI dubbing, voice separation, magic eraser |
+| **Smart features** | Subtitles from speech, transcripts, subject cut-out (and a long press that lifts a subject off a photo), translation, AI dubbing, stems (dialogue, music, effects, instruments) as separate tracks, magic eraser |
 | **Audio** | Waveform editor, ten-band equaliser, compressor, reverb and more, loudness levelling, tags and cover art |
-| **Pictures** | Photo editor, crop and perspective, filters, layers, shapes and blend modes, SVG editor, Ultra HDR JPG |
+| **Pictures** | Photo editor, crop and perspective, filters, layers, shapes and blend modes, SVG editor, ASCII and ANSI art editor, Ultra HDR JPG |
 | **GIF** | Its own editor, with a preview that shows colours and dithering as they will be |
 
 The smart features run entirely on the phone. Their models are not in the app: the browser downloads them once, and the app imports them and checks them against pinned SHA-256 hashes. Each one, with its licence and source: [docs/MODELS.md](docs/MODELS.md).
@@ -80,7 +80,7 @@ The smart features run entirely on the phone. Their models are not in the app: t
 |---|---|
 | Video | MP4, MKV, AVI, GIF |
 | Audio | MP3, M4A (AAC), OGG (Vorbis), OPUS, FLAC, WAV |
-| Pictures | JPG, PNG, WEBP, BMP, TIFF, SVG |
+| Pictures | JPG, PNG, WEBP, BMP, TIFF, SVG, ASCII art (TXT), ANSI art (ANS) |
 | Anything else | Stream copy, or any FFmpeg command you write |
 
 ## Marked as made with AI
@@ -89,7 +89,7 @@ When a file holds what an AI model made (a dub's voice, a picture the magic eras
 
 **A mark that cannot be seen or heard**, in the sound and the picture themselves: [AudioSeal](https://github.com/facebookresearch/audioseal) (Meta, MIT) on every voice a model says, [TrustMark](https://github.com/adobe/trustmark) (Adobe, MIT) on every picture the magic eraser changes, written as they are made and read back before they are kept; what was made before them gets them at export. It holds through compression and resizing. Their files are imported before any other model: without them no model can be imported, and none stays on the phone.
 
-**And the metadata**: IPTC's [Digital Source Type](https://cv.iptc.org/newscodes/digitalsourcetype/) in the file's XMP, and tags of its own (`AI_GENERATED`, `DIGITAL_SOURCE_TYPE`) where the format has them. The marks are written after FFmpeg, so neither the metadata settings nor a command written by hand can leave them out; a format with no place for them (BMP, for example) is not written. Subtitles, transcripts, translations, subject cut-outs and voice separation are not marked: they do not make anything that passes for real.
+**And the metadata**: IPTC's [Digital Source Type](https://cv.iptc.org/newscodes/digitalsourcetype/) in the file's XMP, and tags of its own (`AI_GENERATED`, `DIGITAL_SOURCE_TYPE`) where the format has them. The marks are written after FFmpeg, so neither the metadata settings nor a command written by hand can leave them out; a format with no place for them (BMP, for example) is not written. Subtitles, transcripts, translations, subject cut-outs and stem separation are not marked: they do not make anything that passes for real.
 
 The marks say only that ("AI-generated voice", "AI-generated inpainting"; the invisible marks carry a fixed payload, the same for everyone): not which model or voice, not which app, no date, nothing about you or your phone, nothing random. They are the same in every file of every user: they are **made to carry no fingerprint of any kind**, so as not to tell one file, phone or person from another.
 
@@ -172,7 +172,8 @@ FFmpeg GUI is made by one person, in spare time, and will stay free and open sou
 - [IS-Net](https://github.com/xuebinqin/DIS) and [U2-Net](https://github.com/xuebinqin/U-2-Net) by Xuebin Qin et al. (Apache 2.0), as converted by [rembg](https://github.com/danielgatis/rembg) (MIT)
 - [BiRefNet](https://github.com/ZhengPeng7/BiRefNet) by Zheng Peng et al. (MIT), its lite general-use weights, converted to ONNX by this project (`scripts/export-birefnet.py`) and served from its [releases](https://github.com/marcomorosi06/FFmpegGUI/releases/tag/birefnet-lite-onnx-1) with its licence and notice, downloaded by the user
 - [Opus-MT](https://github.com/Helsinki-NLP/Opus-MT) by the University of Helsinki (CC BY 4.0), as converted to ONNX by [Xenova](https://huggingface.co/Xenova), downloaded by the user
-- [Spleeter](https://github.com/deezer/spleeter) by Deezer (MIT), as converted to ONNX and quantised by [sherpa-onnx](https://k2-fsa.github.io/sherpa/onnx/source-separation/models.html), downloaded by the user; its spectrogram and masks are computed as sherpa-onnx does, in the app's own Kotlin
+- [Bandit v2](https://github.com/kwatcharasupat/bandit-v2) by Karn N. Watcharasupat, Chih-Wei Wu and Iroro Orife (weights [CC BY-SA 4.0](https://zenodo.org/records/12701995), code Apache 2.0), its multilingual weights, converted to ONNX by this project (`scripts/export-bandit.py`; the attribution and the changes are in its NOTICE, the ONNX file is under CC BY-SA 4.0 too) and served from its [releases](https://github.com/marcomorosi06/FFmpegGUI/releases/tag/bandit-onnx-1), downloaded by the user; its spectrogram and masks are computed in the app's own Kotlin
+- [Spleeter](https://github.com/deezer/spleeter) by Deezer (MIT), its five-stem model, converted to ONNX by this project (`scripts/export-spleeter.py`) and served from its [releases](https://github.com/marcomorosi06/FFmpegGUI/releases/tag/spleeter-onnx-1), downloaded by the user. Its two-stem model (as [sherpa-onnx](https://k2-fsa.github.io/sherpa/onnx/source-separation/models.html) converted it) set voices apart before; the app now deletes it from the phone
 - [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) by hexgrad (Apache 2.0), in the multi-language build of [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models), with [eSpeak NG](https://github.com/espeak-ng/espeak-ng)'s data (GPL 3.0), downloaded by the user
 - [Piper](https://github.com/rhasspy/piper) voices (the format: MIT; each voice under its own licence, see its card), as published on [Hugging Face](https://huggingface.co/rhasspy/piper-voices) or packed by [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models), downloaded by the user
 - [MI-GAN](https://github.com/Picsart-AI-Research/MI-GAN) by Picsart AI Research (MIT) and [LaMa](https://github.com/advimman/lama) by Samsung AI Center (Apache 2.0, ONNX by [Carve](https://huggingface.co/Carve/LaMa-ONNX)), downloaded by the user

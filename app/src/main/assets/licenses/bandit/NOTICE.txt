@@ -1,0 +1,31 @@
+Bandit v2 (multilingual), ONNX file of FFmpeg GUI
+https://github.com/marcomorosi06/FFmpegGUI
+
+bandit-v2-multi.onnx is made from "Model Weights for Remastering Divide and
+Remaster: A Cinematic Audio Source Separation Dataset with Multilingual
+Support" by Karn N. Watcharasupat, Chih-Wei Wu and Iroro Orife
+(https://doi.org/10.5281/zenodo.12701995, file checkpoint-multi.ckpt,
+MD5 fea2868787551b0cff36cfcf7c3622a3, SHA-256 0000000000000000000000000000000000000000000000000000000000000000), licensed under
+Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0,
+https://creativecommons.org/licenses/by-sa/4.0/legalcode): see LICENSE, next
+to it. This file is an adaptation of those weights and is licensed under the
+same licence, CC BY-SA 4.0. It must go together with that LICENSE (or its
+address) and this NOTICE wherever it is copied.
+
+The model's code is the authors' https://github.com/kwatcharasupat/bandit-v2
+(commit d5563d9031e95fdaa3e5a73d5020b9a0df61adb6), Apache License 2.0.
+
+What was done to it (scripts/export-bandit.py of FFmpeg GUI):
+- The weights were loaded as they are into the authors' code (the model of
+  configs/models/bandit-mus64.yaml, at 48 kHz) and converted to ONNX,
+  opset 17.
+- The network was written with real numbers only: its input is the
+  spectrogram (real and imaginary parts) and its output the three complex
+  masks (speech, music, sfx), instead of sound in and sound out; the
+  transforms between sound and spectrogram are left to the program that
+  runs the file.
+- No weight was trained, fine-tuned, pruned or quantised.
+
+The authors and the licensor have not reviewed or endorsed this file. It
+comes with no warranty (see LICENSE, section 5). The weights were trained on
+Divide and Remaster v3 (CC BY-SA 4.0); see docs/MODELS.md of FFmpeg GUI.

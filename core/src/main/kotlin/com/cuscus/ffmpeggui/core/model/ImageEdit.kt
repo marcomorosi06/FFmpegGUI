@@ -75,7 +75,25 @@ data class ImageEdit(
     val canvas: PictureCanvas? = null,
     /** How the picture is traced into shapes when it is saved as an SVG. */
     val trace: TraceSettings = TraceSettings(),
+    /** How the picture is written as text when it is saved as ASCII or ANSI art. */
+    val textArt: com.cuscus.ffmpeggui.core.textart.TextArtSettings = com.cuscus.ffmpeggui.core.textart.TextArtSettings(),
 ) {
+    /**
+     * This edit as text art makes it: only what the text-art editor shows (the
+     * frame, crop, light and colour, the cut-out). The drawing, the border, the
+     * rounded corners, a canvas, the HDR look and the output size are for
+     * pictures: left out.
+     */
+    fun forTextArt(): ImageEdit = copy(
+        strokes = emptyList(),
+        border = null,
+        corners = 0f,
+        cornerColor = null,
+        canvas = null,
+        hdr = null,
+        output = ImageOutput(maxSide = 0, quality = output.quality),
+    )
+
     /**
      * This edit as [format] will hold it: where the format has no transparency
      * (JPG, BMP) a cut-out without a background becomes white, and a see-through

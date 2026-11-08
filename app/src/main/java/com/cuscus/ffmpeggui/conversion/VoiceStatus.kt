@@ -18,7 +18,7 @@ sealed interface VoiceStatus {
             get() {
                 val inFile = when (step) {
                     is VoiceSeparator.Step.Extracting -> (step.fraction ?: return null) * EXTRACT_SHARE
-                    VoiceSeparator.Step.Loading -> EXTRACT_SHARE
+                    is VoiceSeparator.Step.Loading -> EXTRACT_SHARE
                     is VoiceSeparator.Step.Separating -> EXTRACT_SHARE + step.fraction * SEPARATE_SHARE
                     is VoiceSeparator.Step.Saving -> EXTRACT_SHARE + SEPARATE_SHARE + (step.fraction ?: 0f) * (1f - EXTRACT_SHARE - SEPARATE_SHARE)
                 }
@@ -32,11 +32,24 @@ sealed interface VoiceStatus {
     }
 
     data class Failed(val problem: VoiceProblem) : VoiceStatus
+
+    /**
+     * The stems were laid on the video as tracks of their own: [tracks]
+     * sounds for [clips] clips; [skipped] clips could not be followed (played
+     * backwards or on a speed curve) and kept their own sound.
+     */
+    data class Placed(val tracks: Int, val clips: Int, val skipped: Int) : VoiceStatus
 }
 
 enum class VoiceProblem {
     /** The voice model is not on the phone (or did not pass its check). */
     NO_MODEL,
+
+    /** Spleeter's five stems, for the instruments, are not on the phone. */
+    NO_INSTRUMENTS_MODEL,
+
+    /** No clip in question could get tracks (all played backwards or on a speed curve). */
+    NO_TRACKS,
 
     /** Too little free memory to load it. */
     NO_MEMORY,

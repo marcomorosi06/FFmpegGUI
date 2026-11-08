@@ -154,10 +154,10 @@ fun MagicEraseContent(uri: Uri, enabled: Boolean, onReplace: (Uri) -> Unit) {
         }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxWidth()) {
-        EraseHero(status, celebrate, modelReady)
-
-        // The model: quick or precise.
+    // The model, a setting more than a step: under the two ways in, compact (first, when the
+    // chosen one is not on the phone: the other may be).
+    val modelChoice: @Composable () -> Unit = {
+        Text(stringResource(R.string.erase_model_label), style = MaterialTheme.typography.labelLargeEmphasized, color = scheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             VariantTile(
                 title = stringResource(R.string.erase_variant_fast),
@@ -178,8 +178,13 @@ fun MagicEraseContent(uri: Uri, enabled: Boolean, onReplace: (Uri) -> Unit) {
                 modifier = Modifier.weight(1f),
             ) { ui.onChoose(EraseVariant.PRECISE) }
         }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxWidth()) {
+        EraseHero(status, celebrate, modelReady)
 
         if (!modelReady) {
+            modelChoice()
             PanelHint(stringResource(R.string.erase_needs_model))
             FilledTonalButton(onClick = ui.onOpenSmartFeatures, shapes = ButtonDefaults.shapes(), modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Rounded.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -245,6 +250,7 @@ fun MagicEraseContent(uri: Uri, enabled: Boolean, onReplace: (Uri) -> Unit) {
                     }
                 }
             }
+            modelChoice()
             if (failedToOpen) PanelHint(stringResource(R.string.cutout_problem_unreadable))
             PanelHint(stringResource(R.string.erase_hint))
         }
@@ -390,8 +396,9 @@ private fun VariantTile(
     val pressed by interaction.collectIsPressedAsState()
     val container by animateColorAsState(if (selected) scheme.secondary else scheme.surfaceContainerHighest, motion.defaultEffectsSpec(), label = "variantTile")
     val content = if (selected) scheme.onSecondary else scheme.onSurface
-    val corner by androidx.compose.animation.core.animateDpAsState(if (selected) 32.dp else 16.dp, motion.defaultSpatialSpec(), label = "variantCorner")
-    Column(
+    val corner by androidx.compose.animation.core.animateDpAsState(if (selected) 28.dp else 14.dp, motion.defaultSpatialSpec(), label = "variantCorner")
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .springPress(interaction, pressedScale = 0.92f)
             .clip(RoundedCornerShape(corner))
@@ -400,26 +407,27 @@ private fun VariantTile(
                 haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
                 onClick()
             }
-            .padding(14.dp),
+            .padding(10.dp),
     ) {
         MorphingContainer(
             from = MaterialShapes.Cookie7Sided,
             to = MaterialShapes.Circle,
             morphed = selected || pressed,
             color = if (selected) scheme.onSecondary.copy(alpha = 0.18f) else scheme.secondaryContainer,
-            modifier = Modifier.size(40.dp),
+            modifier = Modifier.size(36.dp),
         ) {
-            Icon(icon, contentDescription = null, tint = if (selected) scheme.onSecondary else scheme.onSecondaryContainer, modifier = Modifier.size(22.dp))
+            Icon(icon, contentDescription = null, tint = if (selected) scheme.onSecondary else scheme.onSecondaryContainer, modifier = Modifier.size(20.dp))
         }
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(title, style = MaterialTheme.typography.titleMediumEmphasized, color = content)
-        Text(text, style = MaterialTheme.typography.labelMedium, color = content.copy(alpha = 0.8f))
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            stringResource(if (ready) R.string.erase_model_here else R.string.erase_model_missing),
-            style = MaterialTheme.typography.labelSmall,
-            color = if (ready) content.copy(alpha = 0.8f) else if (selected) content else scheme.error,
-        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmallEmphasized, color = content, maxLines = 1)
+            Text(
+                if (ready) text else stringResource(R.string.erase_model_missing),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (ready || selected) content.copy(alpha = 0.8f) else scheme.error,
+                maxLines = 1,
+            )
+        }
     }
 }
 

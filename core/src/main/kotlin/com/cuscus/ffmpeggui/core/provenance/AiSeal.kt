@@ -130,7 +130,7 @@ object AiSeal {
 
     private val SOUND = setOf("mp3", "m4a", "m4b", "wav", "flac", "ogg", "oga", "opus", "mka", "aac", "ac3", "wma", "aiff", "aif", "amr")
     private val PICTURES = setOf("jpg", "jpeg", "png", "webp", "gif", "tif", "tiff", "svg", "bmp", "avif", "heic", "jxl")
-    private val TEXT = setOf("txt", "srt", "vtt", "ass", "ssa", "lrc", "json", "csv", "xml", "sub")
+    private val TEXT = setOf("txt", "srt", "vtt", "ass", "ssa", "lrc", "json", "csv", "xml", "sub", "ans")
 
     /** The tags that say a file holds what a machine made (read by programs, not a standard name). */
     const val AI_GENERATED_TAG = "AI_GENERATED"

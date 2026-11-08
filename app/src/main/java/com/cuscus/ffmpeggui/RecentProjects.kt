@@ -178,7 +178,7 @@ private fun ProjectsCarousel(projects: List<ProjectCard>, onOpen: (ProjectCard) 
 @Composable
 private fun ProjectCardContent(project: ProjectCard, open: Float, modifier: Modifier) {
     val thumbnail = rememberThumbnail(project.thumbnail, project.thumbnailStamp)
-    val colors = categoryColors(project.format.category)
+    val colors = categoryColors(shownCategory(project.format))
     Box(modifier = modifier.background(colors.container)) {
         if (thumbnail != null) {
             Image(bitmap = thumbnail, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -244,7 +244,7 @@ private fun ProjectCardContent(project: ProjectCard, open: Float, modifier: Modi
 /** A project without a picture (sound only): its format's shape, large and turned a little. */
 @Composable
 private fun NoPicture(project: ProjectCard, tint: Color) {
-    val shape = remember(project.format.category) { PolygonShape(categoryShape(project.format.category)) }
+    val shape = remember(project.format) { PolygonShape(categoryShape(shownCategory(project.format))) }
     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
@@ -253,7 +253,7 @@ private fun NoPicture(project: ProjectCard, tint: Color) {
                 .clip(shape)
                 .background(tint.copy(alpha = 0.14f)),
         )
-        Icon(categoryIcon(project.format.category), contentDescription = null, tint = tint, modifier = Modifier.size(48.dp))
+        Icon(categoryIcon(shownCategory(project.format)), contentDescription = null, tint = tint, modifier = Modifier.size(48.dp))
     }
 }
 
@@ -425,18 +425,18 @@ private fun ProjectActionsSheet(
 @Composable
 internal fun ProjectPicture(project: ProjectCard, turn: Float, size: Dp) {
     val thumbnail = rememberThumbnail(project.thumbnail, project.thumbnailStamp)
-    val colors = categoryColors(project.format.category)
+    val colors = categoryColors(shownCategory(project.format))
     val cookie = remember { PolygonShape(MaterialShapes.Cookie9Sided) }
     if (thumbnail == null) {
         MorphingContainer(
             from = MaterialShapes.Cookie9Sided,
-            to = categoryShape(project.format.category),
+            to = categoryShape(shownCategory(project.format)),
             morphed = turn == 0f,
             color = colors.container,
             modifier = Modifier.graphicsLayer { rotationZ = turn }.size(size),
         ) {
             Icon(
-                categoryIcon(project.format.category),
+                categoryIcon(shownCategory(project.format)),
                 contentDescription = null,
                 tint = colors.content,
                 modifier = Modifier.graphicsLayer { rotationZ = -turn }.size(size * 0.42f),

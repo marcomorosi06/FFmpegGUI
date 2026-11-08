@@ -80,7 +80,10 @@ class EraseEngine(
         // The AI marks first: without them nothing is erased (and the model is not even loaded).
         if (!marker.ready) throw MarkEngine.Missing()
         // Written in place, row by row, where the erased part was: no copy of the whole picture.
-        val picture = decode(uri) ?: throw Unreadable()
+        // A picture this eraser made is taken up from its twin without the mark: the new one
+        // is marked once, rather than a second mark laid over the first (they would add up
+        // and start to show as a pattern).
+        val picture = cleanTwin(uri)?.let { decode(Uri.fromFile(it)) } ?: decode(uri) ?: throw Unreadable()
         var mask: Bitmap? = null
         try {
             val width = picture.width
@@ -148,10 +151,22 @@ class EraseEngine(
                 picture.setPixels(pictureRow, 0, bw, crop.left + bx, crop.top + by + y, bw, 1)
             }
             back.recycle()
+            val name = "erased-${UUID.randomUUID().toString().take(8)}.png"
+            // Its twin without the mark, kept in the app's own folder only (never shared, never
+            // exported: what leaves the app is the marked one), for the next erase to start from.
+            val twin = File(File(folder, CLEAN), name)
+            twin.parentFile?.mkdirs()
+            val keptTwin = runCatching { FileOutputStream(twin).use { picture.compress(Bitmap.CompressFormat.PNG, 100, it) } }.getOrDefault(false)
+            if (!keptTwin) twin.delete()
             // The invisible AI mark (TrustMark), over the whole picture, read back before it is kept.
-            marker.markPicture(picture)
+            try {
+                marker.markPicture(picture)
+            } catch (e: Exception) {
+                twin.delete()
+                throw e
+            }
             folder.mkdirs()
-            val target = File(folder, "erased-${UUID.randomUUID().toString().take(8)}.png")
+            val target = File(folder, name)
             FileOutputStream(target).use { if (!picture.compress(Bitmap.CompressFormat.PNG, 100, it)) throw IOException("Could not write the picture") }
             // The picture says it was changed by a model (EU AI Act, Article 50(2)), never which
             // one, wherever it goes: what is exported from it says so too (see AiMarksReader).
@@ -169,6 +184,13 @@ class EraseEngine(
 
     /** Frees the model's memory now. */
     fun unload() = slot.unload()
+
+    /** The twin without the mark of the picture at [uri], when this engine made it and kept one. */
+    private fun cleanTwin(uri: Uri): File? {
+        val path = uri.takeIf { it.scheme == "file" }?.path ?: return null
+        if (!owns(path)) return null
+        return File(File(folder, CLEAN), File(path).name).takeIf { it.isFile }
+    }
 
     /** True when [path] is a picture this engine made. */
     fun owns(path: String?): Boolean = path != null && path.startsWith(folder.absolutePath + File.separator)
@@ -354,6 +376,9 @@ class EraseEngine(
     companion object {
         private const val TAG = "EraseEngine"
         private const val FOLDER = "erased"
+
+        /** Inside [FOLDER]: each erased picture's twin without the mark (see [erase]). */
+        private const val CLEAN = "unmarked"
 
         /** Pictures larger than this are worked on at half size (and halved again...). */
         private const val MAX_SIDE = 4_096

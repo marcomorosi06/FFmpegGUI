@@ -65,6 +65,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cuscus.ffmpeggui.conversion.VoiceProblem
 import com.cuscus.ffmpeggui.conversion.VoiceStatus
+import com.cuscus.ffmpeggui.core.stems.StemKind
 import com.cuscus.ffmpeggui.core.voice.VoiceStem
 import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
 import com.cuscus.ffmpeggui.ui.expressive.OptionTileRow
@@ -93,6 +94,12 @@ class VoiceEditing(
     val status: VoiceStatus = VoiceStatus.Idle,
     /** The separated voice of the files that have one, by source id. */
     val stems: Map<String, Uri> = emptyMap(),
+    /** Spleeter's five stems are on the phone: the music can be split into its instruments. */
+    val instrumentsReady: Boolean = false,
+    /** The stems kept as tracks of their own, by source id. */
+    val tracks: Map<String, Set<StemKind>> = emptyMap(),
+    /** Lays these stems of clip (its id; null: of every clip) on the video as tracks, named so. */
+    val onPlaceTracks: (String?, Set<StemKind>, Map<StemKind, String>) -> Unit = { _, _, _ -> },
     /** Sets the voice of these files (source ids) apart; null: of every clip that plays. */
     val onSeparate: (Set<String>?) -> Unit = {},
     val onStop: () -> Unit = {},
@@ -134,8 +141,14 @@ internal fun VoiceSectionContent(
     val missing = sourceIds.count { it !in voice.stems }
     val separated = sourceIds.isNotEmpty() && missing == 0
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        // What the tracks card says (tracks laid, or why not) stays there.
+        val shownStatus = when (val status = voice.status) {
+            is VoiceStatus.Placed -> VoiceStatus.Idle
+            is VoiceStatus.Failed -> if (status.problem == VoiceProblem.NO_INSTRUMENTS_MODEL || status.problem == VoiceProblem.NO_TRACKS) VoiceStatus.Idle else status
+            else -> status
+        }
         VoiceSeparationCard(
-            status = voice.status,
+            status = shownStatus,
             modelReady = voice.modelReady,
             separated = separated,
             missingFiles = missing,
@@ -151,6 +164,11 @@ internal fun VoiceSectionContent(
             onLevels = { step, v, b -> voice.onLevels(clipId, v, b, step) },
         )
         PanelHint(stringResource(if (clipId == null) R.string.voice_scope_all_hint else R.string.voice_scope_clip_hint))
+        StemTracksCard(
+            voice = voice,
+            clipId = clipId,
+            sourceIds = sourceIds,
+        )
     }
 }
 
@@ -224,6 +242,8 @@ internal fun VoiceSeparationCard(
                         failed != null -> stringResource(
                             when (failed) {
                                 VoiceProblem.NO_MODEL -> R.string.voice_problem_model
+                                VoiceProblem.NO_INSTRUMENTS_MODEL -> R.string.stems_problem_instruments_model
+                                VoiceProblem.NO_TRACKS -> R.string.stems_problem_no_tracks
                                 VoiceProblem.NO_MEMORY -> R.string.voice_problem_memory
                                 VoiceProblem.NO_SPACE -> R.string.voice_problem_space
                                 VoiceProblem.NO_SOUND -> R.string.voice_problem_sound
@@ -347,8 +367,11 @@ internal fun VoiceSeparationCard(
 @Composable
 private fun voiceStepText(working: VoiceStatus.Working): String = when (val step = working.step) {
     is VoiceSeparator.Step.Extracting -> stringResource(R.string.voice_step_extracting)
-    VoiceSeparator.Step.Loading -> stringResource(R.string.voice_step_loading)
-    is VoiceSeparator.Step.Separating -> stringResource(R.string.voice_step_separating, Math.round(step.fraction * 100))
+    is VoiceSeparator.Step.Loading -> stringResource(if (step.instruments) R.string.stems_step_loading_instruments else R.string.voice_step_loading)
+    is VoiceSeparator.Step.Separating -> stringResource(
+        if (step.instruments) R.string.stems_step_instruments else R.string.voice_step_separating,
+        Math.round(step.fraction * 100),
+    )
     is VoiceSeparator.Step.Saving -> stringResource(R.string.voice_step_saving)
 }
 

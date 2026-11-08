@@ -139,6 +139,29 @@ fun decodeWaveform(
     }
 }
 
+/**
+ * Whether the sound of [uri] can be heard: true at its first peak above
+ * [SILENT_PEAK] (the reading stops there), false when all of its first
+ * [maxDurationMs] stay below it (a recording made muted still has a track,
+ * of silence), null when it has no sound or it cannot be decoded. Off the
+ * main thread; interruptible as [decodeWaveform].
+ */
+fun soundIsAudible(context: Context, uri: Uri, maxDurationMs: Long = AUDIBLE_SCAN_MS): Boolean? {
+    var heard = false
+    val waveform = decodeWaveform(context, uri, bucketMs = AUDIBLE_BUCKET_MS, maxDurationMs = maxDurationMs) { soFar ->
+        if (soFar.peaks.any { it > SILENT_PEAK }) {
+            heard = true
+            // Enough is known: the reading stops (decodeWaveform lets go of the decoder).
+            throw Heard()
+        }
+    }
+    if (heard) return true
+    return waveform?.peaks?.any { it > SILENT_PEAK }
+}
+
+/** Thrown to stop reading a sound once it has been heard. */
+private class Heard : RuntimeException("Heard")
+
 /** How the decoder hands its samples over. */
 private class PcmLayout(val sampleRate: Int, val channels: Int, val isFloat: Boolean)
 
@@ -207,6 +230,14 @@ const val WAVEFORM_BUCKET_MS = 20
 const val WAVEFORM_MAX_MS = 30L * 60L * 1000L
 
 private const val TIMEOUT_US = 5_000L
+
+/** Below this peak (about -54 dBFS) a sound is taken for silence. */
+const val SILENT_PEAK = 0.002f
+
+/** How much of a sound is read to tell whether it can be heard: ten minutes. */
+const val AUDIBLE_SCAN_MS = 10L * 60L * 1000L
+
+private const val AUDIBLE_BUCKET_MS = 100
 
 /** How often the outline read so far is handed over while a file is being read. */
 private const val PROGRESS_NANOS = 250_000_000L

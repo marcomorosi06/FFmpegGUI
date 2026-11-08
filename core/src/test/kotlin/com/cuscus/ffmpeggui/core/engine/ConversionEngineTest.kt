@@ -95,6 +95,7 @@ class ConversionEngineTest {
         tagger: PictureTagger? = null,
         fonts: com.cuscus.ffmpeggui.core.command.FontProvider? = null,
         hdrMaker: HdrPictureMaker? = null,
+        glyphs: GlyphAtlasSource? = null,
     ) = ConversionEngine(
         commandBuilder = CommandBuilder { "/fonts/font.ttf" },
         manualResolver = ManualCommandResolver(),
@@ -108,6 +109,7 @@ class ConversionEngineTest {
         pictureTagger = tagger,
         fonts = fonts,
         hdrMaker = hdrMaker,
+        glyphs = glyphs,
     )
 
     /** A JPG-shaped file: the segments Ultra HDR looks at, then [body]. */
@@ -197,6 +199,64 @@ class ConversionEngineTest {
         assertEquals("webp", expected.readText())
         assertTrue(executor.commands.single().arguments.last().endsWith("picture.png"))
         assertEquals(listOf("partial", OutputFormat.WEBP, 0.9f), recoded)
+    }
+
+    /** A recoder that reads every PNG as a 40 x 20 picture, white on its left half, transparent on its right. */
+    private val halfWhite = object : ImageRecoder {
+        override fun recode(pngPath: String, targetPath: String, format: OutputFormat, quality: Float) = false
+        override fun read(pngPath: String) = com.cuscus.ffmpeggui.core.image.Raster(40, 20, IntArray(800) { if (it % 40 < 20) -1 else 0 })
+    }
+
+    /** A font whose every character is a full cell of ink. */
+    private val solidFont = GlyphAtlasSource {
+        com.cuscus.ffmpeggui.core.textart.GlyphAtlas(0.5f, 1, 1, com.cuscus.ffmpeggui.core.textart.Glyphs.candidates.filter { it != 0x20 }.associateWith { floatArrayOf(1f) })
+    }
+
+    @Test
+    fun `ascii art is made by ffmpeg as png, then written as text`() = runBlocking {
+        val executor = FakeExecutor()
+        val outputDir = temp.newFolder("out")
+        val settings = com.cuscus.ffmpeggui.core.textart.TextArtSettings(columns = 8, alphabet = com.cuscus.ffmpeggui.core.textart.Alphabet(extra = "#"))
+        val job = ConversionJob(
+            request.copy(format = OutputFormat.ASCII, image = com.cuscus.ffmpeggui.core.model.ImageEdit(textArt = settings), metadata = com.cuscus.ffmpeggui.core.model.MetadataTags(title = "t")),
+            MediaSources(listOf(main)),
+        )
+        var tagged = false
+        val tagger = PictureTagger { _, _, _ -> tagged = true; true }
+
+        val outcome = engine(executor, FakeStager(), outputDir, halfWhite, tagger = tagger, glyphs = solidFont).run(job)
+
+        val expected = File(outputDir, "clip_99.txt")
+        assertEquals(ConversionOutcome.Success(expected.path), outcome)
+        // The cut-out's transparent half stays empty (and is trimmed).
+        assertEquals("####\n####\n", expected.readText())
+        assertTrue(executor.commands.single().arguments.last().endsWith("picture.png"))
+        assertTrue(executor.commands.single().arguments.contains("rgba") || executor.commands.single().arguments.contains("rgb24"))
+        assertFalse("text has no tags", tagged)
+    }
+
+    @Test
+    fun `ansi art is written with its colours`() = runBlocking {
+        val outputDir = temp.newFolder("out")
+        val settings = com.cuscus.ffmpeggui.core.textart.TextArtSettings(columns = 8, alphabet = com.cuscus.ffmpeggui.core.textart.Alphabet(extra = "#"), palette = com.cuscus.ffmpeggui.core.textart.ArtPalette(depth = com.cuscus.ffmpeggui.core.textart.ArtColor.TRUECOLOR))
+        val job = ConversionJob(request.copy(format = OutputFormat.ANSI, image = com.cuscus.ffmpeggui.core.model.ImageEdit(textArt = settings)), MediaSources(listOf(main)))
+
+        val outcome = engine(FakeExecutor(), FakeStager(), outputDir, halfWhite, glyphs = solidFont).run(job)
+
+        val expected = File(outputDir, "clip_99.ans")
+        assertEquals(ConversionOutcome.Success(expected.path), outcome)
+        assertTrue(expected.readText().startsWith("\u001B[38;2;255;255;255m####"))
+    }
+
+    @Test
+    fun `text art without the font fails and leaves nothing behind`() = runBlocking {
+        val outputDir = temp.newFolder("out")
+        val job = ConversionJob(request.copy(format = OutputFormat.ASCII), MediaSources(listOf(main)))
+
+        val outcome = engine(FakeExecutor(), FakeStager(), outputDir, halfWhite).run(job)
+
+        assertEquals(ConversionOutcome.Failure(FailureReason.ENCODING_FAILED, "no txt encoder"), outcome)
+        assertTrue(outputDir.listFiles().isNullOrEmpty())
     }
 
     @Test

@@ -121,6 +121,7 @@ import androidx.compose.ui.semantics.semantics
 import com.cuscus.ffmpeggui.categoryColors
 import com.cuscus.ffmpeggui.categoryIcon
 import com.cuscus.ffmpeggui.categoryShape
+import com.cuscus.ffmpeggui.shownCategory
 import com.cuscus.ffmpeggui.projects.ProjectCard
 import com.cuscus.ffmpeggui.relativeTime
 import com.cuscus.ffmpeggui.ui.expressive.ConnectedChoiceGroup
@@ -1159,7 +1160,7 @@ private fun ProjectSettings(
                 add { shape ->
                     SettingsRow(
                         shape = shape,
-                        icon = categoryIcon(project.format.category),
+                        icon = categoryIcon(shownCategory(project.format)),
                         title = project.name,
                         summary = stringResource(
                             R.string.settings_projects_row,
@@ -1170,8 +1171,8 @@ private fun ProjectSettings(
                         } else {
                             ""
                         },
-                        badge = categoryShape(project.format.category),
-                        colors = categoryColors(project.format.category),
+                        badge = categoryShape(shownCategory(project.format)),
+                        colors = categoryColors(shownCategory(project.format)),
                         trailing = {
                             IconButton(
                                 onClick = {

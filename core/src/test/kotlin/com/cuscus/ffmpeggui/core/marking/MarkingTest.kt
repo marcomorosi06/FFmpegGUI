@@ -215,4 +215,18 @@ class MarkingTest {
         assertTrue((0 until n).all { abs(r[it] - 1f) < 1e-4f })
         assertTrue((n until 2 * n).all { abs(r[it] + 1f) < 1e-4f })
     }
+
+    @Test
+    fun aMarkIsMeasuredAndAddedWithinRange() {
+        val plane = PictureMarking.SIZE * PictureMarking.SIZE
+        val residual = FloatArray(3 * plane) { if (it % 2 == 0) 0.01f else -0.01f }
+        assertEquals(0.01f, PictureMarking.meanMagnitude(residual), 1e-6f)
+        assertTrue(PictureMarking.meanMagnitude(residual) <= PictureMarking.MOST_MEAN_MAGNITUDE)
+        // Burnt: far stronger than TrustMark's own.
+        assertTrue(PictureMarking.meanMagnitude(FloatArray(3 * plane) { 0.5f }) > PictureMarking.MOST_MEAN_MAGNITUDE)
+        val cover = FloatArray(3 * plane) { 0.995f }
+        val marked = PictureMarking.marked(cover, FloatArray(3 * plane) { 0.02f })
+        assertEquals(1f, marked[0], 0f)
+        assertEquals(0.5f, PictureMarking.marked(FloatArray(3 * plane) { 0.49f }, FloatArray(3 * plane) { 0.01f })[5], 1e-6f)
+    }
 }

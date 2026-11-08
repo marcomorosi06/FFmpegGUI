@@ -68,6 +68,8 @@
     <string name="format_desc_bmp">Raw pixels</string>
     <string name="format_desc_tiff">For print, keeps transparency</string>
     <string name="format_desc_svg">Shapes traced from the picture, sharp at any size</string>
+    <string name="format_desc_ascii">The picture written in characters, as plain text</string>
+    <string name="format_desc_ansi">The picture in coloured characters, for terminals</string>
     <string name="format_desc_custom">Write the command</string>
     <string name="media_info_duration">Duration</string>
     <string name="media_info_resolution">Resolution</string>
@@ -94,6 +96,8 @@
     <string name="format_bmp" translatable="false">BMP</string>
     <string name="format_tiff" translatable="false">TIFF</string>
     <string name="format_svg" translatable="false">SVG</string>
+    <string name="format_ascii">ASCII art</string>
+    <string name="format_ansi">ANSI art</string>
     <string name="format_custom">Custom</string>
 
     <!-- Processing screen -->
@@ -1360,7 +1364,7 @@
     <string name="marks_cleared_freed">%1$s freed</string>
     <string name="marks_cleared_ok">Got it</string>
     <string name="marks_problem_missing">The AI marks are not installed. Nothing a model makes leaves the app without its invisible mark (EU AI Act, Article 50(2)): set them up first in the smart features.</string>
-    <string name="marks_problem_picture">The invisible AI mark does not hold on this picture (it is very small), so the result was not kept.</string>
+    <string name="marks_problem_picture">The invisible AI mark could not be read back from this picture, so the result was not kept.</string>
     <string name="marks_problem_voice">The invisible AI mark did not hold on this voice, so the dub was not kept. Try again.</string>
     <string name="marks_added_for_export">The invisible AI marks were added to what a model made before they were installed</string>
     <string name="marks_export_missing">This project has a voice or pictures made by an AI model, and the AI marks are not installed: it cannot be exported without them (EU AI Act, Article 50(2)). Set them up in the smart features.</string>
@@ -1659,7 +1663,7 @@
     <string name="about_licence_parakeet">Parakeet TDT 0.6B v3, by NVIDIA (the speech model, downloaded by you; its token list comes with the app)</string>
     <string name="about_licence_cc_by">Creative Commons Attribution 4.0</string>
     <string name="about_licence_opus_mt">Opus-MT, by the University of Helsinki (the translation models, downloaded by you), as converted to ONNX by Xenova</string>
-    <string name="about_licence_spleeter">Spleeter 2stems, by Deezer (the voice model, downloaded by you), as converted to ONNX and quantised by sherpa-onnx (Apache 2.0)</string>
+    <string name="about_licence_spleeter">Spleeter 5 stems, by Deezer (the model that splits the music into its instruments, downloaded by you), converted to ONNX by FFmpeg GUI</string>
     <string name="about_licence_edgetam">EdgeTAM, by Meta (the model that corrects cut-outs and lifts subjects, downloaded by you), converted to ONNX by FFmpeg GUI</string>
     <string name="about_licence_ours_apache">Apache License 2.0, with the notice of the changes</string>
     <string name="about_licence_birefnet">BiRefNet-lite, by Zheng Peng et al. (the finest cut-out model, downloaded by you), converted to ONNX by FFmpeg GUI</string>
@@ -1798,12 +1802,13 @@
 
     <!-- Old models deleted from the phone (RetiredModels) -->
     <string name="retired_title">Old models cleared away</string>
-    <string name="retired_text">This version uses better models. The ones they replace were still on your phone and would never be used again, so they have been deleted.</string>
+    <string name="retired_text">This version uses better models. The ones they replace were still on your phone and would never be used again, so they have been deleted. What you made with them stays in your projects.</string>
     <string name="retired_reason_superseded">Replaced by a better model</string>
     <string name="retired_freed">%1$s freed</string>
     <string name="retired_next">To keep doing what they did, import %1$s once in Smart features: the links and the steps are there.</string>
     <string name="retired_set_up">Set up %1$s</string>
     <string name="retired_ok">Got it</string>
+    <string name="retired_reason_extended">Replaced by better models that do more: every part of the sound, not just the voice</string>
 
     <!-- Photo editor: a long press lifts the subject off the picture (SubjectLifter) -->
     <string name="lift_sticker_name">Lifted subject</string>
@@ -1874,7 +1879,8 @@
     <string name="font_small_caps">Small caps</string>
     <string name="format_txt">Text (transcript)</string>
     <string name="format_category_text">Text</string>
-    <string name="format_category_text_hint">What is said, written down by the speech model and checked beside the player</string>
+    <string name="format_category_text_hint">What is said, written down by the speech model, and pictures written in characters</string>
+    <string name="format_category_text_art_hint">Your picture written in characters, plain or in terminal colours</string>
     <string name="format_desc_txt">Transcript, with times</string>
     <string name="format_txt_needs_model">Needs the speech model (Smart features)</string>
     <string name="format_srt">Subtitles (SubRip)</string>
@@ -2529,7 +2535,7 @@
     <!-- The voice set apart from the rest of the sound (VoicePanels, the Voice tool). -->
     <string name="tool_voice_split">Voice</string>
     <string name="voice_title">Voice and the rest</string>
-    <string name="voice_split_hint">Sets the voice apart from music, noise and everything else, on the phone. Then each one gets its own level.</string>
+    <string name="voice_split_hint">Splits the sound into dialogue, music and effects, on the phone. Then the voice and the rest each get their own level.</string>
     <string name="voice_needs_model">Needs the voice model, set up once in Smart features.</string>
     <string name="voice_done">The voice is set apart. Mix the two below.</string>
     <string name="voice_working_note">It is done once per file and may take a while. You can leave the app meanwhile.</string>
@@ -2541,8 +2547,8 @@
     </plurals>
     <string name="voice_step_extracting">Taking the sound out</string>
     <string name="voice_step_loading">Loading the voice model</string>
-    <string name="voice_step_separating">Listening for the voice, %1$d%%</string>
-    <string name="voice_step_saving">Keeping the voice and the rest</string>
+    <string name="voice_step_separating">Listening for the dialogue, the music and the effects, %1$d%%</string>
+    <string name="voice_step_saving">Keeping every part</string>
     <string name="voice_problem_model">The voice model is not ready. Set it up in Smart features.</string>
     <string name="voice_problem_memory">Not enough free memory for the voice model. Close other apps and try again.</string>
     <string name="voice_problem_space">Not enough free space: the sound needs room while it is worked on. Free some and try again.</string>
@@ -2561,26 +2567,75 @@
     <string name="voice_scope_all_hint">These levels go to every clip. Select a clip to give it levels of its own.</string>
     <string name="voice_scope_clip_hint">These levels go to this clip only.</string>
     <string name="voice_section">Voice and the rest</string>
-    <string name="voice_intro">Sets the voice of a video or a song apart from the music and the noise: to keep it alone, take it out or change its level. About 50 MB.</string>
+    <string name="voice_intro">Splits the sound of a video or a song into dialogue, music and effects, and the music into its instruments: to keep the voice alone, take it out, change its level, or lay every part on the video as a track of its own. About 150 MB, and 200 MB more for the instruments.</string>
     <string name="voice_model_title">Voice model, %1$s</string>
-    <string name="voice_step_download_text">One archive from sherpa-onnx on GitHub, %1$s. It opens in your browser.</string>
-    <string name="voice_problem_not_model">That is not the voice model. Pick the downloaded archive, or its two files together: %1$s.</string>
     <string name="voice_busy">Not while the editor is setting a voice apart with the model.</string>
     <string name="voice_delete_title">Delete the voice model?</string>
-    <string name="voice_delete_text">%1$s are freed. Voices already set apart stay in your projects; to set new ones apart, import the model again.</string>
-    <string name="voice_model_summary">By %1$s. The voice and the rest of any sound, set apart. Licence: %2$s.</string>
-    <string name="voice_kept_title">Voices set apart</string>
-    <string name="voice_kept_delete">Delete every voice set apart</string>
+    <string name="voice_delete_text">%1$s are freed. What was split already stays in your projects; to split again, import the model again.</string>
+    <string name="voice_kept_title">Sounds split</string>
+    <string name="voice_kept_delete">Delete every split</string>
     <plurals name="voice_kept_summary">
         <item quantity="one">%1$d file, %2$s</item>
         <item quantity="other">%1$d files, %2$s</item>
     </plurals>
-    <string name="voice_kept_delete_title">Delete every voice set apart?</string>
+    <string name="voice_kept_delete_title">Delete every split?</string>
     <plurals name="voice_kept_delete_text">
-        <item quantity="one">%1$d file, %2$s, is freed. Clips that use it go back to their file\'s own sound; it can be done again at any time.</item>
-        <item quantity="other">%1$d files, %2$s, are freed. Clips that use them go back to their file\'s own sound; any file can be done again at any time.</item>
+        <item quantity="one">%1$d file, %2$s, is freed. Clips that use it go back to their file\'s own sound, and its parts laid as tracks go silent; it can be done again at any time.</item>
+        <item quantity="other">%1$d files, %2$s, are freed. Clips that use them go back to their file\'s own sound, and their parts laid as tracks go silent; any file can be done again at any time.</item>
     </plurals>
     <string name="voice_kept_delete_confirm">Delete</string>
+    <string name="stem_dialogue">Dialogue</string>
+    <string name="stem_music">Music</string>
+    <string name="stem_effects">Effects</string>
+    <string name="stem_singing">Singing</string>
+    <string name="stem_piano">Piano</string>
+    <string name="stem_drums">Drums</string>
+    <string name="stem_bass">Bass</string>
+    <string name="stem_other">Other instruments</string>
+    <string name="stems_tracks_title">Every part on its own track</string>
+    <string name="stems_tracks_text">Lays the parts you pick on the video as sounds of their own, in step with the clips, and silences the clips. Each one can then be moved, cut, levelled or given effects like any sound.</string>
+    <string name="stems_depth_scene">Dialogue, music, effects</string>
+    <string name="stems_depth_instruments">Every instrument</string>
+    <string name="stems_picked">Picked</string>
+    <string name="stems_not_picked">Not picked</string>
+    <string name="stems_kept">Split already</string>
+    <plurals name="stems_place">
+        <item quantity="one">Lay %1$d track on the video</item>
+        <item quantity="other">Lay %1$d tracks on the video</item>
+    </plurals>
+    <plurals name="stems_placed">
+        <item quantity="one">%1$d track laid on the video, for %2$d clip.</item>
+        <item quantity="other">%1$d tracks laid on the video, for %2$d clips.</item>
+    </plurals>
+    <plurals name="stems_skipped">
+        <item quantity="one">%1$d clip kept its own sound: played backwards or on a speed curve, it cannot be followed by a track.</item>
+        <item quantity="other">%1$d clips kept their own sound: played backwards or on a speed curve, they cannot be followed by a track.</item>
+    </plurals>
+    <string name="stems_needs_instruments">Splitting the music into its instruments needs Spleeter\'s five stems, set up once in Smart features.</string>
+    <string name="stems_step_loading_instruments">Loading the instruments\' model</string>
+    <string name="stems_step_instruments">Listening for each instrument, %1$d%%</string>
+    <string name="stems_problem_instruments_model">The instruments\' model is not ready. Set it up in Smart features.</string>
+    <string name="stems_problem_no_tracks">No clip here can get tracks: played backwards or on a speed curve, a clip\'s sound cannot be followed.</string>
+    <string name="stems_showcase">One sound, every part of it: the dialogue, the music and the effects, then the music\'s singing, piano, drums, bass and the rest. All on the phone.</string>
+    <string name="stems_scene_section">Dialogue, music and effects</string>
+    <string name="stems_scene_intro">Bandit v2 finds the three in any sound: what the voice levels, the dub and every track need.</string>
+    <string name="stems_instruments_section">The music\'s instruments</string>
+    <string name="stems_instruments_intro">Spleeter\'s five stems split the music Bandit finds into singing, piano, drums, bass and the rest. Only needed for those tracks.</string>
+    <string name="stems_instruments_model_title">Instruments\' model, %1$s</string>
+    <string name="stems_step_download_bandit">One file, %1$s, from FFmpeg GUI\'s own releases on GitHub: the authors\' model, converted to ONNX by this project, with its licence (CC BY-SA 4.0) and the notice of the changes. It opens in your browser.</string>
+    <string name="stems_step_download_spleeter">One file, %1$s, from FFmpeg GUI\'s own releases on GitHub: Deezer\'s model, converted to ONNX by this project, with its licence and the notice of the conversion. It opens in your browser.</string>
+    <string name="stems_problem_not_bandit">That is not Bandit\'s file. Pick the downloaded file: %1$s.</string>
+    <string name="stems_problem_not_spleeter">That is not the instruments\' model. Pick the downloaded file: %1$s.</string>
+    <string name="stems_instruments_delete_title">Delete the instruments\' model?</string>
+    <string name="stems_instruments_delete_text">%1$s are freed. Instruments already split stay in your projects; to split new ones, import the model again.</string>
+    <string name="stems_bandit_on_its_way">Its file is being built and checked, twice, before it is published: it comes with a coming update of the app. Until then the voice cannot be set apart.</string>
+    <string name="stems_bandit_release">Where it will be published</string>
+    <string name="stems_bandit_summary">By %1$s. Dialogue, music and effects of any sound. Licence of the weights: %2$s (the code: Apache 2.0).</string>
+    <string name="stems_spleeter_summary">By %1$s. The singing, piano, drums, bass and the rest of a song. Licence: %2$s.</string>
+    <string name="about_licence_bandit">Bandit v2, by Karn N. Watcharasupat, Chih-Wei Wu and Iroro Orife (the model that splits dialogue, music and effects, downloaded by you), converted to ONNX by FFmpeg GUI</string>
+    <string name="about_licence_bandit_legal">Bandit v2\'s weights: the licence</string>
+    <string name="about_licence_ours_cc_by_sa">Creative Commons Attribution-ShareAlike 4.0, with the attribution and the changes</string>
+    <string name="about_licence_cc_by_sa">Creative Commons Attribution-ShareAlike 4.0 International, the legal code</string>
     <string name="work_model_voice_title">Voice model, %1$s</string>
     <string name="work_voice_title">Setting the voice apart in %1$s</string>
     <string name="work_voice_extracting">Taking the sound out</string>
@@ -2635,6 +2690,11 @@
     <string name="dub_done_took">%1$s of speech, made in %2$s.</string>
     <string name="dub_voice_piper_hint">A Piper voice: quick, a few minutes for a whole video.</string>
     <string name="dub_voice_kokoro_hint">A Kokoro voice: richer, but slow on a phone (several times the length of the video). Piper voices are much quicker.</string>
+    <string name="dub_how">How it sounds</string>
+    <string name="dub_language_found">Found in the subtitles</string>
+    <string name="dub_sample_of">Hear %1$s</string>
+    <string name="dub_kind_piper">Quick, Piper</string>
+    <string name="dub_kind_kokoro">Natural, Kokoro</string>
     <string name="piper_section">Piper voices</string>
     <string name="piper_intro">Other voices to dub with: Piper\'s (VITS), many times quicker than Kokoro. There are dozens in many languages, and any Piper voice you train yourself can be imported too.</string>
     <string name="piper_none">No voice yet: pick one from the list. They dub many times faster than Kokoro.</string>
@@ -2728,6 +2788,9 @@
     <string name="autodub_dub_text">%1$s says every line where its subtitle is.</string>
     <string name="autodub_start">Dub into %1$s</string>
     <string name="autodub_hint">Each step can be undone on its own. You can leave the app meanwhile.</string>
+    <string name="autodub_plan">What it will do</string>
+    <string name="autodub_plan_ready">Everything it needs is here: one tap does all of it.</string>
+    <string name="autodub_from">Heard in %1$s</string>
     <string name="autodub_doing_transcribe">Listening to the video</string>
     <string name="autodub_doing_translate">Translating</string>
     <string name="autodub_doing_separate">Setting the voice apart</string>
@@ -2761,6 +2824,8 @@
     <string name="erase_title">What should go</string>
     <string name="erase_brush_add">Erase</string>
     <string name="erase_brush_remove">Keep</string>
+    <string name="erase_apply">Erase what is painted</string>
+    <string name="erase_model_label">Model</string>
     <string name="erase_hint_magic_add">Tap or scribble on what should go: the whole of it is found.</string>
     <string name="erase_hint_magic_remove">Tap what should stay: it is left out.</string>
     <string name="erase_hint_precise_add">Paint over what should go.</string>
@@ -2837,7 +2902,7 @@
     <string name="smart_tag_translate">Subtitles in another language</string>
     <string name="smart_tag_cutout">The subject lifted off any picture</string>
     <string name="smart_tag_erase">Paint over it, and it is gone</string>
-    <string name="smart_tag_voice">The voice apart from the music</string>
+    <string name="smart_tag_voice">Dialogue, music, effects, instruments</string>
     <string name="smart_tag_dub">A new voice, said over the video</string>
     <string name="smart_tag_about">Where each model comes from, and its licence</string>
     <string name="smart_about_models">The models</string>

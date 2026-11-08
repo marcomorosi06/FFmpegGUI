@@ -30,6 +30,12 @@ enum class OutputFormat(
     /** Shapes traced from the picture (see core.vector.VectorTracer): FFmpeg writes a PNG, then it is traced. */
     SVG("svg", FormatCategory.IMAGE),
 
+    /** The picture as ASCII art (see core.textart): FFmpeg writes a PNG, the text-art engine writes the text. */
+    ASCII("txt", FormatCategory.IMAGE),
+
+    /** The picture as ANSI art, characters with their colours (see core.textart), made as ASCII is. */
+    ANSI("ans", FormatCategory.IMAGE),
+
     /** What is said in the file, written down by the speech model (no FFmpeg involved). */
     TXT("txt", FormatCategory.TEXT),
 
@@ -62,11 +68,15 @@ enum class OutputFormat(
      * and the platform's encoder turns it into this format (WEBP).
      */
     val needsPlatformEncoder: Boolean
-        get() = this == WEBP || this == SVG
+        get() = this == WEBP || this == SVG || isTextArt
+
+    /** True for a picture written as text (ASCII or ANSI art), in an editor of its own. */
+    val isTextArt: Boolean
+        get() = this == ASCII || this == ANSI
 
     /** True when a picture file of this format can keep transparent parts. */
     val holdsTransparency: Boolean
-        get() = this == PNG || this == WEBP || this == TIFF || this == SVG
+        get() = this == PNG || this == WEBP || this == TIFF || this == SVG || isTextArt
 
     /** True when the picture is compressed with loss, so it has a quality. */
     val hasImageQuality: Boolean

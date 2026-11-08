@@ -11,7 +11,7 @@ import com.cuscus.ffmpeggui.erase.EraseModel
 import com.cuscus.ffmpeggui.erase.EraseVariant
 import com.cuscus.ffmpeggui.speech.SpeechModel
 import com.cuscus.ffmpeggui.speech.SpeechVariant
-import com.cuscus.ffmpeggui.voice.VoiceModel
+import com.cuscus.ffmpeggui.voice.StemModels
 import java.io.File
 
 /**
@@ -44,7 +44,9 @@ object MarkingSweep {
                 CutoutVariant.entries.map { CutoutModel.of(it).folder } + of(RefineModel.FILES) + "refine",
                 CutoutVariant.entries.map { CutoutModel.of(it).prefs } + RefineModel.FILES.prefs),
             Kind(R.string.erase_section, EraseVariant.entries.flatMap { of(EraseModel.of(it)) } + "erase", EraseVariant.entries.map { EraseModel.of(it).prefs }),
-            Kind(R.string.voice_section, of(VoiceModel.FILES) + "voice", listOf(VoiceModel.FILES.prefs)),
+            // Bandit and Spleeter's five stems under "stems"; "voice" held Spleeter's two stems (retired).
+            Kind(R.string.voice_section, of(StemModels.SCENE, StemModels.INSTRUMENTS) + "stems" + "voice",
+                listOf(StemModels.SCENE.prefs, StemModels.INSTRUMENTS.prefs, "voice_model")),
             // DubModelStore and PiperVoiceStore: Kokoro, the Piper voices, eSpeak NG's data, under "dub"
             // (the dubs made are in "dubs": they stay). DubModelStore.PREFS.
             Kind(R.string.dub_section, listOf("dub"), listOf("dub_model")),

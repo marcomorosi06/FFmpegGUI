@@ -16,6 +16,8 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
@@ -27,6 +29,8 @@ import com.cuscus.ffmpeggui.onboarding.rememberLoop
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.hypot
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /*
@@ -35,20 +39,25 @@ import kotlin.math.sin
  * animations are off), as the smart features' are. Each says at a glance what
  * its formats make: a film strip rolling by, a ball bouncing
  * in onion-skin frames, sound bars with notes rising, a landscape focused and
- * shot with a flash, words typed out of a voice, a command typed and run.
+ * shot with a flash, words typed out of a voice (or, for a picture, the
+ * landscape turned into characters), a command typed and run.
  *
  * Every loop is read only while drawing: the films move without recomposing.
  */
 
-/** The film of [category], filling what it is given. */
+/**
+ * The film of [category], filling what it is given. With [pictures] the Text
+ * section holds only ASCII and ANSI art (a picture was opened), and its film
+ * shows a picture becoming characters instead of a voice becoming words.
+ */
 @Composable
-internal fun CategoryShowcase(category: FormatCategory, modifier: Modifier = Modifier) {
+internal fun CategoryShowcase(category: FormatCategory, modifier: Modifier = Modifier, pictures: Boolean = false) {
     when (category) {
         FormatCategory.VIDEO -> VideoShowcase(modifier)
         FormatCategory.ANIMATION -> AnimationShowcase(modifier)
         FormatCategory.AUDIO -> AudioShowcase(modifier)
         FormatCategory.IMAGE -> ImageShowcase(modifier)
-        FormatCategory.TEXT -> TextShowcase(modifier)
+        FormatCategory.TEXT -> if (pictures) TextArtShowcase(modifier) else TextShowcase(modifier)
         FormatCategory.CUSTOM -> CommandShowcase(modifier)
     }
 }
@@ -312,6 +321,143 @@ private fun TextShowcase(modifier: Modifier) {
             )
             if (writing) {
                 drawRect(typing.copy(alpha = fade), Offset(x + full * typed + lineHeight * 0.4f, y - lineHeight * 0.3f), Size(lineHeight * 0.3f, lineHeight * 1.6f))
+            }
+        }
+    }
+}
+
+// -- Text art (a picture written in characters) ---------------------------------------------------
+
+/** The ramp the art film writes with, from empty to full. */
+private const val ART_RAMP = " .:-=+*#%@"
+
+/** Where a cell of the art film falls in its landscape. */
+private enum class ArtPart { SKY, HALO, SUN, FAR, NEAR }
+
+/**
+ * The image film's landscape, read through a scan line: behind it the picture
+ * becomes a grid of characters on a terminal, picked by how light each cell is;
+ * at the line the characters are still being decided and flicker. Then a wave
+ * colours them as ANSI art, they rest, and the line sweeps back to the picture.
+ */
+@Composable
+private fun TextArtShowcase(modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val loop = rememberLoop(5_200, "formatTextArt", still = 0.75f)
+    val measurer = rememberTextMeasurer()
+    // The picture, the same as the image film's.
+    val sky = scheme.tertiaryContainer
+    val haze = scheme.primaryContainer
+    val sun = scheme.tertiary
+    val far = scheme.secondary
+    val near = scheme.primary
+    // The terminal it is written on: dark, as terminals are, tinted by the theme.
+    val back = lerp(Color(0xFF0E0E13), scheme.primary, 0.1f)
+    val ink = lerp(Color(0xFFE9E7EF), scheme.primary, 0.12f)
+    val scan = lerp(Color.White, scheme.primary, 0.4f)
+    // The ANSI colours it gets: a terminal's own (blue sky, yellow sun, green hills),
+    // leaning a little towards the theme so they sit with the rest of the picker.
+    val ansi = mapOf(
+        ArtPart.SKY to Color(0xFF5F87FF),
+        ArtPart.HALO to Color(0xFFFFD75F),
+        ArtPart.SUN to Color(0xFF5F3700),
+        ArtPart.FAR to Color(0xFF00AF87),
+        ArtPart.NEAR to Color(0xFF87D75F),
+    ).mapValues { (_, color) -> lerp(color, scheme.primary, 0.15f) }
+    val sunBack = lerp(Color(0xFFFFD700), scheme.primary, 0.15f)
+    val style = remember { TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 10.sp) }
+    val glyphs: List<TextLayoutResult> = remember(style) { ART_RAMP.map { measurer.measure(it.toString(), style) } }
+    Canvas(modifier = modifier) {
+        val t = loop.value
+        val w = size.width
+        val h = size.height
+        val cellW = glyphs.last().size.width.toFloat().coerceAtLeast(1f)
+        val cellH = glyphs.last().size.height.toFloat().coerceAtLeast(1f) * 0.86f
+        val columns = (w / cellW).toInt().coerceAtLeast(1)
+        val rows = (h / cellH).toInt().coerceAtLeast(1)
+        val left = (w - columns * cellW) / 2f
+        val top = (h - rows * cellH) / 2f
+        // 0.05..0.42 the line writes the picture, 0.46..0.74 the colour wave,
+        // 0.86..0.98 the line sweeps back and the picture returns.
+        val wipe = w * (ease(t, 0.05f, 0.42f) - ease(t, 0.86f, 0.98f))
+        val sunAt = Offset(w * 0.72f, h * 0.34f)
+        val sunR = h * 0.14f
+        val farTop = { x: Float -> h * 0.62f - h * 0.16f * sin((x / w * 1.3f + 0.2f) * PI).toFloat() }
+        val nearTop = { x: Float -> h * 0.76f - h * 0.14f * sin((x / w * 2.1f + 0.65f) * PI).toFloat() }
+
+        // The picture, where the line has not been yet.
+        clipRect(left = wipe) {
+            drawRect(Brush.verticalGradient(listOf(sky, haze)))
+            drawCircle(sun, radius = sunR, center = sunAt)
+            drawHill(far, h * 0.62f, h * 0.16f, 1.3f, 0.2f)
+            drawHill(near, h * 0.76f, h * 0.14f, 2.1f, 0.65f)
+        }
+        if (wipe <= 0f) return@Canvas
+
+        // The art, where it has.
+        drawRect(back, size = Size(wipe, h))
+        val tick = (t * 48f).toInt()
+        for (j in 0 until rows) {
+            for (i in 0 until columns) {
+                val x = left + i * cellW
+                val cx = x + cellW / 2f
+                if (cx > wipe) break
+                val cy = top + j * cellH + cellH / 2f
+                val toSun = hypot(cx - sunAt.x, cy - sunAt.y)
+                val part = when {
+                    cy >= nearTop(cx) -> ArtPart.NEAR
+                    cy >= farTop(cx) -> ArtPart.FAR
+                    toSun <= sunR -> ArtPart.SUN
+                    toSun <= sunR * 1.6f -> ArtPart.HALO
+                    else -> ArtPart.SKY
+                }
+                // A little grain, so the hills read as grass and the sky as air.
+                val grain = 0.09f * sin(i * 1.7f + j * 2.3f) + 0.05f * sin(i * 0.53f - j * 1.9f)
+                val tone = when (part) {
+                    ArtPart.SKY -> 0.04f + 0.24f * (cy / h) + grain * 0.6f
+                    ArtPart.HALO -> 0.62f - 0.3f * ((toSun - sunR) / (sunR * 0.6f)) + grain * 0.3f
+                    ArtPart.SUN -> 0.96f
+                    ArtPart.FAR -> 0.48f + grain
+                    ArtPart.NEAR -> 0.74f + grain
+                }.coerceIn(0f, 1f)
+                // Next to a moving line the characters are still being decided.
+                val edge = wipe < w && wipe - cx < cellW * 2.5f
+                var index = (tone * (ART_RAMP.length - 1)).roundToInt()
+                if (edge) index = 1 + (i * 73 + j * 151 + tick * 37).mod(ART_RAMP.length - 1)
+                // The sun's cells shimmer while the art rests.
+                if (part == ArtPart.SUN && !edge && ((i + j + tick / 6) % 5 == 0)) index = ART_RAMP.length - 2
+                if (index == 0) continue
+                val color = when {
+                    edge -> scan
+                    else -> {
+                        val wave = ease(t, 0.46f + 0.18f * (cx / w), 0.56f + 0.18f * (cx / w))
+                        lerp(ink, ansi.getValue(part), wave)
+                    }
+                }
+                if (part == ArtPart.SUN && !edge) {
+                    // The sun is written as ANSI is at its best: a coloured cell, a dark character on it.
+                    val lit = ease(t, 0.46f + 0.18f * (cx / w), 0.56f + 0.18f * (cx / w))
+                    drawRect(sunBack.copy(alpha = lit), Offset(x, cy - cellH / 2f), Size(cellW + 0.5f, cellH + 0.5f))
+                }
+                val glyph = glyphs[index]
+                drawText(glyph, color = color, topLeft = Offset(x, cy - glyph.size.height / 2f))
+            }
+        }
+
+        // The scan line, with a soft glow over the characters it has just written.
+        if (wipe < w) {
+            val glowWidth = cellW * 4f
+            drawRect(
+                Brush.horizontalGradient(listOf(Color.Transparent, scan.copy(alpha = 0.35f)), startX = wipe - glowWidth, endX = wipe),
+                topLeft = Offset(wipe - glowWidth, 0f),
+                size = Size(glowWidth, h),
+            )
+            drawLine(scan, Offset(wipe, 0f), Offset(wipe, h), strokeWidth = cellW * 0.35f, cap = StrokeCap.Round)
+        } else {
+            // Written: a caret blinks after the last line, as a terminal waits.
+            if ((t * 12f).toInt() % 2 == 0) {
+                val lastX = left + (columns - 1) * cellW
+                drawRect(scan, Offset(lastX, top + (rows - 1) * cellH + cellH * 0.1f), Size(cellW * 0.8f, cellH * 0.8f))
             }
         }
     }

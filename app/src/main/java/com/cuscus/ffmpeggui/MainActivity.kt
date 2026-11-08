@@ -273,6 +273,8 @@ class MainActivity : ComponentActivity() {
                     val voiceModel by container.smartFeatures.voiceState.collectAsState()
                     val voiceStatus by vm.voice.collectAsState()
                     val voiceStems by vm.voiceStems.collectAsState()
+                    val stemTracks by vm.stemTracks.collectAsState()
+                    val instrumentsModel by container.smartFeatures.instrumentsState.collectAsState()
                     // Dubbing in the subtitles' language: its model and the run.
                     val dubModel by container.smartFeatures.dubState.collectAsState()
                     val dubStatus by vm.dub.collectAsState()
@@ -285,6 +287,9 @@ class MainActivity : ComponentActivity() {
                         modelReady = voiceModel is SpeechModelStore.State.Ready,
                         status = voiceStatus,
                         stems = voiceStems,
+                        instrumentsReady = instrumentsModel is SpeechModelStore.State.Ready,
+                        tracks = stemTracks,
+                        onPlaceTracks = vm::placeStemTracks,
                         onSeparate = vm::separateVoice,
                         onStop = vm::stopVoiceSeparation,
                         onDismissProblem = vm::dismissVoiceProblem,
@@ -387,9 +392,12 @@ class MainActivity : ComponentActivity() {
                     val retiredModels by container.smartFeatures.retiredModels.collectAsState()
                     com.cuscus.ffmpeggui.cutout.RetiredModelsDialog(
                         removed = retiredModels,
-                        onSetUp = {
+                        onSetUp = { area ->
                             container.smartFeatures.acknowledgeRetiredModels()
-                            com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.CUTOUT
+                            com.cuscus.ffmpeggui.settings.SmartPageRequest.next = when (area) {
+                                com.cuscus.ffmpeggui.cutout.RetiredModels.Area.CUTOUT -> com.cuscus.ffmpeggui.settings.SmartPage.CUTOUT
+                                com.cuscus.ffmpeggui.cutout.RetiredModels.Area.VOICE -> com.cuscus.ffmpeggui.settings.SmartPage.VOICE
+                            }
                             navController.navigate(Screen.settingsCategory(SettingsCategory.SMART))
                         },
                         onDismiss = container.smartFeatures::acknowledgeRetiredModels,
@@ -552,6 +560,19 @@ class MainActivity : ComponentActivity() {
                         }
 
                         composable(Screen.FormatPicker.route) {
+                            // A video's sound listened to: a recording made muted has a track of silence.
+                            val listenContext = androidx.compose.ui.platform.LocalContext.current
+                            val audible by produceState<Boolean?>(initialValue = null, inputUri, mediaInfo) {
+                                val uri = inputUri
+                                val info = mediaInfo
+                                value = if (uri == null || info == null || !info.isVideo || !info.hasAudio) {
+                                    null
+                                } else {
+                                    withContext(Dispatchers.IO) {
+                                        kotlinx.coroutines.runInterruptible { com.cuscus.ffmpeggui.preview.soundIsAudible(listenContext, uri) }
+                                    }
+                                }
+                            }
                             FormatPickerScreen(
                                 fileName = inputFileName,
                                 mediaInfo = mediaInfo,
@@ -582,6 +603,7 @@ class MainActivity : ComponentActivity() {
                                 onBack = { navController.popBackStack() },
                                 transcriptReady = speechModel is SpeechModelStore.State.Ready,
                                 onOpenSmartFeatures = { com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.SPEECH; navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
+                                audible = audible,
                             )
                         }
 
@@ -698,6 +720,28 @@ class MainActivity : ComponentActivity() {
                         composable(Screen.Config.route) {
                             val format = selectedFormat ?: run {
                                 navController.popBackStack()
+                                return@composable
+                            }
+                            if (format.isTextArt) {
+                                // A picture saved as text: an editor of its own.
+                                com.cuscus.ffmpeggui.textart.TextArtEditorScreen(
+                                    inputUri = inputUri,
+                                    format = format,
+                                    fileName = inputFileName,
+                                    sources = s.sources,
+                                    playingClips = s.playingClips,
+                                    imageEdit = s.imageEdit,
+                                    onImageEdit = vm::updateImageEdit,
+                                    wholeEffects = s.wholeEffects,
+                                    onUpdateEffects = vm::updateEffects,
+                                    glyphs = container.glyphAtlas,
+                                    canUndo = canUndo,
+                                    canRedo = canRedo,
+                                    onUndo = vm::undo,
+                                    onRedo = vm::redo,
+                                    onStart = startExport,
+                                    onBack = { navController.popBackStack() },
+                                )
                                 return@composable
                             }
                             if (format.isImage) {
@@ -852,6 +896,9 @@ class MainActivity : ComponentActivity() {
                                     separationNeeded = remember(s.playingClips, voiceStems, voiceStatus) { vm.autoDubNeedsSeparation() },
                                     canTranslate = { from, to -> translationModels.isNotEmpty() && vm.canTranslate(from, to) },
                                     onStart = vm::autoDub,
+                                    onSample = { speaker, speed ->
+                                        runCatching { container.smartFeatures.dubber.sample(speaker, speaker.sample, speed) }.getOrNull()
+                                    },
                                     onStop = vm::stopAutoDub,
                                     onDismiss = vm::dismissAutoDub,
                                     onOpenModels = { com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.DUB; navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
@@ -980,6 +1027,7 @@ class MainActivity : ComponentActivity() {
                                 val translatorLoaded by smart.translator.inMemory.collectAsState()
                                 val voiceLoaded by smart.voiceSeparator.inMemory.collectAsState()
                                 val voiceKept by smart.voiceSeparator.kept.collectAsState()
+                                val instrumentsModelState by smart.instrumentsStore.state.collectAsState()
                                 val dubLoaded by smart.dubber.inMemory.collectAsState()
                                 val piperVoicesHere by smart.piperStore.voices.collectAsState()
                                 val piperImporting by smart.piperStore.importing.collectAsState()
@@ -1056,6 +1104,11 @@ class MainActivity : ComponentActivity() {
                                             onDelete = smart::deleteVoiceModel,
                                             onUnload = smart.voiceSeparator::unload,
                                             onDeleteKept = smart.voiceSeparator::deleteAll,
+                                            instruments = instrumentsModelState,
+                                            onImportInstruments = smart.instrumentsStore::import,
+                                            onStopImportInstruments = smart.instrumentsStore::stop,
+                                            onVerifyInstruments = smart.instrumentsStore::verify,
+                                            onDeleteInstruments = smart::deleteInstrumentsModel,
                                         ),
                                         dub = DubFeatureUi(
                                             model = dubModel,

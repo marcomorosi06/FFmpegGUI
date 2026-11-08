@@ -21,12 +21,19 @@ Offline (always):
   4. No retired model's folder (RetiredModels.kt, deleted at start) is the
      folder of a model in use: a slip there would delete a user's model.
 
+  6. The stems (voice/StemModels.kt): Bandit v2 pins what scripts/bandit-onnx.lock
+     does, Spleeter 5 stems what scripts/spleeter-onnx.lock does, each from
+     this repository's release of its tag, with its licence and NOTICE bundled
+     (assets/licenses/bandit/, assets/licenses/spleeter/). A lock of zeros is
+     still waiting for its first build (run .github/workflows/models-onnx.yml
+     without publishing, then scripts/pin-stems.py).
+
   5. The AI marks (marking/MarkerModel.kt) pin what scripts/ai-markers.lock
      does, every value pinned (a lock of zeros is still being learned: see
      .github/workflows/ai-markers.yml), with their licences and NOTICE
      bundled (assets/licenses/ai-markers/).
 
-With --release-dir NAME=DIR (NAME edgetam, birefnet or markers; the folder an export
+With --release-dir NAME=DIR (NAME edgetam, birefnet, bandit, spleeter or markers; the folder an export
 script wrote, or a release downloaded): the files there are the pinned ones,
 and LICENSE, NOTICE, PROVENANCE and SHA256SUMS are there and agree; with the
 onnx package installed, each file carries the licence and notice inside it.
@@ -61,7 +68,7 @@ MODEL_FILES = [
     "cutout/CutoutModel.kt",
     "cutout/RefineModel.kt",
     "erase/EraseModel.kt",
-    "voice/VoiceModel.kt",
+    "voice/StemModels.kt",
     "dub/DubModel.kt",
     "speech/SpeechModel.kt",
     "marking/MarkerModel.kt",
@@ -219,6 +226,36 @@ def check_markers(lock):
             ok("AI marks %s %s %s" % (role, got[0], got[1][:12]))
 
 
+STEMS = (("bandit", "BANDIT", "BANDIT_RELEASE_TAG"), ("spleeter", "INSTRUMENTS_FILE", "INSTRUMENTS_RELEASE_TAG"))
+
+
+def check_stems(name, lock):
+    """A stem model of voice/StemModels.kt against its lock: name, SHA-256, size, release tag, download address."""
+    kotlin = dict((n, (v, t)) for n, v, t in STEMS)[name]
+    source = read(os.path.join(APP, "voice", "StemModels.kt"))
+    if unpinned(lock["file_sha256"]) or lock["file_bytes"] == "0":
+        problem("scripts/%s-onnx.lock is not pinned yet: run .github/workflows/models-onnx.yml (without publishing), "
+                "then scripts/pin-stems.py with what it built" % name)
+    tag = const(source, kotlin[1])
+    if tag != lock["release_tag"]:
+        problem("StemModels.%s is %s, scripts/%s-onnx.lock says %s" % (kotlin[1], tag, name, lock["release_tag"]))
+    else:
+        ok("%s release tag %s" % (name, tag))
+    block = kotlin_file_block(source, kotlin[0])
+    got = (field(block, "name"), field(block, "sha256"), number(block, "bytes"))
+    want = (lock["file"], lock["file_sha256"], int(lock["file_bytes"]))
+    if got != want:
+        problem("StemModels.%s is %s, the lock says %s" % (kotlin[0], got, want))
+    else:
+        ok("%s %s %s" % (name, got[0], got[1][:12]))
+    if "https://github.com/%s/releases/download/$" % REPOSITORY not in source:
+        problem("StemModels.kt does not download from this repository's releases")
+
+
+def stems_notice(name, lock):
+    return load_script("export-%s.py" % name).notice_of(lock)
+
+
 def markers_notice(lock):
     return load_script("export-ai-markers.py").notice_of(lock)
 
@@ -364,6 +401,8 @@ def check_record():
     for relative in MODEL_FILES:
         source = read(os.path.join(APP, relative))
         for digest in sorted(set(re.findall(r'"([0-9a-f]{64})"', source))):
+            if unpinned(digest):
+                continue
             count += 1
             if digest not in record:
                 problem("%s pins %s, which docs/MODELS.md does not record" % (relative, digest))
@@ -495,7 +534,11 @@ def check_online(locks):
                 ok("%s answers (%d)" % answered)
             else:
                 problem("%s of %s does not answer: %s (publish it: .github/workflows/models-onnx.yml)" % (" or ".join(names), lock["release_tag"], failure))
-        upstream = lock["repository"].replace("https://github.com/", "https://raw.githubusercontent.com/") + "/HEAD/" + lock["licence"]
+        if "licence" in lock:
+            upstream = lock["repository"].replace("https://github.com/", "https://raw.githubusercontent.com/") + "/HEAD/" + lock["licence"]
+        else:
+            # The weights' licence is not in the code's repository (Bandit v2: CC BY-SA 4.0 on Zenodo).
+            upstream = lock["licence_url"]
         try:
             _, body = fetch(upstream)
             if hashlib.sha256(body).hexdigest() != lock["licence_sha256"]:
@@ -515,14 +558,19 @@ def main():
     locks = {
         "edgetam": read_lock(os.path.join(ROOT, "scripts", "edgetam-onnx.lock")),
         "birefnet": read_lock(os.path.join(ROOT, "scripts", "birefnet-onnx.lock")),
+        "bandit": read_lock(os.path.join(ROOT, "scripts", "bandit-onnx.lock")),
+        "spleeter": read_lock(os.path.join(ROOT, "scripts", "spleeter-onnx.lock")),
     }
-    notices = {"edgetam": edgetam_notice(locks["edgetam"]), "birefnet": birefnet_notice(locks["birefnet"])}
+    notices = {"edgetam": edgetam_notice(locks["edgetam"]), "birefnet": birefnet_notice(locks["birefnet"]),
+               "bandit": stems_notice("bandit", locks["bandit"]), "spleeter": stems_notice("spleeter", locks["spleeter"])}
     markers = read_lock(os.path.join(ROOT, "scripts", "ai-markers.lock"))
     markers_text = markers_notice(markers)
 
     check_edgetam(locks["edgetam"])
     check_birefnet(locks["birefnet"])
     check_markers(markers)
+    for name, _, _ in STEMS:
+        check_stems(name, locks[name])
     for name in locks:
         check_bundled(name, locks[name], notices[name])
     check_markers_bundled(markers, markers_text)
@@ -534,7 +582,7 @@ def main():
             check_markers_release(folder, markers, markers_text)
             continue
         if name not in locks or not folder:
-            problem("--release-dir takes edgetam=DIR, birefnet=DIR or markers=DIR, not %s" % item)
+            problem("--release-dir takes edgetam=DIR, birefnet=DIR, bandit=DIR, spleeter=DIR or markers=DIR, not %s" % item)
             continue
         check_release(name, folder, locks[name], notices[name])
     if args.online:

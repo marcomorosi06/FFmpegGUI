@@ -18,6 +18,7 @@ import com.cuscus.ffmpeggui.core.output.OutputPlanner
 import com.cuscus.ffmpeggui.core.output.PartsArchive
 import com.cuscus.ffmpeggui.core.provenance.AiDisclosure
 import com.cuscus.ffmpeggui.core.provenance.AiSeal
+import com.cuscus.ffmpeggui.core.provenance.withAiNote
 import com.cuscus.ffmpeggui.core.provenance.Xmp
 import com.cuscus.ffmpeggui.core.provenance.aiDisclosure
 import com.cuscus.ffmpeggui.core.provenance.aiSources
@@ -67,6 +68,8 @@ class ConversionEngine(
     private val subtitleParser: SubtitleParser = SubtitleParser(),
     /** Makes the gain map of an Ultra HDR picture; without it the HDR look is not written. */
     private val hdrMaker: HdrPictureMaker? = null,
+    /** The font text art is chosen with; without it ASCII and ANSI art cannot be written. */
+    private val glyphs: GlyphAtlasSource? = null,
 ) {
 
     /**
@@ -216,19 +219,26 @@ class ConversionEngine(
             return when (result) {
                 ExecutionResult.Success -> {
                     if (intermediate != null) {
-                        val written = if (request.format == OutputFormat.SVG) {
-                            onEvent(ConversionEvent.LogLine("Tracing the picture into shapes"))
-                            traced(intermediate, prepared.plan.commandPath, request.image.trace)
-                        } else {
-                            imageRecoder?.recode(intermediate, prepared.plan.commandPath, request.format, request.image.output.quality) ?: false
+                        val written = when {
+                            request.format == OutputFormat.SVG -> {
+                                onEvent(ConversionEvent.LogLine("Tracing the picture into shapes"))
+                                traced(intermediate, prepared.plan.commandPath, request.image.trace)
+                            }
+                            request.format.isTextArt -> {
+                                onEvent(ConversionEvent.LogLine("Writing the picture as text"))
+                                textArt(intermediate, prepared.plan.commandPath, request)
+                            }
+                            else -> imageRecoder?.recode(intermediate, prepared.plan.commandPath, request.format, request.image.output.quality) ?: false
                         }
                         if (!written) return ConversionOutcome.Failure(FailureReason.ENCODING_FAILED, "no ${request.format.extension} encoder")
                     }
                     // FFmpeg writes no tags into a picture: they are added to the finished file
                     // (to the JPG of an Ultra HDR picture, before the gain map is joined to it).
                     val tagPath = hdrBase ?: prepared.plan.commandPath
-                    if (request.format.isImage && onePicture && job.mode == CommandMode.Generated && !request.metadata.isEmpty) {
-                        val tagged = pictureTagger?.write(tagPath, request.format, request.metadata) ?: false
+                    // A picture a model changed says so in its EXIF too, whatever the user's own tags.
+                    val pictureTags = request.metadata.withAiNote(request.aiDisclosure())
+                    if (request.format.isImage && !request.format.isTextArt && onePicture && job.mode == CommandMode.Generated && !pictureTags.isEmpty) {
+                        val tagged = pictureTagger?.write(tagPath, request.format, pictureTags) ?: false
                         if (!tagged) onEvent(ConversionEvent.LogLine("Tags not written: ${request.format.extension} cannot hold them here"))
                     }
                     // Last of all on each file: nothing after may drop the marks (the Ultra HDR
@@ -468,6 +478,26 @@ class ConversionEngine(
         val raster = imageRecoder?.read(pngPath) ?: return false
         return try {
             File(targetPath).writeText(VectorTracer.trace(raster, settings).toSvg(raster.width, raster.height))
+            true
+        } catch (e: IOException) {
+            false
+        }
+    }
+
+    /** The PNG at [pngPath] written as the ASCII or ANSI art [request] asks for, at [targetPath]. */
+    private fun textArt(pngPath: String, targetPath: String, request: ConversionRequest): Boolean {
+        val raster = imageRecoder?.read(pngPath) ?: return false
+        val atlas = glyphs?.atlas() ?: return false
+        val settings = request.image.textArt
+        val ansi = request.format == OutputFormat.ANSI
+        val cp437 = ansi && settings.layout.encoding == com.cuscus.ffmpeggui.core.textart.ArtEncoding.CP437
+        val art = com.cuscus.ffmpeggui.core.textart.TextArtLayout.compose(
+            com.cuscus.ffmpeggui.core.textart.TextArtRenderer.render(raster, settings, atlas, ansi),
+            settings.layout,
+            cp437,
+        )
+        return try {
+            File(targetPath).writeBytes(com.cuscus.ffmpeggui.core.textart.TextArtWriter.bytes(art, settings, ansi))
             true
         } catch (e: IOException) {
             false

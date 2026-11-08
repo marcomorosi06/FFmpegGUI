@@ -1,0 +1,37 @@
+# What scripts/export-bandit.py exports Bandit v2 from, and with what.
+# The ONNX file the app pins (app/.../voice/StemModels.kt, BANDIT) is made
+# from exactly these (see docs/MODELS.md, "Bandit v2: our ONNX file").
+
+# Bandit v2, by Karn N. Watcharasupat, Chih-Wei Wu and Iroro Orife. The code
+# is Apache 2.0 (its LICENSE, pinned below); the weights are CC BY-SA 4.0
+# (Zenodo record 12701995), whose legal code goes out with the file as its
+# LICENSE (SPDX's copy, pinned below).
+repository          https://github.com/kwatcharasupat/bandit-v2
+commit              d5563d9031e95fdaa3e5a73d5020b9a0df61adb6
+code_licence        LICENSE
+code_licence_sha256 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4
+licence_url         https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/CC-BY-SA-4.0.txt
+licence_sha256      cde7883b9050a1104f4ac19a1572aafd6e5d7323b68351aaf51fbf4beba54966
+
+# The multilingual checkpoint (every language of Divide and Remaster v3).
+# Zenodo gives its MD5; its SHA-256 is learned by the first run of
+# .github/workflows/models-onnx.yml (zeros until then: see scripts/pin-stems.py).
+checkpoint          checkpoint-multi.ckpt
+checkpoint_url      https://zenodo.org/records/12701995/files/checkpoint-multi.ckpt?download=1
+checkpoint_md5      fea2868787551b0cff36cfcf7c3622a3
+checkpoint_sha256   0000000000000000000000000000000000000000000000000000000000000000
+
+file                bandit-v2-multi.onnx
+opset               17
+
+# What it comes out as, byte for byte: the SHA-256 and size the app pins
+# (scripts/check-model-pins.py checks that the two agree), and the release of
+# this repository that serves it. Zeros until the first run of the workflow
+# (scripts/pin-stems.py writes them): until then the app cannot import it.
+file_sha256         0000000000000000000000000000000000000000000000000000000000000000
+file_bytes          0
+release_tag         bandit-onnx-1
+
+# The tools that write it: the same as the other models' (Python 3.13, CPU
+# only), installed with --require-hashes from scripts/model-export-requirements.txt.
+python              3.13

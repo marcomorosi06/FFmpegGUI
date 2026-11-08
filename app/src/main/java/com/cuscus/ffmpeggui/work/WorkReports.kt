@@ -89,7 +89,7 @@ class WorkReports(context: Context, private val notifier: WorkNotifier) {
         val text = app.getString(
             when (status.step) {
                 is VoiceSeparator.Step.Extracting -> R.string.work_voice_extracting
-                VoiceSeparator.Step.Loading -> R.string.work_voice_loading
+                is VoiceSeparator.Step.Loading -> R.string.work_voice_loading
                 is VoiceSeparator.Step.Separating -> R.string.work_voice_separating
                 is VoiceSeparator.Step.Saving -> R.string.work_voice_saving
             },

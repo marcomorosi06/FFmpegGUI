@@ -60,6 +60,9 @@ class AiMarksTest {
         assertEquals(dubbed, AiSeal.disclosureFor("/out/output.flac", all))
         assertEquals(erased, AiSeal.disclosureFor("/out/output.WEBP", all))
         assertTrue(AiSeal.disclosureFor("/out/output.srt", all).isEmpty)
+        // Text art: a picture written as characters, made by no model.
+        assertTrue(AiSeal.disclosureFor("/out/output.ans", all).isEmpty)
+        assertTrue(AiSeal.disclosureFor("/out/output.txt", all).isEmpty)
         assertEquals(all, AiSeal.disclosureFor("/out/output.mkv", all))
     }
 
@@ -306,5 +309,20 @@ class AiMarksTest {
         assertNull(AiMarksReader.xmp("RIFF....".byteInputStream()))
         assertNull(AiMarksReader.xmp(picture("png", "plain.png").inputStream()))
         assertNull(AiMarksReader.xmp(ByteArray(0).inputStream()))
+    }
+
+    @Test
+    fun `a picture a model changed says so in its EXIF comment, before the user's own`() {
+        val none = com.cuscus.ffmpeggui.core.model.MetadataTags()
+        assertTrue(none.isEmpty)
+        val noted = none.withAiNote(AiDisclosure(pictures = true))
+        assertEquals(listOf(com.cuscus.ffmpeggui.core.model.CustomTag(PICTURE_AI_TAG, AiDisclosure.PICTURE_TEXT)), noted.custom)
+        // The user's comment stays, after the note; written twice, the note is not repeated.
+        val own = none.copy(custom = listOf(com.cuscus.ffmpeggui.core.model.CustomTag("UserComment", "Holiday")))
+        val both = own.withAiNote(AiDisclosure(pictures = true))
+        assertEquals("${AiDisclosure.PICTURE_TEXT}. Holiday", both.custom.single().value)
+        assertEquals(both, both.withAiNote(AiDisclosure(pictures = true)))
+        // A voice alone has nothing to say in a picture.
+        assertEquals(own, own.withAiNote(AiDisclosure(speech = true)))
     }
 }

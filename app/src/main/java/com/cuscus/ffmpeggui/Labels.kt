@@ -33,6 +33,8 @@ val OutputFormat.labelRes: Int
         OutputFormat.BMP -> R.string.format_bmp
         OutputFormat.TIFF -> R.string.format_tiff
         OutputFormat.SVG -> R.string.format_svg
+        OutputFormat.ASCII -> R.string.format_ascii
+        OutputFormat.ANSI -> R.string.format_ansi
         OutputFormat.TXT -> R.string.format_txt
         OutputFormat.SRT -> R.string.format_srt
         OutputFormat.CUSTOM -> R.string.format_custom

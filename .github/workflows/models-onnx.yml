@@ -3,10 +3,12 @@ name: AI model files (ONNX)
 # The ONNX files this project converts and serves itself (docs/MODELS.md):
 # EdgeTAM (Meta, Apache 2.0) for the cut-out correction and the photo editor's
 # "lift the subject", BiRefNet-lite (Zheng Peng et al., MIT) for the finest
-# cut-out. For each:
+# cut-out, Bandit v2 (Watcharasupat, Wu, Orife; weights CC BY-SA 4.0) for the
+# split into dialogue, music and effects, Spleeter 5 stems (Deezer, MIT) for
+# the music's instruments. For each:
 #
-#   1. build: scripts/export-edgetam.py / export-birefnet.py, from exactly what
-#      scripts/edgetam-onnx.lock / birefnet-onnx.lock pin (upstream commit,
+#   1. build: scripts/export-<model>.py, from exactly what
+#      scripts/<model>-onnx.lock pins (upstream commit,
 #      weights, licence: every hash checked), with the tools pinned in
 #      scripts/model-export-requirements.txt (--require-hashes), twice and
 #      independently: on two runner images, the second on two CPU cores only.
@@ -54,6 +56,8 @@ jobs:
         model:
           - edgetam
           - birefnet
+          - bandit
+          - spleeter
         runner:
           - ubuntu-24.04
           - ubuntu-26.04
@@ -111,8 +115,28 @@ jobs:
           mkdir -p "$RUNNER_TEMP/upstream"
           git clone --quiet --filter=blob:none --no-checkout "$REPOSITORY" "$RUNNER_TEMP/upstream/code"
           git -C "$RUNNER_TEMP/upstream/code" -c advice.detachedHead=false checkout --quiet "$COMMIT"
-          if [ "$MODEL" = birefnet ]; then
-            curl --fail --location --silent --show-error --retry 3 -o "$RUNNER_TEMP/upstream/weights.pth" "$WEIGHTS_URL"
+          get() { curl --fail --location --silent --show-error --retry 3 -o "$1" "$2"; }
+          if [ "$MODEL" = bandit ]; then
+            # The weights from Zenodo (MD5 there; the SHA-256 is checked, or learned, by the export).
+            lock=scripts/bandit-onnx.lock
+            value() { awk -v k="$1" '$1 == k { print $2 }' "$lock"; }
+            get "$RUNNER_TEMP/upstream/checkpoint.ckpt" "$(value checkpoint_url)"
+            echo "$(value checkpoint_md5)  $RUNNER_TEMP/upstream/checkpoint.ckpt" | md5sum --check
+            get "$RUNNER_TEMP/upstream/LICENSE-CC-BY-SA-4.0.txt" "$(value licence_url)"
+            echo "$(value licence_sha256)  $RUNNER_TEMP/upstream/LICENSE-CC-BY-SA-4.0.txt" | sha256sum --check
+          elif [ "$MODEL" = spleeter ]; then
+            lock=scripts/spleeter-onnx.lock
+            value() { awk -v k="$1" '$1 == k { print $2 }' "$lock"; }
+            for part in weights two_stems sherpa; do
+              get "$RUNNER_TEMP/upstream/$part.archive" "$(value ${part}_url)"
+              echo "$(value ${part}_sha256)  $RUNNER_TEMP/upstream/$part.archive" | sha256sum --check
+            done
+            mkdir -p "$RUNNER_TEMP/upstream/five" "$RUNNER_TEMP/upstream/two" "$RUNNER_TEMP/upstream/sherpa"
+            tar xzf "$RUNNER_TEMP/upstream/weights.archive" -C "$RUNNER_TEMP/upstream/five"
+            tar xzf "$RUNNER_TEMP/upstream/two_stems.archive" -C "$RUNNER_TEMP/upstream/two"
+            tar xjf "$RUNNER_TEMP/upstream/sherpa.archive" -C "$RUNNER_TEMP/upstream/sherpa" --strip-components=1
+          elif [ "$MODEL" = birefnet ]; then
+            get "$RUNNER_TEMP/upstream/weights.pth" "$WEIGHTS_URL"
             echo "$WEIGHTS_SHA256  $RUNNER_TEMP/upstream/weights.pth" | sha256sum --check
             # The photos the masks are checked on: EdgeTAM's own examples, at its pinned commit.
             edgetam_commit=$(awk '$1 == "commit" { print $2 }' scripts/edgetam-onnx.lock)
@@ -130,13 +154,16 @@ jobs:
           CPUS: ${{ matrix.cpus }}
         run: |
           out="$RUNNER_TEMP/out"
-          if [ "$MODEL" = edgetam ]; then
-            set -- scripts/export-edgetam.py --edgetam "$RUNNER_TEMP/upstream/code"
-          else
-            set -- scripts/export-birefnet.py --birefnet "$RUNNER_TEMP/upstream/code" --weights "$RUNNER_TEMP/upstream/weights.pth"
-          fi
+          up="$RUNNER_TEMP/upstream"
+          pictures=(--pictures "$PICTURES"/truck.jpg "$PICTURES"/groceries.jpg "$PICTURES"/cars.jpg)
+          case "$MODEL" in
+            edgetam) set -- scripts/export-edgetam.py --edgetam "$up/code" "${pictures[@]}" ;;
+            birefnet) set -- scripts/export-birefnet.py --birefnet "$up/code" --weights "$up/weights.pth" "${pictures[@]}" ;;
+            bandit) set -- scripts/export-bandit.py --bandit "$up/code" --checkpoint "$up/checkpoint.ckpt" --licence "$up/LICENSE-CC-BY-SA-4.0.txt" ;;
+            spleeter) set -- scripts/export-spleeter.py --checkpoint "$up/five" --two-stems "$up/two" --sherpa "$up/sherpa" --licence "$up/code/LICENSE" ;;
+          esac
           run() { if [ -n "$CPUS" ]; then taskset -c "$CPUS" "$@"; else "$@"; fi; }
-          run python -I "$@" --out "$out" --pictures "$PICTURES"/truck.jpg "$PICTURES"/groceries.jpg "$PICTURES"/cars.jpg
+          run python -I "$@" --out "$out"
           {
             echo "### ${MODEL} on ${{ matrix.runner }}${CPUS:+ (CPUs $CPUS)}"
             echo
@@ -144,7 +171,15 @@ jobs:
             cat "$out/SHA256SUMS"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          python -I scripts/check-model-pins.py --release-dir "$MODEL=$out"
+          # A lock still of zeros (Bandit v2 before its first build) has nothing
+          # to check the files against yet: this run is there to learn them
+          # (scripts/pin-stems.py), and nothing of it is published.
+          if grep -Eq '^file_sha256 +0{64}$' "scripts/${MODEL}-onnx.lock"; then
+            echo "::notice::scripts/${MODEL}-onnx.lock is not pinned yet: run scripts/pin-stems.py with this build's check.json and SHA256SUMS"
+            echo "**Not pinned yet**: \`python3 scripts/pin-stems.py ${MODEL} <this build's folder>\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            python -I scripts/check-model-pins.py --release-dir "$MODEL=$out"
+          fi
 
       - name: Upload the files
         if: always()
@@ -175,7 +210,7 @@ jobs:
       - name: Compare the two builds of each model
         run: |
           status=0
-          for model in edgetam birefnet; do
+          for model in edgetam birefnet bandit spleeter; do
             a="builds/${model}-ubuntu-24.04/SHA256SUMS"
             b="builds/${model}-ubuntu-26.04/SHA256SUMS"
             if cmp -s "$a" "$b"; then
@@ -227,9 +262,13 @@ jobs:
               *) echo "$1" ;;
             esac
           }
-          for model in edgetam birefnet; do
+          for model in edgetam birefnet bandit spleeter; do
             lock="scripts/${model}-onnx.lock"
             tag=$(awk '$1 == "release_tag" { print $2 }' "$lock")
+            if grep -Eq '^file_sha256 +0{64}$' "$lock"; then
+              echo "::warning::${lock} is not pinned yet: ${model} is not published (scripts/pin-stems.py first)"
+              continue
+            fi
             dir="builds/${model}-ubuntu-24.04"
             # What goes out: the ONNX files as they are, the files beside them as text files.
             stage="stage/${model}"
@@ -250,6 +289,8 @@ jobs:
                 case "$model" in
                   edgetam) echo "EdgeTAM by Meta (Apache License 2.0), converted to ONNX by FFmpeg GUI for its cut-out correction and its \"lift the subject\" gesture." ;;
                   birefnet) echo "BiRefNet-lite (general use) by Zheng Peng et al. (MIT License), converted to ONNX by FFmpeg GUI for its finest subject cut-out." ;;
+                  bandit) echo "Bandit v2 (multilingual) by Karn N. Watcharasupat, Chih-Wei Wu and Iroro Orife (weights CC BY-SA 4.0, code Apache License 2.0), converted to ONNX by FFmpeg GUI to split a video's sound into dialogue, music and effects. This file is licensed CC BY-SA 4.0, as its weights." ;;
+                  spleeter) echo "Spleeter 5 stems by Deezer (MIT License), converted to ONNX by FFmpeg GUI to split music into vocals, piano, drums, bass and the rest." ;;
                 esac
                 echo
                 echo "Made from the upstream code, weights and licence pinned in \`${lock}\` at ${GITHUB_SHA},"
