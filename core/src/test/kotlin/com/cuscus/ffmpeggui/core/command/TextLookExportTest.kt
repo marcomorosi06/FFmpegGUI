@@ -28,6 +28,35 @@ class TextLookExportTest {
     private val caption = TextOverlay(id = "t", text = "Hi", size = 0.05f)
 
     @Test
+    fun `a turned caption is drawn on a canvas about its anchor and laid back there`() {
+        val g = graph(caption.copy(x = 0.25f, y = 0.75f, rotationDegrees = 30f))
+        // A canvas twice the frame's size, see-through in the letters' colour, the anchor in its middle.
+        assertTrue(g, g.contains("format=rgba,lutrgb=r=255:g=255:b=255:a=0,pad=w=iw*2:h=ih*2:x=iw/2:y=ih/2:color=0xFFFFFF@0,drawtext="))
+        assertTrue(g, g.contains(":fontsize=h/2*0.0500:x='w/2-tw*0.2500':y='h/2-th*0.7500'"))
+        assertTrue(g, g.contains(",rotate=a=0.523599:c=none["))
+        assertTrue(g, g.contains("overlay=x='main_w*0.2500-overlay_w/2':y='main_h*0.7500-overlay_h/2':format=auto"))
+        // Not turned nor blended: straight on the frame, as before.
+        assertFalse(graph(caption.copy(rotationDegrees = 360f)), graph(caption.copy(rotationDegrees = 360f)).contains("pad=w=iw*2"))
+    }
+
+    @Test
+    fun `a blended caption is mixed as a blended picture is`() {
+        val g = graph(caption.copy(blend = com.cuscus.ffmpeggui.core.model.LayerBlend.MULTIPLY))
+        assertTrue(g, g.contains("split=4["))
+        assertTrue(g, g.contains("blend=all_mode=multiply"))
+        assertTrue(g, g.contains("alphaextract"))
+        // Upright: no turn.
+        assertFalse(g, g.contains("rotate="))
+    }
+
+    @Test
+    fun `turn and blend are kept with the project`() {
+        val turned = caption.copy(rotationDegrees = -12.5f, blend = com.cuscus.ffmpeggui.core.model.LayerBlend.SCREEN)
+        assertEquals(turned, ModelJson.textOverlay(ModelJson.write(turned)))
+        assertEquals(caption, ModelJson.textOverlay(ModelJson.write(caption)))
+    }
+
+    @Test
     fun `a plain caption has no outline, shadow or box`() {
         val g = graph(caption)
         assertFalse(g, g.contains("borderw") || g.contains("shadowx") || g.contains("box="))

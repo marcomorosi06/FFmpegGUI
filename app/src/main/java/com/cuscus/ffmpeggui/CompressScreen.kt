@@ -139,6 +139,8 @@ private val FIXED_SIZES = listOf(8L, 10L, 16L, 25L, 50L).map { it * 1_000_000L }
 internal fun CompressScreen(
     fileName: String,
     mediaInfo: MediaInfo?,
+    /** The file was picked before the screen opened (from the home): it counts from the start. */
+    pickedAlready: Boolean = false,
     onPick: (Uri) -> Unit,
     onStart: (OutputFormat, (ConversionSettings) -> ConversionSettings) -> Unit,
     onBack: () -> Unit,
@@ -147,7 +149,7 @@ internal fun CompressScreen(
     val motion = MaterialTheme.motionScheme
     val scheme = MaterialTheme.colorScheme
     // Only a file picked here counts (an editor's project may still be open behind).
-    var picked by rememberSaveable { mutableStateOf(false) }
+    var picked by rememberSaveable { mutableStateOf(pickedAlready) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             picked = true

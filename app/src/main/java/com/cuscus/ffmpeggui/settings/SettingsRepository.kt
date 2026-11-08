@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.CoroutineScope
@@ -80,6 +81,10 @@ class SettingsRepository(context: Context) {
             landscapeLayout = this[LANDSCAPE_LAYOUT]?.let { name -> LandscapeLayout.entries.firstOrNull { it.name == name } } ?: defaults.landscapeLayout,
             onboarded = this[ONBOARDED] ?: defaults.onboarded,
             keepAndroidOpenBanner = this[KEEP_ANDROID_OPEN] ?: defaults.keepAndroidOpenBanner,
+            liftMode = this[LIFT_MODE]?.let { name -> LiftMode.entries.firstOrNull { it.name == name } } ?: defaults.liftMode,
+            liftHoleTransparent = this[LIFT_HOLE_TRANSPARENT] ?: defaults.liftHoleTransparent,
+            liftHoleColor = this[LIFT_HOLE_COLOR] ?: defaults.liftHoleColor,
+            liftHoleOpaque = this[LIFT_HOLE_OPAQUE] ?: defaults.liftHoleOpaque,
         )
     }
 
@@ -100,6 +105,10 @@ class SettingsRepository(context: Context) {
         this[LANDSCAPE_LAYOUT] = settings.landscapeLayout.name
         this[ONBOARDED] = settings.onboarded
         this[KEEP_ANDROID_OPEN] = settings.keepAndroidOpenBanner
+        this[LIFT_MODE] = settings.liftMode.name
+        this[LIFT_HOLE_TRANSPARENT] = settings.liftHoleTransparent
+        this[LIFT_HOLE_COLOR] = settings.liftHoleColor
+        this[LIFT_HOLE_OPAQUE] = settings.liftHoleOpaque
     }
 
     private companion object {
@@ -119,5 +128,9 @@ class SettingsRepository(context: Context) {
         val LANDSCAPE_LAYOUT = stringPreferencesKey("landscape_layout")
         val ONBOARDED = booleanPreferencesKey("onboarded")
         val KEEP_ANDROID_OPEN = booleanPreferencesKey("keep_android_open_banner")
+        val LIFT_MODE = stringPreferencesKey("lift_mode")
+        val LIFT_HOLE_TRANSPARENT = booleanPreferencesKey("lift_hole_transparent")
+        val LIFT_HOLE_COLOR = longPreferencesKey("lift_hole_color")
+        val LIFT_HOLE_OPAQUE = longPreferencesKey("lift_hole_opaque")
     }
 }

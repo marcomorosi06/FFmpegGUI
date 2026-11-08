@@ -12,6 +12,21 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.graphics.shapes.RoundedPolygon
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -36,9 +51,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AddPhotoAlternate
-import androidx.compose.material.icons.rounded.Bookmarks
-import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,18 +76,15 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.cuscus.ffmpeggui.Checkerboard
 import com.cuscus.ffmpeggui.R
 import com.cuscus.ffmpeggui.core.model.ColorKey
 import com.cuscus.ffmpeggui.core.model.ColorSettings
@@ -127,25 +136,29 @@ internal fun com.cuscus.ffmpeggui.ImageOverlay.stickerColours(): FloatArray? =
     }
 
 /**
- * Opened by the editors' Sticker and Overlay buttons: the stickers saved, as
- * tiles on a checkerboard (a tap lays one, a long press offers to take it
- * away), and a large button to take a picture from the phone instead.
- * [pickLabel] says what that button takes ("a picture", "a picture or a video").
+ * Opened by the editors' Sticker and Overlay buttons: where what goes on top
+ * comes from. Two connected tiles take it from the phone (the gallery's photo
+ * picker, [onFromGallery], when there is one; any file, [onFromPhone]); under
+ * them the stickers saved, on soft tiles (a tap lays one). "Edit" puts them
+ * all in a gentle wobble, each with a button to take it away. [galleryHint]
+ * says what the gallery gives ("Photos and videos", "Photos").
  */
 @Composable
 internal fun StickerSheet(
     shelf: StickerShelf,
-    pickLabel: String,
+    galleryHint: String,
     onPick: (StickerLibrary.Sticker) -> Unit,
     onFromPhone: () -> Unit,
     onDismiss: () -> Unit,
+    onFromGallery: (() -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    // The sticker a long press has picked out, offered to be taken away.
-    var deleting by remember { mutableStateOf<String?>(null) }
+    var editing by remember { mutableStateOf(false) }
+    val empty = shelf.stickers.isEmpty()
+    LaunchedEffect(empty) { if (empty) editing = false }
     val close: (() -> Unit) -> Unit = { then ->
         scope.launch {
             sheetState.hide()
@@ -155,21 +168,47 @@ internal fun StickerSheet(
     }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = scheme.surfaceContainerLow) {
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(104.dp),
+            columns = GridCells.Adaptive(96.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 680.dp)
-                .padding(horizontal = 16.dp)
+                .heightIn(max = 720.dp)
+                .padding(horizontal = 20.dp)
                 .navigationBarsPadding(),
         ) {
-            item(span = { GridItemSpan(maxLineSpan) }) { ShelfHeader(count = shelf.stickers.size) }
             item(span = { GridItemSpan(maxLineSpan) }) {
-                FromPhoneButton(label = pickLabel) {
-                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                    close(onFromPhone)
-                }
+                Text(
+                    stringResource(R.string.stickers_sheet_add_title),
+                    style = MaterialTheme.typography.headlineSmallEmphasized,
+                    color = scheme.onSurface,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
+                )
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                SourceTiles(
+                    galleryHint = galleryHint,
+                    onGallery = onFromGallery?.let { gallery ->
+                        {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            close(gallery)
+                        }
+                    },
+                    onFiles = {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        close(onFromPhone)
+                    },
+                )
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                ShelfHeader(
+                    count = shelf.stickers.size,
+                    editing = editing,
+                    onEdit = {
+                        haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                        editing = !editing
+                    },
+                )
             }
             if (shelf.stickers.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { EmptyShelf() }
@@ -177,10 +216,10 @@ internal fun StickerSheet(
                 items(shelf.stickers, key = { it.id }) { sticker ->
                     StickerTile(
                         sticker = sticker,
-                        deleting = deleting == sticker.id,
+                        editing = editing,
                         onClick = {
-                            if (deleting != null) {
-                                deleting = null
+                            if (editing) {
+                                editing = false
                             } else {
                                 haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                 close { onPick(sticker) }
@@ -188,91 +227,137 @@ internal fun StickerSheet(
                         },
                         onLongClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            deleting = if (deleting == sticker.id) null else sticker.id
+                            editing = true
                         },
                         onDelete = {
                             haptics.performHapticFeedback(HapticFeedbackType.Reject)
                             shelf.onDelete(sticker.id)
-                            deleting = null
                         },
                         modifier = Modifier.animateItem(),
                     )
                 }
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text(
-                        stringResource(R.string.stickers_sheet_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = scheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    )
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) { Spacer(modifier = Modifier.height(16.dp)) }
+        }
+    }
+}
+
+/**
+ * The two ways in from the phone, side by side as one connected group: the
+ * outer corners round, the inner ones tight. Each badge morphs under the
+ * finger and the tile squishes.
+ */
+@Composable
+private fun SourceTiles(galleryHint: String, onGallery: (() -> Unit)?, onFiles: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+        if (onGallery != null) {
+            SourceTile(
+                title = stringResource(R.string.stickers_source_gallery),
+                hint = galleryHint,
+                icon = Icons.Rounded.PhotoLibrary,
+                from = MaterialShapes.Cookie9Sided,
+                to = MaterialShapes.Flower,
+                container = scheme.primaryContainer,
+                content = scheme.onPrimaryContainer,
+                badge = scheme.primary,
+                onBadge = scheme.onPrimary,
+                shape = RoundedCornerShape(topStart = 32.dp, bottomStart = 32.dp, topEnd = 10.dp, bottomEnd = 10.dp),
+                onClick = onGallery,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        SourceTile(
+            title = stringResource(R.string.stickers_source_files),
+            hint = stringResource(R.string.stickers_source_files_hint),
+            icon = Icons.Rounded.FolderOpen,
+            from = MaterialShapes.Clover4Leaf,
+            to = MaterialShapes.Cookie6Sided,
+            container = scheme.secondaryContainer,
+            content = scheme.onSecondaryContainer,
+            badge = scheme.secondary,
+            onBadge = scheme.onSecondary,
+            shape = if (onGallery != null) {
+                RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp, topEnd = 32.dp, bottomEnd = 32.dp)
+            } else {
+                RoundedCornerShape(32.dp)
+            },
+            onClick = onFiles,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun SourceTile(
+    title: String,
+    hint: String,
+    icon: ImageVector,
+    from: RoundedPolygon,
+    to: RoundedPolygon,
+    container: Color,
+    content: Color,
+    badge: Color,
+    onBadge: Color,
+    shape: Shape,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .springPress(interaction, pressedScale = 0.95f)
+            .clip(shape)
+            .background(container)
+            .clickable(interactionSource = interaction, indication = LocalIndication.current, role = Role.Button, onClick = onClick)
+            .padding(16.dp),
+    ) {
+        MorphingContainer(from = from, to = to, morphed = pressed, color = badge, modifier = Modifier.size(52.dp)) {
+            Icon(icon, contentDescription = null, tint = onBadge, modifier = Modifier.size(26.dp))
+        }
+        Spacer(modifier = Modifier.height(14.dp))
+        Text(title, style = MaterialTheme.typography.titleMediumEmphasized, color = content, maxLines = 1)
+        Text(hint, style = MaterialTheme.typography.bodySmall, color = content.copy(alpha = 0.8f), maxLines = 2)
+    }
+}
+
+/** "Your stickers", how many, and the switch into taking them away. */
+@Composable
+private fun ShelfHeader(count: Int, editing: Boolean, onEdit: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 14.dp)) {
+        Text(stringResource(R.string.stickers_sheet_title), style = MaterialTheme.typography.titleMediumEmphasized, color = scheme.onSurface)
+        if (count > 0) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                count.toString(),
+                style = MaterialTheme.typography.labelMedium,
+                color = scheme.onTertiaryContainer,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(scheme.tertiaryContainer)
+                    .padding(horizontal = 9.dp, vertical = 2.dp),
+            )
+        }
+        Spacer(modifier = Modifier.weight(1f))
+        if (count > 0) {
+            val label = stringResource(if (editing) R.string.stickers_edit_done else R.string.stickers_edit)
+            if (editing) {
+                Button(onClick = onEdit, shapes = ButtonDefaults.shapes()) { Text(label) }
+            } else {
+                FilledTonalButton(onClick = onEdit, shapes = ButtonDefaults.shapes()) {
+                    Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(label)
                 }
             }
-            item(span = { GridItemSpan(maxLineSpan) }) { Spacer(modifier = Modifier.height(12.dp)) }
         }
     }
 }
 
-/** The sheet's title on a gradient, with a badge that blooms when it opens. */
-@Composable
-private fun ShelfHeader(count: Int) {
-    val scheme = MaterialTheme.colorScheme
-    var shown by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { shown = true }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(32.dp))
-            .background(Brush.linearGradient(listOf(scheme.primaryContainer, scheme.tertiaryContainer)))
-            .padding(14.dp),
-    ) {
-        MorphingContainer(
-            from = MaterialShapes.Cookie9Sided,
-            to = MaterialShapes.Flower,
-            morphed = shown,
-            color = scheme.primary,
-            modifier = Modifier.size(56.dp),
-        ) {
-            Icon(Icons.Rounded.Bookmarks, contentDescription = null, tint = scheme.onPrimary, modifier = Modifier.size(28.dp))
-        }
-        Spacer(modifier = Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                stringResource(R.string.stickers_sheet_title),
-                style = MaterialTheme.typography.headlineSmallEmphasized,
-                color = scheme.onPrimaryContainer,
-            )
-            Text(
-                if (count == 0) stringResource(R.string.stickers_sheet_none) else pluralStringResource(R.plurals.stickers_count, count, count),
-                style = MaterialTheme.typography.bodyMedium,
-                color = scheme.onPrimaryContainer,
-            )
-        }
-    }
-}
-
-/** The large button to take a picture from the phone: it squishes under the finger. */
-@Composable
-private fun FromPhoneButton(label: String, onClick: () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    Button(
-        onClick = onClick,
-        interactionSource = interaction,
-        shapes = ButtonDefaults.shapes(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 28.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(80.dp)
-            .springPress(interaction, pressedScale = 0.96f),
-    ) {
-        Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(30.dp))
-        Spacer(modifier = Modifier.width(14.dp))
-        Text(label, style = MaterialTheme.typography.titleMediumEmphasized, maxLines = 1)
-    }
-}
-
-/** No sticker yet: how to make one. */
+/** No sticker yet: three shapes huddled round a hand, and how to make one. */
 @Composable
 private fun EmptyShelf() {
     val scheme = MaterialTheme.colorScheme
@@ -280,20 +365,40 @@ private fun EmptyShelf() {
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
-            .background(scheme.surfaceContainerHigh)
+            .clip(RoundedCornerShape(32.dp))
+            .background(scheme.surfaceContainer)
             .padding(horizontal = 20.dp, vertical = 24.dp),
     ) {
-        MorphingContainer(
-            from = MaterialShapes.Pill,
-            to = MaterialShapes.Cookie6Sided,
-            morphed = true,
-            color = scheme.secondaryContainer,
-            modifier = Modifier.size(64.dp),
-        ) {
-            Icon(Icons.Rounded.TouchApp, contentDescription = null, tint = scheme.onSecondaryContainer, modifier = Modifier.size(30.dp))
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(width = 132.dp, height = 84.dp)) {
+            val flower = remember { PolygonShape(MaterialShapes.Flower) }
+            val clover = remember { PolygonShape(MaterialShapes.Clover4Leaf) }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .size(52.dp)
+                    .graphicsLayer { rotationZ = -12f }
+                    .clip(flower)
+                    .background(scheme.tertiaryContainer),
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .size(48.dp)
+                    .graphicsLayer { rotationZ = 18f }
+                    .clip(clover)
+                    .background(scheme.secondaryContainer),
+            )
+            MorphingContainer(
+                from = MaterialShapes.Cookie6Sided,
+                to = MaterialShapes.Cookie9Sided,
+                morphed = true,
+                color = scheme.primary,
+                modifier = Modifier.size(68.dp),
+            ) {
+                Icon(Icons.Rounded.TouchApp, contentDescription = null, tint = scheme.onPrimary, modifier = Modifier.size(32.dp))
+            }
         }
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
         Text(
             stringResource(R.string.stickers_sheet_empty_title),
             style = MaterialTheme.typography.titleMediumEmphasized,
@@ -311,14 +416,14 @@ private fun EmptyShelf() {
 }
 
 /**
- * One saved sticker on a checkerboard. Its shape is a rounded square that
- * morphs into a cookie under the finger; picked out by a long press, it
- * wobbles and shows a button to take it away.
+ * One saved sticker on a soft tile: a rounded square that morphs into a
+ * cookie under the finger. While [editing], it wobbles a little (each tile a
+ * little out of step with the next) and wears a round button to take it away.
  */
 @Composable
 private fun StickerTile(
     sticker: StickerLibrary.Sticker,
-    deleting: Boolean,
+    editing: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onDelete: () -> Unit,
@@ -327,53 +432,45 @@ private fun StickerTile(
     val scheme = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     val thumb by produceState<ImageBitmap?>(initialValue = null, sticker.file) {
         value = withContext(Dispatchers.IO) { thumbnail(sticker.file.path, TILE_PX)?.asImageBitmap() }
     }
-    val lift by animateFloatAsState(if (deleting) 1f else 0f, motion.defaultSpatialSpec(), label = "tileLift")
     val wobble = remember { Animatable(0f) }
-    LaunchedEffect(deleting) {
-        if (!deleting) {
+    LaunchedEffect(editing) {
+        if (!editing) {
             wobble.animateTo(0f, motion.fastSpatialSpec())
             return@LaunchedEffect
         }
+        // Out of step with its neighbours, as a hand-held thing would be.
+        kotlinx.coroutines.delay((sticker.id.hashCode() and 0x7F).toLong())
         while (true) {
-            wobble.animateTo(3f, motion.fastSpatialSpec())
-            wobble.animateTo(-3f, motion.fastSpatialSpec())
+            wobble.animateTo(2.5f, motion.fastSpatialSpec())
+            wobble.animateTo(-2.5f, motion.fastSpatialSpec())
         }
     }
-    val shape = remember { PolygonShape(MaterialShapes.Cookie9Sided) }
-    Box(
-        modifier = modifier
-            .aspectRatio(1f)
-            .graphicsLayer {
-                rotationZ = wobble.value
-                val s = 1f - 0.06f * lift
-                scaleX = s
-                scaleY = s
-            },
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
+    Box(modifier = modifier.aspectRatio(1f).graphicsLayer { rotationZ = wobble.value }) {
+        MorphingContainer(
+            from = MaterialShapes.Cookie9Sided,
+            to = MaterialShapes.Square,
+            morphed = !pressed,
+            color = if (editing) scheme.surfaceContainerHigh else scheme.surfaceContainerHighest,
             modifier = Modifier
                 .fillMaxSize()
                 .springPress(interaction, pressedScale = 0.9f)
-                .clip(if (deleting) shape else RoundedCornerShape(24.dp))
-                .background(scheme.surfaceContainerHighest)
                 .combinedClickable(interactionSource = interaction, indication = null, onClick = onClick, onLongClick = onLongClick),
         ) {
-            Checkerboard(modifier = Modifier.fillMaxSize(), cell = 8.dp)
             thumb?.let { image ->
                 Image(
                     bitmap = image,
                     contentDescription = stringResource(R.string.stickers_tile_description),
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize().padding(10.dp),
+                    modifier = Modifier.fillMaxSize().padding(14.dp),
                 )
             }
         }
         AnimatedVisibility(
-            visible = deleting,
+            visible = editing,
             enter = scaleIn(motion.fastSpatialSpec()) + fadeIn(motion.fastEffectsSpec()),
             exit = scaleOut(motion.fastSpatialSpec()) + fadeOut(motion.fastEffectsSpec()),
             modifier = Modifier.align(Alignment.TopEnd),
@@ -382,9 +479,9 @@ private fun StickerTile(
                 onClick = onDelete,
                 shapes = IconButtonDefaults.shapes(),
                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = scheme.error, contentColor = scheme.onError),
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier.size(32.dp),
             ) {
-                Icon(Icons.Rounded.DeleteOutline, contentDescription = stringResource(R.string.stickers_delete), modifier = Modifier.size(20.dp))
+                Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.stickers_delete), modifier = Modifier.size(18.dp))
             }
         }
     }

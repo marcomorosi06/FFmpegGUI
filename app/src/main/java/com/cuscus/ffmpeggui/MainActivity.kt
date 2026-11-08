@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
@@ -212,6 +213,60 @@ class MainActivity : ComponentActivity() {
                     val blankFailed = stringResource(R.string.blank_failed)
                     val blankDefault = stringResource(R.string.blank_default_name)
                     val openFailed = stringResource(R.string.projects_open_failed)
+
+                    // A file shared from another app may go into a project already under way
+                    // (see IntakeProjects): the file, the project whose ways are being asked,
+                    // the one it is going into, and the one a frame of it is chosen for.
+                    var sharedFile by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Uri?>(null) }
+                    var intakeAsking by remember { mutableStateOf<String?>(null) }
+                    var intakeAdding by remember { mutableStateOf<String?>(null) }
+                    var intakeFrameFor by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+                    val intakeFailed = stringResource(R.string.intake_failed, "%s")
+                    val addShared: (com.cuscus.ffmpeggui.projects.ProjectCard, com.cuscus.ffmpeggui.core.project.IntoProject, Long) -> Unit = { project, way, frameMs ->
+                        val shared = sharedFile
+                        if (shared != null && intakeAdding == null) {
+                            intakeAdding = project.name
+                            vm.addToProject(
+                                project.id,
+                                PickedFile(shared, inputFileName),
+                                way,
+                                frameMs,
+                                onAdded = {
+                                    intakeAdding = null
+                                    // As if the project had been opened from the home screen: back goes to its formats.
+                                    navController.navigate(Screen.Config.route) { popUpTo(Screen.FormatPicker.route) }
+                                },
+                                onFailed = {
+                                    intakeAdding = null
+                                    android.widget.Toast.makeText(this@MainActivity, intakeFailed.replace("%s", project.name), android.widget.Toast.LENGTH_SHORT).show()
+                                    projectStore.refresh()
+                                },
+                            )
+                        }
+                    }
+                    val chooseIntakeWay: (com.cuscus.ffmpeggui.projects.ProjectCard, com.cuscus.ffmpeggui.core.project.IntoProject) -> Unit = { project, way ->
+                        if (way == com.cuscus.ffmpeggui.core.project.IntoProject.FRAME_OVERLAY) {
+                            // A video over a picture: its frame is chosen first.
+                            intakeFrameFor = project.id
+                            navController.navigate(Screen.IntakeFrame.route)
+                        } else {
+                            addShared(project, way, 0L)
+                        }
+                    }
+                    // Back in front (resumed, or touched again beside another window): a project another
+                    // window took meanwhile opens again from what it saved.
+                    val reclaim = {
+                        vm.reclaimProject(onGone = {
+                            android.widget.Toast.makeText(this@MainActivity, openFailed, android.widget.Toast.LENGTH_SHORT).show()
+                            navController.popBackStack(Screen.Home.route, inclusive = false)
+                        })
+                    }
+                    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+                        reclaim()
+                        onPauseOrDispose { }
+                    }
+                    val windowFocused = androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused
+                    LaunchedEffect(windowFocused) { if (windowFocused) reclaim() }
                     val duplicateName = stringResource(R.string.projects_copy_name, "%s")
 
                     // An export shows its progress in a notification: Android 13 and later ask first.
@@ -254,6 +309,15 @@ class MainActivity : ComponentActivity() {
                     val eraseFast by container.smartFeatures.eraseStores.getValue(com.cuscus.ffmpeggui.erase.EraseVariant.FAST).state.collectAsState()
                     val erasePrecise by container.smartFeatures.eraseStores.getValue(com.cuscus.ffmpeggui.erase.EraseVariant.PRECISE).state.collectAsState()
                     val eraseStatus by vm.erase.collectAsState()
+                    // The long press that erases behind a subject needs a magic eraser's model: once
+                    // none is on the phone any more (deleted, or failed its check), it copies again.
+                    val eraseGone = eraseFast !is SpeechModelStore.State.Ready && erasePrecise !is SpeechModelStore.State.Ready &&
+                        eraseFast !is SpeechModelStore.State.Importing && erasePrecise !is SpeechModelStore.State.Importing
+                    LaunchedEffect(eraseGone, appSettings.liftMode) {
+                        if (eraseGone && appSettings.liftMode == com.cuscus.ffmpeggui.settings.LiftMode.ERASE) {
+                            settingsRepository.update { it.copy(liftMode = com.cuscus.ffmpeggui.settings.LiftMode.COPY) }
+                        }
+                    }
                     val magicErase = com.cuscus.ffmpeggui.erase.MagicEraseUi(
                         variant = eraseVariant,
                         ready = mapOf(
@@ -302,6 +366,7 @@ class MainActivity : ComponentActivity() {
                         // model already holds the file and the user's edits.
                         if (savedInstanceState == null) {
                             openedFile(intent, packageName)?.let { uri ->
+                                sharedFile = uri
                                 vm.setInputUri(uri)
                                 navController.navigate(Screen.FormatPicker.route)
                             }
@@ -428,6 +493,8 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    // The file the AI check reads (picked from the home, or again on its screen).
+                    var aiCheckUri by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Uri?>(null) }
                     CompositionLocalProvider(
                         com.cuscus.ffmpeggui.stickers.LocalStickerShelf provides stickerShelf,
                         LocalSubjectCut provides subjectCut,
@@ -467,6 +534,19 @@ class MainActivity : ComponentActivity() {
                         composable(Screen.Home.route) {
                             // Back home: a file of a project may have gone meanwhile.
                             LaunchedEffect(Unit) { projectStore.refresh() }
+                            // The compressor and the AI check open on a file already picked.
+                            val compressPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                                if (uri != null) {
+                                    vm.setInputUri(uri)
+                                    navController.navigate(Screen.Compress.route)
+                                }
+                            }
+                            val aiCheckPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                                if (uri != null) {
+                                    aiCheckUri = uri
+                                    navController.navigate(Screen.AiCheck.route)
+                                }
+                            }
                             HomeScreen(
                                 onFileSelected = { uri ->
                                     vm.setInputUri(uri)
@@ -510,7 +590,8 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onDeleteProject = { project -> if (project.drawing) drawingStore.delete(project.id) else projectStore.delete(project.id) },
-                                onCompress = { navController.navigate(Screen.Compress.route) },
+                                onCompress = { compressPicker.launch(arrayOf("video/*", "audio/*", "image/*")) },
+                                onCheckAi = { aiCheckPicker.launch(arrayOf("image/*", "audio/*", "video/*")) },
                                 onEditSvg = { uri ->
                                     svgEditor.open(uri)
                                     navController.navigate(Screen.SvgEditor.route)
@@ -552,11 +633,29 @@ class MainActivity : ComponentActivity() {
                             CompressScreen(
                                 fileName = inputFileName,
                                 mediaInfo = mediaInfo,
+                                pickedAlready = true,
                                 onPick = { vm.setInputUri(it) },
                                 onStart = { format, adjust ->
                                     vm.selectFormat(format)
                                     startExportOf(adjust)
                                 },
+                                onBack = { navController.popBackStack() },
+                            )
+                        }
+
+                        composable(Screen.AiCheck.route) {
+                            val checker = remember {
+                                com.cuscus.ffmpeggui.provenance.AiCheck(this@MainActivity, container.smartFeatures.marker, container.smartFeatures.extractor)
+                                    .also { it.sweep() }
+                            }
+                            val another = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                                if (uri != null) aiCheckUri = uri
+                            }
+                            AiCheckScreen(
+                                uri = aiCheckUri,
+                                check = checker::check,
+                                onPickAnother = { another.launch(arrayOf("image/*", "audio/*", "video/*")) },
+                                onOpenMarks = { navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
                                 onBack = { navController.popBackStack() },
                             )
                         }
@@ -575,38 +674,109 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             }
-                            FormatPickerScreen(
-                                fileName = inputFileName,
-                                mediaInfo = mediaInfo,
-                                onFormatSelected = { format ->
-                                    vm.selectFormat(format)
-                                    val picture = s.source(EditorSource.MAIN_ID)?.takeIf { it.isStill }
-                                    when {
-                                        // An SVG made of a picture is made in the SVG editor: an SVG opens as it is,
-                                        // any other picture is traced into shapes there.
-                                        format == com.cuscus.ffmpeggui.core.model.OutputFormat.SVG && inputFileName.endsWith(".svg", ignoreCase = true) && inputUri != null -> {
-                                            svgEditor.open(inputUri!!)
-                                            navController.navigate(Screen.SvgEditor.route)
+                            // A shared file: the projects it can go into, those that cannot greyed.
+                            val intakeKind = com.cuscus.ffmpeggui.core.project.ProjectIntake.kindOf(mediaInfo, audible)
+                            val intakeChoices = remember(intakeKind, projectCards, sharedFile, inputUri, appSettings.saveProjects) {
+                                if (intakeKind == null || sharedFile == null || sharedFile != inputUri || !appSettings.saveProjects) {
+                                    emptyList()
+                                } else {
+                                    intakeOptions(intakeKind, projectCards.orEmpty())
+                                }
+                            }
+                            androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
+                                FormatPickerScreen(
+                                    fileName = inputFileName,
+                                    mediaInfo = mediaInfo,
+                                    onFormatSelected = { format ->
+                                        vm.selectFormat(format)
+                                        val picture = s.source(EditorSource.MAIN_ID)?.takeIf { it.isStill }
+                                        when {
+                                            // An SVG made of a picture is made in the SVG editor: an SVG opens as it is,
+                                            // any other picture is traced into shapes there.
+                                            format == com.cuscus.ffmpeggui.core.model.OutputFormat.SVG && inputFileName.endsWith(".svg", ignoreCase = true) && inputUri != null -> {
+                                                svgEditor.open(inputUri!!)
+                                                navController.navigate(Screen.SvgEditor.route)
+                                            }
+                                            format == com.cuscus.ffmpeggui.core.model.OutputFormat.SVG && (picture != null || mediaInfo?.isStill == true) -> {
+                                                svgEditor.trace(picture?.uri ?: inputUri!!, inputFileName)
+                                                navController.navigate(Screen.SvgEditor.route)
+                                            }
+                                            // A command written by hand: the studio alone, the video editor never shows.
+                                            format == com.cuscus.ffmpeggui.core.model.OutputFormat.CUSTOM -> navController.navigate(Screen.CustomCommand.route)
+                                            // Listened to and shown beside the player, to be read through and corrected.
+                                            format.isTranscript -> navController.navigate(Screen.Transcript.route)
+                                            // A picture of a video: its exact frame is chosen first.
+                                            format.isImage && mediaInfo?.isVideo == true && s.playingClips.firstOrNull()?.let { s.source(it.sourceId) }?.isStill != true ->
+                                                navController.navigate(Screen.FramePicker.route)
+                                            else -> navController.navigate(Screen.Config.route)
                                         }
-                                        format == com.cuscus.ffmpeggui.core.model.OutputFormat.SVG && (picture != null || mediaInfo?.isStill == true) -> {
-                                            svgEditor.trace(picture?.uri ?: inputUri!!, inputFileName)
-                                            navController.navigate(Screen.SvgEditor.route)
+                                    },
+                                    onBack = { navController.popBackStack() },
+                                    transcriptReady = speechModel is SpeechModelStore.State.Ready,
+                                    onOpenSmartFeatures = { com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.SPEECH; navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
+                                    audible = audible,
+                                    addToProject = if (intakeKind != null && intakeChoices.any { it.fits }) {
+                                        @Composable { modifier: Modifier ->
+                                            IntakeProjectsSection(
+                                                kind = intakeKind,
+                                                options = intakeChoices,
+                                                onPick = { option ->
+                                                    val only = option.ways.singleOrNull()
+                                                    if (only != null) chooseIntakeWay(option.project, only) else intakeAsking = option.project.id
+                                                },
+                                                modifier = modifier,
+                                            )
                                         }
-                                        // A command written by hand: the studio alone, the video editor never shows.
-                                        format == com.cuscus.ffmpeggui.core.model.OutputFormat.CUSTOM -> navController.navigate(Screen.CustomCommand.route)
-                                        // Listened to and shown beside the player, to be read through and corrected.
-                                        format.isTranscript -> navController.navigate(Screen.Transcript.route)
-                                        // A picture of a video: its exact frame is chosen first.
-                                        format.isImage && mediaInfo?.isVideo == true && s.playingClips.firstOrNull()?.let { s.source(it.sourceId) }?.isStill != true ->
-                                            navController.navigate(Screen.FramePicker.route)
-                                        else -> navController.navigate(Screen.Config.route)
-                                    }
-                                },
-                                onBack = { navController.popBackStack() },
-                                transcriptReady = speechModel is SpeechModelStore.State.Ready,
-                                onOpenSmartFeatures = { com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.SPEECH; navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
-                                audible = audible,
-                            )
+                                    } else {
+                                        null
+                                    },
+                                )
+                                IntakeAddingVeil(intakeAdding)
+                            }
+                            val asking = intakeAsking?.let { id -> intakeChoices.firstOrNull { it.project.id == id && it.fits } }
+                            if (asking != null && intakeKind != null) {
+                                IntakeWaysSheet(
+                                    project = asking.project,
+                                    fileName = inputFileName,
+                                    kind = intakeKind,
+                                    ways = asking.ways,
+                                    onDismiss = { intakeAsking = null },
+                                    onChoose = { way ->
+                                        intakeAsking = null
+                                        chooseIntakeWay(asking.project, way)
+                                    },
+                                )
+                            }
+                        }
+
+                        composable(Screen.IntakeFrame.route) {
+                            // The frame of a shared video laid over a picture project. What was known of the
+                            // video when the screen opened stays: the project takes its place in the editor
+                            // once the frame is in, while this screen goes.
+                            val shared = remember { sharedFile }
+                            val info = remember { mediaInfo }
+                            val target = intakeFrameFor?.let { id -> projectCards.orEmpty().firstOrNull { it.id == id } }
+                            if (shared == null || info == null || target == null) {
+                                FramePickerLoading()
+                                LaunchedEffect(Unit) { if (shared == null || info == null) navController.popBackStack() }
+                                return@composable
+                            }
+                            androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
+                                FramePickerScreen(
+                                    uri = shared,
+                                    fileName = inputFileName.takeIf { inputUri == shared } ?: target.name,
+                                    info = info,
+                                    format = target.format,
+                                    rangeStartMs = 0L,
+                                    rangeEndMs = info.durationMs.coerceAtLeast(1L),
+                                    initialMs = 0L,
+                                    onEditAsPhoto = { fileMs -> addShared(target, com.cuscus.ffmpeggui.core.project.IntoProject.FRAME_OVERLAY, fileMs) },
+                                    onExportFrames = { _, _, _ -> },
+                                    onBack = { navController.popBackStack() },
+                                    placeInto = target.name,
+                                )
+                                IntakeAddingVeil(intakeAdding)
+                            }
                         }
 
                         composable(Screen.FramePicker.route) {
@@ -1186,6 +1356,11 @@ class MainActivity : ComponentActivity() {
                                             ),
                                         ),
                                     ),
+                                    eraseReady = eraseFast is SpeechModelStore.State.Ready || erasePrecise is SpeechModelStore.State.Ready,
+                                    onGetEraseModel = {
+                                        com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.ERASE
+                                        navController.navigate(Screen.settingsCategory(SettingsCategory.SMART))
+                                    },
                                 )
                             }
                         }

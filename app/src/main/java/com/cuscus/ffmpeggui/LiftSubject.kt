@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Memory
@@ -65,6 +66,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -107,7 +109,12 @@ internal class PictureLift(
     val note: LiftNote?,
     val onNoteAction: () -> Unit,
     val onNoteGone: () -> Unit,
+    /** Where the magic eraser is filling in behind a subject lifted (see LiftMode.ERASE), while it does; else null. */
+    val filling: LiftArea? = null,
 )
+
+/** A part of the picture: its box, as shares of the picture's width and height. */
+internal class LiftArea(val left: Float, val top: Float, val width: Float, val height: Float)
 
 /** A subject just lifted: its picture, and its box as shares of the picture. */
 internal class LiftedShow(val image: ImageBitmap, val left: Float, val top: Float, val width: Float, val height: Float)
@@ -126,6 +133,12 @@ internal enum class LiftNote(val text: Int, val icon: ImageVector, val action: I
     MEMORY(R.string.lift_memory, Icons.Rounded.Memory, null, 5_000L),
 
     FAILED(R.string.lift_failed, Icons.Rounded.ErrorOutline, null, 4_000L),
+
+    /** The sticker is laid, but the photo behind it could not be cut or filled in. */
+    BEHIND_FAILED(R.string.lift_behind_failed, Icons.Rounded.ErrorOutline, null, 5_000L),
+
+    /** The magic eraser is filling in where the subject was (see LiftMode.ERASE). */
+    FILLING(R.string.lift_filling, Icons.Rounded.AutoAwesome, null, 4_000L),
 }
 
 /** Longest side of the picture a subject is lifted from: sharper than the preview, light enough for the phone. */
@@ -164,8 +177,112 @@ internal fun LiftEffects(lift: PictureLift, modifier: Modifier = Modifier) {
             key(at) { LiftBadge(Offset(at.x * w, at.y * h), state, lift.onAbortShown) { badge = null } }
         }
         lift.shown?.let { shown -> key(shown) { LiftRise(shown, w, h, lift.onShown) } }
+        // Kept while it fades out once the eraser is done.
+        var area by remember { mutableStateOf<LiftArea?>(null) }
+        lift.filling?.let { area = it }
+        area?.let { shown ->
+            AnimatedVisibility(
+                visible = lift.filling != null,
+                enter = fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()) + scaleIn(MaterialTheme.motionScheme.defaultSpatialSpec(), initialScale = 0.9f),
+                exit = fadeOut(MaterialTheme.motionScheme.slowEffectsSpec()),
+            ) {
+                LiftFilling(shown, w, h)
+            }
+        }
     }
 }
+
+/**
+ * The magic eraser at work behind a subject: over its box, a light veil
+ * that waves bands of the theme's colour sweep through; from its middle,
+ * wavy rings (the expressive progress indicator's own wave, as rings) spread
+ * and fade; in the middle, a badge with the wavy progress indicator turning
+ * round the eraser's wand. Something is plainly happening there.
+ */
+@Composable
+private fun LiftFilling(area: LiftArea, w: Float, h: Float) {
+    val scheme = MaterialTheme.colorScheme
+    val density = LocalDensity.current
+    val flow = rememberInfiniteTransition(label = "liftFilling")
+    val t by flow.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(durationMillis = FILL_WAVE_MS, easing = LinearEasing), RepeatMode.Restart),
+        label = "liftFillingWave",
+    )
+    val tint = scheme.primary
+    val left = area.left * w
+    val top = area.top * h
+    val boxW = (area.width * w).coerceAtLeast(1f)
+    val boxH = (area.height * h).coerceAtLeast(1f)
+    val centre = Offset(left + boxW / 2f, top + boxH / 2f)
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val corner = androidx.compose.ui.geometry.CornerRadius(minOf(boxW, boxH) * 0.12f)
+        val boxPath = androidx.compose.ui.graphics.Path().apply {
+            addRoundRect(androidx.compose.ui.geometry.RoundRect(left, top, left + boxW, top + boxH, corner))
+        }
+        // The veil, and the waves sweeping down through it.
+        clipPath(boxPath) {
+            drawRect(tint.copy(alpha = 0.14f), topLeft = Offset(left, top), size = Size(boxW, boxH))
+            val amplitude = 5.dp.toPx()
+            val length = 36.dp.toPx()
+            for (k in 0 until FILL_BANDS) {
+                val p = (t + k.toFloat() / FILL_BANDS) % 1f
+                val y = top - amplitude + p * (boxH + 2 * amplitude)
+                val wave = androidx.compose.ui.graphics.Path()
+                var x = left
+                wave.moveTo(x, y)
+                while (x <= left + boxW + length / 8f) {
+                    x += length / 8f
+                    wave.lineTo(x, y + amplitude * sin((x - left) / length * 2f * PI.toFloat() + t * 2f * PI.toFloat() * 2f))
+                }
+                // Brightest in the middle of their way.
+                val strength = sin(p * PI.toFloat())
+                drawPath(wave, tint.copy(alpha = 0.55f * strength), style = Stroke(width = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
+            }
+        }
+        // Wavy rings spreading from the middle.
+        val reach = maxOf(boxW, boxH) * 0.75f
+        val start = 34.dp.toPx()
+        for (k in 0 until FILL_RINGS) {
+            val p = (t + k.toFloat() / FILL_RINGS) % 1f
+            val r = start + p * reach
+            val ring = androidx.compose.ui.graphics.Path()
+            val steps = 96
+            for (i in 0..steps) {
+                val a = i.toFloat() / steps * 2f * PI.toFloat()
+                val rr = r * (1f + 0.035f * sin(a * 12f + t * 2f * PI.toFloat() * 3f))
+                val px = centre.x + rr * cos(a)
+                val py = centre.y + rr * sin(a)
+                if (i == 0) ring.moveTo(px, py) else ring.lineTo(px, py)
+            }
+            ring.close()
+            drawPath(ring, tint.copy(alpha = 0.6f * (1f - p)), style = Stroke(width = 3.dp.toPx() * (1f - 0.5f * p)))
+        }
+    }
+    val side = 64.dp
+    val half = with(density) { (side / 2).toPx() }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .offset { IntOffset((centre.x - half).roundToInt(), (centre.y - half).roundToInt()) }
+            .size(side)
+            .clip(CircleShape)
+            .background(scheme.primaryContainer),
+    ) {
+        androidx.compose.material3.CircularWavyProgressIndicator(
+            color = scheme.primary,
+            trackColor = scheme.primary.copy(alpha = 0.18f),
+            modifier = Modifier.size(54.dp),
+        )
+        Icon(Icons.Rounded.AutoFixHigh, contentDescription = null, tint = scheme.onPrimaryContainer, modifier = Modifier.size(24.dp))
+    }
+}
+
+/** One sweep of the eraser's waves, and how many bands and rings go at a time. */
+private const val FILL_WAVE_MS = 2_200
+private const val FILL_BANDS = 3
+private const val FILL_RINGS = 3
 
 /** What the badge where the finger pressed shows. */
 private enum class BadgeState { WORKING, ABORTED, DONE }

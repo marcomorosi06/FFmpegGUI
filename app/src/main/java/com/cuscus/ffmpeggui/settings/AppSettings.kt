@@ -14,6 +14,14 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 enum class LandscapeLayout { AUTO, PLAYER_LEFT, PLAYER_RIGHT }
 
 /**
+ * What a long press on a subject does in the photo editor: [COPY] lays a copy
+ * of it as a sticker and leaves the photo as it was; [CUT] does the same and
+ * leaves a hole where it was (see-through, or a colour); [ERASE] fills that
+ * place in with the magic eraser (only while its model is on the phone).
+ */
+enum class LiftMode { COPY, CUT, ERASE }
+
+/**
  * What the user chose in the settings. The defaults are what a fresh install
  * gets: wallpaper colours, the system's theme, vibration on, a copy of every
  * export in the phone's own folders, Live Updates where Android has them,
@@ -64,6 +72,14 @@ data class AppSettings(
      * Closed from the home, it comes back from the settings (Appearance).
      */
     val keepAndroidOpenBanner: Boolean = true,
+    /** What a long press on a subject does in the photo editor. */
+    val liftMode: LiftMode = LiftMode.COPY,
+    /** With [LiftMode.CUT]: the hole is see-through; else it is [liftHoleColor]. */
+    val liftHoleTransparent: Boolean = true,
+    /** The hole's colour when it is not see-through (ARGB). */
+    val liftHoleColor: Long = 0xFFFFFFFFL,
+    /** What shows in a see-through hole in a file that holds no transparency (JPG...), ARGB. */
+    val liftHoleOpaque: Long = 0xFFFFFFFFL,
 ) {
     companion object {
         const val DEFAULT_PROJECTS_LIMIT = 20

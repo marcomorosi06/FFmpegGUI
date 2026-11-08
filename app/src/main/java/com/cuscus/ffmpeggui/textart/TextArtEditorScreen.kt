@@ -116,7 +116,7 @@ import com.cuscus.ffmpeggui.preview.SubjectMasks
 import com.cuscus.ffmpeggui.preview.fitted
 import com.cuscus.ffmpeggui.preview.opaque
 import com.cuscus.ffmpeggui.preview.renderPicture
-import com.cuscus.ffmpeggui.preview.stillPicture
+import com.cuscus.ffmpeggui.preview.stillRaster
 import com.cuscus.ffmpeggui.preview.toBitmap
 import com.cuscus.ffmpeggui.preview.toRaster
 import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
@@ -204,7 +204,7 @@ internal fun TextArtEditorScreen(
         val uri = source?.uri ?: return@produceState
         if (!described) return@produceState
         if (grabber == null) {
-            val raw = withContext(Dispatchers.IO) { stillPicture(context, uri)?.toRaster() }
+            val raw = withContext(Dispatchers.IO) { stillRaster(context, uri) }
             sourceAlpha = raw?.takeIf { keepsAlpha }?.let { withContext(Dispatchers.Default) { alphaOf(it) } }
             value = raw?.let { withContext(Dispatchers.Default) { it.opaque() } }
             return@produceState

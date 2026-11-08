@@ -130,6 +130,7 @@
     <string name="status_analyzing">Analyzing stabilization (pass 1/2)\u2026</string>
     <string name="status_encoding">Starting FFmpeg\u2026</string>
     <string name="status_packing">Packing the files into a zip\u2026</string>
+    <string name="status_marking">Marking the sound as made with AI (EU AI Act)\u2026</string>
     <string name="error_source_unreadable">Cannot read file: %1$s</string>
     <string name="error_analysis_failed">Stabilization analysis failed</string>
     <string name="error_encoding_failed">Conversion failed. Check the log.</string>
@@ -371,6 +372,24 @@
     <string name="overlay_turn_right">Turn right</string>
     <string name="overlay_angle">Angle</string>
     <string name="overlay_rotate_hint">It turns around its center and keeps its size.</string>
+    <string name="settings_lift">Long press on a subject</string>
+    <string name="settings_lift_copy">Copy it</string>
+    <string name="settings_lift_cut">Cut it out</string>
+    <string name="settings_lift_erase">Erase behind</string>
+    <string name="settings_lift_copy_summary">In the photo editor, a long press lays a copy of the subject as a sticker. The photo stays as it was.</string>
+    <string name="settings_lift_cut_summary">A long press lifts the subject off as a sticker and leaves a hole where it was.</string>
+    <string name="settings_lift_erase_summary">A long press lifts the subject off as a sticker and the magic eraser fills in where it was.</string>
+    <string name="settings_lift_erase_needs_model">Erase behind needs one of the magic eraser\'s models.</string>
+    <string name="settings_lift_erase_model">Which model fills in</string>
+    <string name="settings_lift_erase_model_state">%1$s: %2$s</string>
+    <string name="settings_lift_erase_model_here">on the phone, and used by the magic eraser everywhere</string>
+    <string name="settings_lift_erase_model_missing">not on the phone yet. Tap it to get it</string>
+    <string name="settings_lift_hole">What the hole shows</string>
+    <string name="settings_lift_hole_clear">See-through</string>
+    <string name="settings_lift_hole_color">A colour</string>
+    <string name="settings_lift_hole_opaque">In files that hold no transparency (JPG, for one), the hole shows this colour:</string>
+    <string name="settings_lift_hole_which">The hole is filled with:</string>
+    <string name="rotate_handle">Turn: drag it round. Upright again: double tap</string>
     <string name="overlay_mute_hint">The video plays without its sound.</string>
     <string name="overlay_adjust_hint">Only this overlay changes, not the video under it.</string>
     <string name="motion_none">None</string>
@@ -590,6 +609,7 @@
     <string name="export_stage_analyzing">Analysing the shake</string>
     <string name="export_stage_encoding">Encoding</string>
     <string name="export_stage_packing">Packing into a zip</string>
+    <string name="export_stage_marking">Marking the AI voice</string>
     <string name="export_eta_minutes">about %1$d min left</string>
     <string name="export_eta_seconds">%1$d s left</string>
     <string name="export_action_cancel">Cancel</string>
@@ -688,6 +708,41 @@
     <string name="blank_failed">The blank could not be made</string>
     <string name="home_compress">Compress a file</string>
     <string name="home_compress_hint">A video, a photo or a song made smaller in one go</string>
+    <string name="home_ai_check">Check a file for AI</string>
+    <string name="home_ai_check_hint">A picture, a sound or a video: was it made or dubbed with AI?</string>
+    <string name="ai_check_title">AI check</string>
+    <string name="ai_check_looking">Looking for AI marks</string>
+    <string name="ai_check_looking_hint">In the file\'s metadata, and in its pixels or its speech, on your phone</string>
+    <string name="ai_check_made">Made with AI</string>
+    <string name="ai_check_made_hint">The file says it was made by an AI model.</string>
+    <string name="ai_check_changed">Changed with AI</string>
+    <string name="ai_check_changed_hint">The file says an AI model changed it, in part or in whole.</string>
+    <string name="ai_check_voice">AI voice found</string>
+    <string name="ai_check_voice_hint">A voice in it was made by an AI model, as in a dub.</string>
+    <string name="ai_check_none">No AI mark found</string>
+    <string name="ai_check_none_hint">The file carries none of the marks this check reads. That does not prove it was made without AI.</string>
+    <string name="ai_check_failed">This file cannot be read</string>
+    <string name="ai_check_failed_hint">Try another file.</string>
+    <string name="ai_check_what">What was checked</string>
+    <string name="ai_check_metadata">Metadata</string>
+    <string name="ai_check_metadata_made">IPTC Digital Source Type: made by a trained model</string>
+    <string name="ai_check_metadata_changed">IPTC Digital Source Type: changed with a trained model</string>
+    <string name="ai_check_metadata_other">Metadata, with no AI source in it</string>
+    <string name="ai_check_metadata_none">No AI metadata (sharing often removes it)</string>
+    <string name="ai_check_mark">Invisible mark</string>
+    <string name="ai_check_mark_found">Adobe\'s TrustMark watermark, as this app writes it</string>
+    <string name="ai_check_mark_not_found">No TrustMark watermark in the pixels</string>
+    <string name="ai_check_mark_voice_found">Meta\'s AudioSeal watermark in the speech, as this app writes it</string>
+    <string name="ai_check_mark_voice_not_found">No AudioSeal watermark in the speech</string>
+    <string name="ai_check_mark_little_speech">Too little speech to tell: the mark is in the voice</string>
+    <string name="ai_check_mark_no_sound">No sound in the file to listen to</string>
+    <string name="ai_check_mark_not_installed">Not looked for: the AI marks are not installed</string>
+    <string name="ai_check_mark_unreadable">Not looked for: the file cannot be decoded</string>
+    <string name="ai_check_mark_install">Install the AI marks</string>
+    <string name="ai_check_pill_ai">AI</string>
+    <string name="ai_check_pill_none">None</string>
+    <string name="ai_check_limits">The check runs on your phone and sends nothing. It reads only the marks FFmpeg GUI writes, as the EU AI Act asks: IPTC metadata, the TrustMark watermark in pictures and the AudioSeal watermark in voices (the first 10 minutes of a sound). Other apps may mark files in other ways, or not at all, and a mark can be removed.</string>
+    <string name="ai_check_another">Check another file</string>
     <string name="compress_title">Compress</string>
     <string name="compress_pick">Pick a file</string>
     <string name="compress_pick_hint">A video, a picture or a sound</string>
@@ -1181,6 +1236,7 @@
     <string name="corners_fill_transparent">Transparent</string>
     <string name="settings_editor">Editor</string>
     <string name="settings_editor_timeline">Timeline</string>
+    <string name="settings_editor_photo">Photo editor</string>
     <string name="settings_landscape">With the screen on its side</string>
     <string name="settings_landscape_auto">As it fits</string>
     <string name="settings_landscape_left">Player on the left</string>
@@ -1192,15 +1248,42 @@
     <string name="editor_player_to_right">Move the player to the right</string>
     <!-- The command studio's replies to terminal classics typed in it (see CommandJokes). -->
     <string name="studio_joke_safe">Not an FFmpeg command, so nothing runs.</string>
-    <string name="studio_joke_root">No need for root here: FFmpeg GUI already trusts you.</string>
+    <string name="studio_joke_shell">bruh you\'re not on termux my guy</string>
+    <string name="studio_joke_root">say \'please\' next time. I\'ll still say no, but at least be polite.</string>
+    <string name="studio_joke_please">good boy (or girl (or anything else))</string>
     <string name="studio_joke_sandwich">Ask nicely. There is a magic word.</string>
     <string name="studio_joke_sandwich_sudo">Okay. One frame-perfect sandwich, coming right up.</string>
     <string name="studio_joke_wipe">Not today. Nothing was deleted, and nothing typed here ever reaches a shell.</string>
+    <string name="studio_joke_rm">dude, just uninstall me at this point</string>
     <string name="studio_joke_way_out">This is not vim, promise. The close button is right up there.</string>
+    <string name="studio_joke_exit">finally. don\'t come back.</string>
+    <string name="studio_joke_vim">enter freely. Leaving is an entirely different adventure.</string>
     <string name="studio_joke_editor">No editor wars here. This one has colours and suggestions already.</string>
     <string name="studio_joke_ping">pong</string>
-    <string name="studio_joke_whoami">Someone who reads FFmpeg\'s documentation for fun.</string>
-    <string name="studio_joke_files">Your files are in the Files panel below, tidier than any terminal.</string>
+    <string name="studio_joke_whoami">if you don\'t know, I\'m certainly not breaking the news to you.</string>
+    <string name="studio_joke_files">what are you even trying to list here?</string>
+    <!-- A cat kaomoji: the code points are escaped so the file stays ASCII; the two spaces are kept. -->
+    <string name="studio_joke_cat">meow (\u02F5\u25DD \u2A4A\u0020\u0020\u25DC\u02F5\u30DE</string>
+    <string name="studio_joke_cat_after">Why did I even code this?</string>
+    <string name="studio_joke_pwd">pwd? what does it even stand for? Procrastinating With Dignity?</string>
+    <string name="studio_joke_cd">changing directory, huh? no directories here.</string>
+    <string name="studio_joke_python">oh come on man, what are you? a data scientist? (sorry if you are)</string>
+    <string name="studio_joke_apt">fedora&gt;debian</string>
+    <string name="studio_joke_dnf">Zzzzzzzz.... (Oh wait? Is it done yet?)</string>
+    <string name="studio_joke_pacman">ugh</string>
+    <string name="studio_joke_sl">chuff chuff!</string>
+    <string name="studio_joke_clear">you can wipe the screen, not your shame.</string>
+    <string name="studio_joke_top">look at all those processes working harder than you.</string>
+    <string name="studio_joke_git_status">clean working tree. Nothing to commit. Just like your life goals.</string>
+    <string name="studio_joke_kill">ruthless. No dialogue, no mercy. I like you.</string>
+    <string name="studio_joke_man">oh come on man just ask chatgpt</string>
+    <string name="studio_joke_history">looking for something?</string>
+    <string name="studio_joke_echo">hI eVeRyOnE lOoK aT mE i\'M tYpInG</string>
+    <string name="studio_joke_reboot">have you tried turning your attitude off and on again?</string>
+    <string name="studio_joke_nmap">playing being mr robot are we?</string>
+    <string name="studio_joke_grep">searching desperately for meaning in the wrong file.</string>
+    <!-- Dante, Inferno III: kept in Italian in every language. -->
+    <string name="studio_joke_hell" translatable="false">Lasciate ogni speranza o voi ch\'entrate.</string>
     <string name="studio_joke_hello">Hello! Type a command, or pick one from the recipes.</string>
     <string name="studio_joke_xyzzy">Nothing happens.</string>
     <string name="studio_joke_teapot">418: I\'m a teapot (RFC 2324).</string>
@@ -1420,6 +1503,38 @@
     <string name="projects_delete_title">Delete this project?</string>
     <string name="projects_delete_text">Its edits, its preview picture and the files copied into it (%1$s) go for good. Your original files and your exports stay.</string>
     <string name="projects_open_failed">This project can no longer be read</string>
+
+    <!-- A file shared from another app, added to a project already under way (IntakeProjects). -->
+    <string name="intake_title">Add to a project</string>
+    <string name="intake_hint_sound">Put this sound into something you are already working on.</string>
+    <string name="intake_hint_picture">Put this picture into something you are already working on.</string>
+    <string name="intake_hint_video">Put this video into something you are already working on.</string>
+    <plurals name="intake_fit_count">
+        <item quantity="one">%d fits</item>
+        <item quantity="other">%d fit</item>
+    </plurals>
+    <string name="intake_new">Or start a new project with it</string>
+    <string name="intake_cannot_sound">Can\'t take a sound</string>
+    <string name="intake_cannot_picture">Can\'t take a picture</string>
+    <string name="intake_cannot_video">Can\'t take a video</string>
+    <string name="intake_cannot_editor">Has an editor of its own</string>
+    <string name="intake_sheet_label">Add to</string>
+    <string name="intake_sheet_question">How should it go in?</string>
+    <string name="intake_way_clip">As a clip</string>
+    <string name="intake_way_clip_summary">At the end of the timeline, after everything already there</string>
+    <string name="intake_way_overlay">As an overlay</string>
+    <string name="intake_way_overlay_video_summary">Over the video from the start; move, size and trim it as you like</string>
+    <string name="intake_way_overlay_picture_summary">Over the picture; move and size it as you like</string>
+    <string name="intake_way_sound">As a sound</string>
+    <string name="intake_way_sound_video_summary">Its sound under the video, from the start</string>
+    <string name="intake_way_sound_audio_summary">Mixed over the sound already there, from the start</string>
+    <string name="intake_way_frame">A frame of it, as an overlay</string>
+    <string name="intake_way_frame_summary">Choose the frame first, then it goes over the picture</string>
+    <string name="intake_way_cover">As the cover</string>
+    <string name="intake_way_cover_summary">Shown by players and on the lock screen, in place of the current one</string>
+    <string name="intake_adding">Adding to %1$s</string>
+    <string name="intake_failed">Could not add it to %1$s</string>
+    <string name="intake_frame_place">Place it in %1$s</string>
     <string name="overlay_read_failed">This file cannot be read as a picture or a video</string>
     <string name="projects_actions">Project actions</string>
 
@@ -1819,15 +1934,21 @@
     <string name="lift_nothing">Nothing clear there: press in the middle of the subject</string>
     <string name="lift_memory">Not enough free memory: close other apps and try again</string>
     <string name="lift_failed">The subject could not be lifted. Try again</string>
+    <string name="lift_behind_failed">The sticker is laid, but the photo behind it could not be changed</string>
+    <string name="lift_filling">The magic eraser fills in where it was</string>
 
     <!-- The sticker gallery (StickerLibrary, StickerSheet) -->
+    <string name="stickers_sheet_add_title">Add on top</string>
+    <string name="stickers_source_gallery">Gallery</string>
+    <string name="stickers_source_gallery_any">Photos and videos</string>
+    <string name="stickers_source_gallery_pictures">Photos</string>
+    <string name="stickers_source_files">Files</string>
+    <string name="stickers_source_files_hint">Any file on your phone</string>
+    <string name="stickers_edit">Edit</string>
+    <string name="stickers_edit_done">Done</string>
     <string name="stickers_sheet_title">Your stickers</string>
-    <string name="stickers_sheet_none">Nothing saved yet</string>
-    <string name="stickers_sheet_hint">Tap a sticker to lay it, press and hold to take it away.</string>
     <string name="stickers_sheet_empty_title">Make your first sticker</string>
     <string name="stickers_sheet_empty_text">Cut a subject out with the Cut out tool, or lift it off a photo with a long press, then save it: it waits here for every picture and video.</string>
-    <string name="stickers_from_phone_picture">A picture from your phone</string>
-    <string name="stickers_from_phone_any">A picture or a video from your phone</string>
     <string name="stickers_tile_description">Saved sticker</string>
     <string name="stickers_delete">Take it out of your stickers</string>
     <string name="stickers_save_action">Save to stickers</string>
@@ -3021,12 +3142,8 @@
     <string name="lint_bad_input_index">There is no input %1$s (they count from 0)</string>
     <string name="lint_unknown_file">%1$s is not a file of this project</string>
     <string name="lint_ai_marks_kept">This does not remove the AI marks: when the project has a dub or pictures changed by the magic eraser, the finished file is marked again after this command, as the EU AI Act asks (Regulation (EU) 2024/1689, Article 50(2)). Other tags go as asked.</string>
-    <plurals name="stickers_count">
-        <item quantity="one">%1$d sticker saved</item>
-        <item quantity="other">%1$d stickers saved</item>
-    </plurals>
     <!-- Keep Android Open (KeepAndroidOpen.kt: the home's card; its switch in Settings, Appearance). -->
-    <string name="kao_title">Keep Android Open</string>
+    <string name="kao_title">Keep Android Open!</string>
     <string name="kao_text">Google is making every Android developer *register with Google, hand over an ID and pay a fee*. Apps from developers who do not *can no longer be installed normally*, even from outside the Play Store. Free apps from independent developers, like this one, are the first to lose. Keep Android Open asks Google to drop the plan, and says how you can help.</string>
     <string name="kao_learn">What you can do</string>
     <string name="kao_this_app">This app, like many others we all love, *will not register with Google*. So once the lockdown reaches your country, it will no longer install the easy way: only *through the extra steps Google allows*, or on an Android without Google, *such as GrapheneOS*.</string>

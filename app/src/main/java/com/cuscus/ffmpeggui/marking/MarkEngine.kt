@@ -47,9 +47,25 @@ class MarkEngine(context: Context, private val store: SpeechModelStore) {
     /** The mark did not read back after it was written (too short a sound; a picture it does not hold on). */
     class NotHeld(what: String) : IOException("The AI mark does not hold on $what")
 
-    /** What the detector found in a sound: the share of its speech marked (null: too little speech), the message. */
-    class SpeechVerdict(val share: Float?, val message: FloatArray) {
+    /**
+     * What the detector found in a sound: the share of its speech marked (null:
+     * too little speech), the message read over all of it; and how many
+     * samples (at 16 kHz) it found marked, with the message read where it did.
+     */
+    class SpeechVerdict(
+        val share: Float?,
+        val message: FloatArray,
+        val markedSamples: Int = 0,
+        val markedMessage: FloatArray = message,
+    ) {
+        /** Most of the speech carries the mark: a dub on its own. */
         val marked: Boolean get() = share != null && share >= SpeechMarking.MARKED_SHARE
+
+        /**
+         * The mark is in some of the sound, as a dub mixed with music and effects
+         * is: enough of it found, with the app's own message (SpeechMarking.inMix).
+         */
+        val markedInMix: Boolean get() = SpeechMarking.inMix(markedSamples, markedMessage)
     }
 
     private val slot = ModelSlot("AI marks") { release() }
@@ -91,6 +107,28 @@ class MarkEngine(context: Context, private val store: SpeechModelStore) {
         }
     }
 
+    /**
+     * AudioSeal's watermark for [audio] (mono, at SpeechMarking.RATE): the
+     * mark to add to it, over every part that is not digital silence, nothing
+     * where it is. For a whole soundtrack (see SoundSealer), checked by
+     * whoever wants to: a mix of music and voices may hold it less than a dub.
+     */
+    suspend fun watermarkOf(audio: FloatArray): FloatArray = withContext(Dispatchers.Default) {
+        slot.run {
+            val generator = session(MarkerModel.GENERATOR.name)
+            val out = FloatArray(audio.size)
+            for (run in SpeechMarking.runs(audio, SpeechMarking.RATE)) {
+                currentCoroutineContext().ensureActive()
+                val line = audio.copyOfRange(run.first, run.last + 1)
+                val windows = SpeechMarking.markWindows(line.size)
+                val marks = windows.map { window -> watermark(generator, SpeechMarking.padded(line, window)) }
+                val joined = SpeechMarking.join(line.size, windows, marks)
+                System.arraycopy(joined, 0, out, run.first, joined.size)
+            }
+            out
+        }
+    }
+
     /** How much of [lines] (at [rate]) carries the speech mark. */
     suspend fun speech(lines: List<FloatArray>, rate: Int): SpeechVerdict = withContext(Dispatchers.Default) {
         slot.run { detect(session(MarkerModel.DETECTOR.name), lines, rate) }
@@ -117,6 +155,7 @@ class MarkEngine(context: Context, private val store: SpeechModelStore) {
         var marked = 0
         val messages = ArrayList<FloatArray>()
         val weights = ArrayList<Int>()
+        val markedWeights = ArrayList<Int>()
         for (line in lines) {
             if (line.isEmpty()) continue
             val at16 = Resampler.resample(line, rate, SpeechMarking.RATE)
@@ -130,14 +169,17 @@ class MarkEngine(context: Context, private val store: SpeechModelStore) {
                         val message = (result.get(1) as OnnxTensor).floatBuffer
                         // [1, 2, WINDOW]: the second row is "marked".
                         var here = 0
+                        var hereMarked = 0
                         for (j in 0 until window.length) {
                             if (!voiced[window.start + j]) continue
                             here++
-                            if (detection.get(SpeechMarking.WINDOW + j) > SpeechMarking.DETECTED) marked++
+                            if (detection.get(SpeechMarking.WINDOW + j) > SpeechMarking.DETECTED) hereMarked++
                         }
                         speech += here
+                        marked += hereMarked
                         messages += FloatArray(Marks.SPEECH_BITS) { message.get(it) }
                         weights += here
+                        markedWeights += hereMarked
                     }
                 } finally {
                     audio.close()
@@ -145,7 +187,12 @@ class MarkEngine(context: Context, private val store: SpeechModelStore) {
             }
         }
         val share = if (speech < SpeechMarking.LEAST_VOICED) null else marked.toFloat() / speech
-        return SpeechVerdict(share, SpeechMarking.message(messages, weights))
+        return SpeechVerdict(
+            share = share,
+            message = SpeechMarking.message(messages, weights),
+            markedSamples = marked,
+            markedMessage = SpeechMarking.message(messages, markedWeights),
+        )
     }
 
     // -- Pictures -------------------------------------------------------------------------

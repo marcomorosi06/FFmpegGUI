@@ -229,4 +229,17 @@ class MarkingTest {
         assertEquals(1f, marked[0], 0f)
         assertEquals(0.5f, PictureMarking.marked(FloatArray(3 * plane) { 0.49f }, FloatArray(3 * plane) { 0.01f })[5], 1e-6f)
     }
+
+    @Test
+    fun `a dub mixed with other sounds is found by how much of it is marked, with its message`() {
+        val ours = FloatArray(Marks.SPEECH_BITS) { 0.1f }
+        val other = FloatArray(Marks.SPEECH_BITS) { if (it % 2 == 0) 0.9f else 0.1f }
+        // Two seconds marked, the app's message: there, however much music is around it.
+        assertTrue(SpeechMarking.inMix(SpeechMarking.RATE * 2, ours))
+        // Less, or another message: stray detections, not the mark.
+        assertFalse(SpeechMarking.inMix(SpeechMarking.RATE * 2 - 1, ours))
+        assertFalse(SpeechMarking.inMix(SpeechMarking.RATE * 30, other))
+        // Where nothing was marked the message is read from no window: zeros, but too little.
+        assertFalse(SpeechMarking.inMix(0, SpeechMarking.message(listOf(other), listOf(0))))
+    }
 }

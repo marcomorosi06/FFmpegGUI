@@ -78,6 +78,7 @@ Only one model is ever in memory, and only one works at a time: each is loaded f
 
 ## Around the editors
 - Opens or receives (Share) any supported video, audio or picture from other apps
+- A shared file can go into a recent project instead: as a clip, an overlay, a sound, a cover or a frame of it, as the project allows
 - Recent projects, kept only on the phone
 - Export progress in a notification, a Live Update on Android 16, with time left and cancel
 - Background playback of the preview, with media notification and lock-screen controls

@@ -40,6 +40,7 @@ import com.cuscus.ffmpeggui.core.engine.ConversionStage
 import com.cuscus.ffmpeggui.core.engine.CoverArtist
 import com.cuscus.ffmpeggui.export.ExportNotifier
 import com.cuscus.ffmpeggui.export.ExportResult
+import com.cuscus.ffmpeggui.core.project.IntoProject
 import com.cuscus.ffmpeggui.projects.ProjectJson
 import com.cuscus.ffmpeggui.projects.ProjectStore
 import com.cuscus.ffmpeggui.projects.SavedProject
@@ -399,6 +400,19 @@ class ConversionViewModel(
     private var projectTouched = false
     /** The save waiting for the edits to rest (see [scheduleSave]). */
     private var saveJob: Job? = null
+    /** The project let go for another window (see [holder]), to open again on coming back; null when none. */
+    private var handedOver: String? = null
+
+    /**
+     * This editor, as the one that has its project open (see ProjectStore.claim):
+     * another window opening it has it saved now and let go here; it opens again
+     * from the saved state when this window comes back ([reclaimProject]).
+     */
+    private val holder = ProjectStore.Holder {
+        val id = projectId ?: return@Holder
+        closeProject(keep = null)
+        handedOver = id
+    }
 
     // Shape layers: the shape each picture made was made for (main thread only), the shape
     // each layer waits for, and the drawing under way for it (see syncShapes).
@@ -527,14 +541,74 @@ class ConversionViewModel(
             return
         }
         val store = projects ?: return onFailed()
+        // Another window that has it open saves it and lets it go first; its save is the one read.
+        store.claim(id, holder)
         viewModelScope.launch {
-            val project = withContext(ioDispatcher) { store.load(id) }
+            val project = store.loadWhenSaved(id)
             if (project == null) {
+                if (id != projectId) store.release(id, holder)
                 onFailed()
                 return@launch
             }
             restore(project)
             onOpened()
+        }
+    }
+
+    /**
+     * Opens again the project this editor let go for another window (see
+     * [holder]), from what was saved, once this window is back in front;
+     * [onGone] when it can no longer be read (deleted meanwhile).
+     */
+    fun reclaimProject(onGone: () -> Unit) {
+        val id = handedOver ?: return
+        handedOver = null
+        if (projectId != null) return
+        openProject(id, onOpened = {}, onFailed = onGone)
+    }
+
+    /**
+     * Adds [file], a file another app shared, to the saved project [id], [way]
+     * as chosen (see ProjectIntake); [frameMs] is the frame of a video laid over
+     * a picture ([IntoProject.FRAME_OVERLAY]). The project is opened first (a
+     * window that had it open lets it go), the file added from the start (a clip
+     * at the end) as one step of its history, then saved at once: a shared file
+     * is only lent for a while, and the save keeps a copy of it. [onAdded] runs
+     * once it is in, [onFailed] when the project or the file cannot be read.
+     */
+    fun addToProject(id: String, file: PickedFile, way: IntoProject, frameMs: Long, onAdded: () -> Unit, onFailed: () -> Unit) {
+        viewModelScope.launch {
+            // The frame is taken from the shared video before the project takes its place in the editor.
+            val placed = if (way == IntoProject.FRAME_OVERLAY) {
+                val frame = withContext(ioDispatcher) { stillMaker.captureFrame(file.uri.toString(), frameMs) }
+                    ?: return@launch onFailed()
+                PickedFile(Uri.parse(frame), file.fallbackName)
+            } else {
+                file
+            }
+            val failed = {
+                if (placed !== file) scratch.discard(placed.uri.toString())
+                onFailed()
+            }
+            val done = {
+                saveNow()
+                onAdded()
+            }
+            openProject(id, onFailed = failed, onOpened = {
+                when (way) {
+                    IntoProject.CLIP -> addClips(listOf(placed), onAdded = done, onFailed = failed)
+                    // On a picture they all show at once; on a video each from the start.
+                    IntoProject.OVERLAY, IntoProject.FRAME_OVERLAY -> addOverlays(
+                        listOf(placed),
+                        atOutputMs = 0L,
+                        oneAfterAnother = _selectedFormat.value?.isImage != true,
+                        onAdded = { done() },
+                        onFailed = failed,
+                    )
+                    IntoProject.SOUND -> addAudioClips(listOf(placed), atOutputMs = 0L, onAdded = { done() }, onFailed = failed)
+                    IntoProject.COVER -> setCover(placed.uri, onSet = done, onFailed = failed)
+                }
+            })
         }
     }
 
@@ -721,19 +795,20 @@ class ConversionViewModel(
      * Sets the cover of an audio file: [picture] made into a square cover (see
      * [CoverArtist]), or none for null. A picture that cannot be read changes nothing.
      */
-    fun setCover(picture: Uri?) {
+    fun setCover(picture: Uri?, onSet: () -> Unit = {}, onFailed: () -> Unit = {}) {
         if (picture == null) {
             mutate { it.copy(coverUri = null) }
             return
         }
         val input = _inputUri.value
         viewModelScope.launch {
-            val cover = withContext(ioDispatcher) { coverArtist.fromPicture(picture.toString()) } ?: return@launch
+            val cover = withContext(ioDispatcher) { coverArtist.fromPicture(picture.toString()) } ?: return@launch onFailed()
             if (_inputUri.value != input) {
                 scratch.discard(cover)
                 return@launch
             }
             mutate { it.copy(coverUri = Uri.parse(cover)) }
+            onSet()
         }
     }
 
@@ -818,7 +893,7 @@ class ConversionViewModel(
      * (at the same time); one without sound or without a known length is not
      * added. [onAdded] gets the first new sound's id, so that it can be selected.
      */
-    fun addAudioClips(files: List<PickedFile>, atOutputMs: Long, onAdded: (String) -> Unit = {}) {
+    fun addAudioClips(files: List<PickedFile>, atOutputMs: Long, onAdded: (String) -> Unit = {}, onFailed: () -> Unit = {}) {
         if (files.isEmpty()) return
         val project = _inputUri.value
         viewModelScope.launch {
@@ -829,7 +904,7 @@ class ConversionViewModel(
                 if (info == null || !info.hasAudio || info.durationMs <= 0L) return@mapNotNull null
                 AudioClip(uri = file.uri, name = name, span = SoundSpan.wholeFile(at, info.durationMs)).also { at = it.span.endMs }
             }
-            if (clips.isEmpty()) return@launch
+            if (clips.isEmpty()) return@launch onFailed()
             mutate { it.copy(audioClips = it.audioClips + clips) }
             onAdded(clips.first().id)
         }
@@ -952,9 +1027,9 @@ class ConversionViewModel(
      * one step of the history. A video joins as it is; a picture becomes a still
      * clip of [STILL_LENGTH_MS]. The files are inspected first (in the
      * background, at the same time), so the clips arrive already knowing their
-     * length and size.
+     * length and size. [onAdded] runs once they are in, [onFailed] when none could be.
      */
-    fun addClips(files: List<PickedFile>) {
+    fun addClips(files: List<PickedFile>, onAdded: () -> Unit = {}, onFailed: () -> Unit = {}) {
         if (files.isEmpty()) return
         val project = _inputUri.value
         viewModelScope.launch {
@@ -976,7 +1051,9 @@ class ConversionViewModel(
                 added.filter { it.first.isStill }.forEach { scratch.discard(it.first.uri.toString()) }
                 return@launch
             }
+            if (added.isEmpty()) return@launch onFailed()
             appendSources(added)
+            onAdded()
         }
     }
 
@@ -1696,6 +1773,16 @@ class ConversionViewModel(
             // The first file is kept: compare still shows the picture as it was opened.
             settings.copy(sources = settings.sources.map { if (it.id == sourceId) it.copy(uri = uri, originalUri = it.originalUri ?: it.uri) else it })
         }
+        // The new picture is looked at anew: one cut through (a see-through hole) has transparency
+        // the first did not, which decides whether a PNG keeps it.
+        val project = _inputUri.value
+        viewModelScope.launch {
+            val info = withContext(ioDispatcher) { mediaProbe.describe(uri.toString()) } ?: return@launch
+            if (_inputUri.value != project) return@launch
+            if (_settings.value.sources.none { it.id == sourceId && it.uri == uri }) return@launch
+            if (sourceId == EditorSource.MAIN_ID) _mediaInfo.value = info
+            describeSource(sourceId, info)
+        }
     }
 
     /** Stops the magic eraser; the picture stays as it was. */
@@ -2010,6 +2097,9 @@ class ConversionViewModel(
                     uri = Uri.fromFile(made.file),
                     name = dubName,
                     span = com.cuscus.ffmpeggui.core.timeline.SoundSpan.wholeFile(made.startMs, made.lengthMs),
+                    // A dub's loudness is levelled from the start: voices come out of the
+                    // models louder or softer than one another.
+                    normalize = true,
                     aiVoice = speaker.aiName,
                 )
                 mutate { current ->
@@ -2032,6 +2122,7 @@ class ConversionViewModel(
                         audioClips = kept + clip,
                     )
                 }
+                measureSoundLoudness(clip.uri)
                 _dub.value = DubStatus.Done(made.lines, made.lengthMs, made.tookMs)
             } catch (e: CancellationException) {
                 if (_dub.value !is DubStatus.Failed) _dub.value = DubStatus.Idle
@@ -2818,6 +2909,8 @@ class ConversionViewModel(
     /** A new open project: [id] in [projects], kept from its first change unless [touched] already. */
     private fun startProject(id: String?, createdAtMs: Long, touched: Boolean) {
         projectId = id
+        handedOver = null
+        if (id != null) projects?.claim(id, holder)
         projectCreatedAtMs = createdAtMs
         projectTouched = touched
     }
@@ -2857,6 +2950,7 @@ class ConversionViewModel(
             saveNow()
             store.close(id)
         }
+        if (id != null) store.release(id, holder)
         projectId = null
         projectTouched = false
         store.inUse = emptySet()
@@ -2914,7 +3008,7 @@ class ConversionViewModel(
                 progress = progress ?: previous.progress,
                 logs = logs.snapshot(),
                 stage = stage ?: previous.stage,
-                encodingSinceMs = if (stage == ConversionStage.ENCODING) SystemClock.elapsedRealtime() else previous.encodingSinceMs,
+                encodingSinceMs = if (stage == ConversionStage.ENCODING || stage == ConversionStage.MARKING) SystemClock.elapsedRealtime() else previous.encodingSinceMs,
             )
         }
     }

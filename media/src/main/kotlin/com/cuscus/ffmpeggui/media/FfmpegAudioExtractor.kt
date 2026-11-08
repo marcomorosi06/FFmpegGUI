@@ -21,10 +21,10 @@ class FfmpegAudioExtractor(context: Context, private val executor: FfmpegExecuto
 
     /**
      * Writes the sound of [sourceUri] to [target]. [durationMs] (0 when unknown)
-     * lets [onProgress] say how far it is. Returns the result of FFmpeg; a file
-     * without sound fails.
+     * lets [onProgress] say how far it is; [limitMs] (0: none) keeps only that
+     * much from the start. Returns the result of FFmpeg; a file without sound fails.
      */
-    suspend fun extract(sourceUri: String, target: File, durationMs: Long, onProgress: (Float) -> Unit = {}): ExecutionResult {
+    suspend fun extract(sourceUri: String, target: File, durationMs: Long, limitMs: Long = 0L, onProgress: (Float) -> Unit = {}): ExecutionResult {
         val input = ffmpegReadablePath(appContext, Uri.parse(sourceUri)) ?: return ExecutionResult.Failed(UNREADABLE)
         target.parentFile?.mkdirs()
         target.delete()
@@ -37,10 +37,10 @@ class FfmpegAudioExtractor(context: Context, private val executor: FfmpegExecuto
                 "-af", "aresample=$SAMPLE_RATE:first_pts=0",
                 "-ac", "1",
                 "-c:a", "pcm_f32le", "-f", "f32le",
+            ) + (if (limitMs > 0L) listOf("-t", String.format(java.util.Locale.ROOT, "%.3f", limitMs / 1000.0)) else emptyList()) +
                 target.absolutePath,
-            ),
         )
-        val expected = durationMs.takeIf { it > 0 }
+        val expected = (if (limitMs > 0L && (durationMs <= 0L || durationMs > limitMs)) limitMs else durationMs).takeIf { it > 0 }
         return executor.execute(command) { line -> progress.fraction(line, expected)?.let(onProgress) }
     }
 

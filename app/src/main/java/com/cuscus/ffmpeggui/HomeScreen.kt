@@ -51,6 +51,8 @@ import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Compress
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.ImageSearch
 import androidx.compose.material.icons.rounded.Photo
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Add
@@ -122,8 +124,10 @@ fun HomeScreen(
     onOpenProject: (ProjectCard) -> Unit = {},
     onDuplicateProject: (ProjectCard) -> Unit = {},
     onDeleteProject: (ProjectCard) -> Unit = {},
-    /** Opens the compressor: a file made smaller in one go. */
+    /** Opens the compressor: a file made smaller in one go (the file is picked first). */
     onCompress: () -> Unit = {},
+    /** Opens the AI check: a picture's, a sound's or a video's AI marks read (the file is picked first). */
+    onCheckAi: () -> Unit = {},
     /** Opens the SVG at this URI in the SVG editor. */
     onEditSvg: (Uri) -> Unit = {},
     /** Opens the SVG editor on an empty drawing. */
@@ -298,6 +302,8 @@ fun HomeScreen(
             onNew = onNewSvg,
             height = if (short) 72.dp else 88.dp,
         )
+        Spacer(modifier = Modifier.height(12.dp))
+        AiCheckTile(onClick = onCheckAi, height = if (short) 72.dp else 88.dp)
 
         AnimatedVisibility(visible = noCamera, enter = expandVertically() + fadeIn()) {
             Text(
@@ -692,6 +698,64 @@ private fun SvgEditorTile(onOpen: () -> Unit, onNew: () -> Unit, height: Dp) {
         ) {
             Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.svg_home_blank), modifier = Modifier.size(28.dp))
         }
+    }
+}
+
+/**
+ * The AI check's door: a wide secondary tile whose badge, a gem, opens into a
+ * twelve-sided cookie under the finger, a little sparkle turning in it.
+ */
+@Composable
+private fun AiCheckTile(onClick: () -> Unit, height: Dp) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scheme = MaterialTheme.colorScheme
+    val turn by animateFloatAsState(
+        targetValue = if (pressed) 90f else 0f,
+        animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+        label = "aiCheckSparkle",
+    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .springPress(interaction, pressedScale = 0.95f)
+            .height(height)
+            .clip(RoundedCornerShape(topStart = 48.dp, bottomStart = 48.dp, topEnd = 32.dp, bottomEnd = 32.dp))
+            .background(scheme.secondaryContainer)
+            .clickable(interactionSource = interaction, indication = LocalIndication.current, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp),
+    ) {
+        MorphingContainer(
+            from = MaterialShapes.Gem,
+            to = MaterialShapes.Cookie12Sided,
+            morphed = pressed,
+            color = scheme.secondary,
+            modifier = Modifier.size(52.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.ImageSearch,
+                contentDescription = null,
+                tint = scheme.onSecondary,
+                modifier = Modifier.size(26.dp).graphicsLayer { rotationZ = turn / 6f },
+            )
+        }
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.home_ai_check), style = MaterialTheme.typography.titleMediumEmphasized, color = scheme.onSecondaryContainer)
+            Text(
+                stringResource(R.string.home_ai_check_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSecondaryContainer.copy(alpha = 0.8f),
+                maxLines = 2,
+            )
+        }
+        Icon(
+            imageVector = Icons.Rounded.AutoAwesome,
+            contentDescription = null,
+            tint = scheme.secondary,
+            modifier = Modifier.size(22.dp).graphicsLayer { rotationZ = turn },
+        )
     }
 }
 

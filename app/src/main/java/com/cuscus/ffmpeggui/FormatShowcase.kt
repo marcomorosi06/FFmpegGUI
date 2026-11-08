@@ -1,6 +1,18 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.cuscus.ffmpeggui
 
 import androidx.compose.foundation.Canvas
+import androidx.graphics.shapes.toPath
+import androidx.graphics.shapes.RoundedPolygon
+import androidx.graphics.shapes.Morph
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.ui.graphics.asComposePath
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.DrawStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -38,7 +50,8 @@ import kotlin.math.sin
  * app in the theme's colours and always moving (still when the system's
  * animations are off), as the smart features' are. Each says at a glance what
  * its formats make: a film strip rolling by, a ball bouncing
- * in onion-skin frames, sound bars with notes rising, a landscape focused and
+ * in onion-skin frames, Material's shapes making music (a record kicking on
+ * the beat, an equaliser of pills, shapes popping out), a landscape focused and
  * shot with a flash, words typed out of a voice (or, for a picture, the
  * landscape turned into characters), a command typed and run.
  *
@@ -168,44 +181,150 @@ private fun AnimationShowcase(modifier: Modifier) {
 
 // -- Audio ---------------------------------------------------------------------------------------
 
-/** Sound bars dancing along the bottom, and notes rising out of them and fading. */
+/**
+ * Material's expressive shapes making music: a big twelve-sided cookie, a
+ * record, turns and kicks on every beat (it squashes and swells into a soft
+ * burst and back, with a spring's overshoot), sending out a ring; beside it an
+ * equaliser of fat pills in the theme's tones springs to new heights on each
+ * beat; and on each beat a little shape (a flower, a sun, a clover, a cookie)
+ * pops out of the record, spinning, and shrinks away as it rises. Each shape
+ * is one solid path: nothing in it overlaps itself.
+ */
 @Composable
 private fun AudioShowcase(modifier: Modifier) {
     val scheme = MaterialTheme.colorScheme
-    val loop = rememberLoop(3_000, "formatAudio", still = 0.35f)
+    val loop = rememberLoop(AUDIO_BEATS * AUDIO_BEAT_MS, "formatAudio", still = 0.1f)
     val top = scheme.secondaryContainer
     val bottom = scheme.surfaceContainerHigh
-    val bar = scheme.secondary
-    val note = scheme.onSecondaryContainer
+    val record = scheme.tertiary
+    val label = scheme.tertiaryContainer
+    val ring = scheme.tertiary
+    val pills = listOf(scheme.primary, scheme.tertiary, scheme.secondary, scheme.primary, scheme.tertiary)
+    val sparks = listOf(scheme.primary, scheme.tertiary, scheme.secondary, scheme.tertiary)
+    val shapes = remember { AudioShapes() }
     Canvas(modifier = modifier) {
         val t = loop.value
         drawRect(Brush.verticalGradient(listOf(top, bottom)))
-        val bars = (size.width / (size.height * 0.11f)).toInt().coerceIn(12, 64)
-        val w = size.width / bars
-        val base = size.height * 0.88f
-        for (i in 0 until bars) {
-            val p = i.toFloat() / bars
-            val a = abs(sin((p * 3f + t) * 2 * PI)).toFloat()
-            val b = abs(sin((p * 7f - t * 2f) * 2 * PI)).toFloat()
-            val h = size.height * (0.08f + 0.42f * (0.6f * a + 0.4f * b))
-            drawLine(bar, Offset(i * w + w / 2f, base), Offset(i * w + w / 2f, base - h), strokeWidth = w * 0.55f, cap = StrokeCap.Round)
+        val beats = t * AUDIO_BEATS
+        val beat = beats.toInt().coerceIn(0, AUDIO_BEATS - 1)
+        val p = beats - beat
+        val kick = springKick(p)
+
+        // The record: turning all the while, kicked on the beat.
+        val d = size.height * 0.62f
+        val centre = Offset(size.width * 0.3f, size.height * 0.52f)
+        // A ring sent out by the kick, a cookie's outline growing and thinning.
+        val ringScale = 1f + 0.55f * ease(p, 0f, 0.8f)
+        val ringWidth = size.height * 0.035f * (1f - ease(p, 0.1f, 0.85f))
+        if (ringWidth > 0.5f) {
+            drawUnit(shapes.cookie, centre, d * ringScale, t * 90f, ring.copy(alpha = 0.5f), Stroke(width = ringWidth / (d * ringScale)))
         }
-        for (n in 0 until 3) {
-            val q = (t + n / 3f) % 1f
-            val alpha = (if (q < 0.15f) q / 0.15f else 1f - (q - 0.15f) / 0.85f).coerceIn(0f, 1f)
-            val x = size.width * (0.25f + 0.25f * n) + sin((q * 2f + n) * PI).toFloat() * size.height * 0.08f
-            val y = size.height * (0.7f - 0.55f * q)
-            drawNote(note.copy(alpha = alpha), Offset(x, y), size.height * 0.07f)
+        val swell = 1f + 0.1f * kick
+        drawUnit(shapes.morph(kick.coerceIn(0f, 1f)), centre, d * swell, t * 180f, record)
+        drawCircle(label, radius = d * 0.17f * swell, center = centre)
+        drawCircle(record, radius = d * 0.04f, center = centre)
+
+        // The equaliser: fat pills springing from the last beat's heights to this one's.
+        val left = size.width * 0.56f
+        val right = size.width * 0.93f
+        val count = AUDIO_LEVELS[0].size
+        val pitch = (right - left) / count
+        val width = pitch * 0.62f
+        val floor = size.height * 0.86f
+        val tallest = size.height * 0.66f
+        val settle = springStep(p)
+        for (i in 0 until count) {
+            val from = AUDIO_LEVELS[(beat + AUDIO_BEATS - 1) % AUDIO_BEATS][i]
+            val to = AUDIO_LEVELS[beat][i]
+            val level = (from + (to - from) * settle).coerceIn(0.08f, 1.08f)
+            val h = (tallest * level).coerceAtLeast(width)
+            drawRoundRect(
+                color = pills[i % pills.size],
+                topLeft = Offset(left + i * pitch + (pitch - width) / 2f, floor - h),
+                size = Size(width, h),
+                cornerRadius = CornerRadius(width / 2f),
+            )
+        }
+
+        // A shape popped out on each of the last two beats, rising and shrinking away.
+        for (n in 0 until 2) {
+            val age = (p + n) / 2f
+            val which = (beat - n + AUDIO_BEATS) % AUDIO_BEATS
+            val grow = springStep((age / 0.25f).coerceIn(0f, 1f)) * (1f - ease(age, 0.55f, 1f))
+            if (grow <= 0.01f) continue
+            val side = if (which % 2 == 0) 1f else -1f
+            val at = Offset(
+                centre.x + side * d * (0.42f + 0.25f * age),
+                centre.y - d * (0.25f + 0.55f * age),
+            )
+            drawUnit(shapes.spark(which), at, size.height * 0.16f * grow, age * 240f * side, sparks[which % sparks.size])
         }
     }
 }
 
-/** A quaver: its head at [head], its stem and its flag. */
-private fun DrawScope.drawNote(color: Color, head: Offset, r: Float) {
-    drawOval(color, topLeft = Offset(head.x - r * 1.2f, head.y - r * 0.85f), size = Size(r * 2.4f, r * 1.7f))
-    val stemX = head.x + r * 1.05f
-    drawLine(color, Offset(stemX, head.y), Offset(stemX, head.y - r * 4.2f), strokeWidth = r * 0.42f, cap = StrokeCap.Round)
-    drawLine(color, Offset(stemX, head.y - r * 4.2f), Offset(stemX + r * 1.6f, head.y - r * 3f), strokeWidth = r * 0.42f, cap = StrokeCap.Round)
+/** How many beats a loop has, and how long one lasts. */
+private const val AUDIO_BEATS = 4
+private const val AUDIO_BEAT_MS = 650
+
+/** The equaliser's heights (0..1) on each beat. */
+private val AUDIO_LEVELS = arrayOf(
+    floatArrayOf(0.95f, 0.55f, 0.75f, 0.35f, 0.6f),
+    floatArrayOf(0.4f, 0.85f, 0.5f, 0.7f, 0.3f),
+    floatArrayOf(0.7f, 0.35f, 0.95f, 0.5f, 0.8f),
+    floatArrayOf(0.3f, 0.65f, 0.45f, 0.9f, 0.5f),
+)
+
+/** A kick at [p] = 0 of a beat dying away with a bounce: 1, below 0, back. */
+private fun springKick(p: Float): Float = (kotlin.math.exp(-5f * p) * kotlin.math.cos(9f * p)).toFloat()
+
+/** 0 to 1 over [p] = 0..1 with a spring's overshoot past 1 on the way. */
+private fun springStep(p: Float): Float = 1f - (kotlin.math.exp(-6f * p) * kotlin.math.cos(10f * p)).toFloat()
+
+/**
+ * Material's shapes for the audio film, as paths in a unit square: the record
+ * (a twelve-sided cookie, and its morph into a soft burst on the kick) and the
+ * sparks it sends out. Made once: matching a morph's features takes a while.
+ */
+private class AudioShapes {
+    val cookie: Path = unit(MaterialShapes.Cookie12Sided)
+    private val sparkShapes = listOf(MaterialShapes.Flower, MaterialShapes.Sunny, MaterialShapes.Clover4Leaf, MaterialShapes.Cookie6Sided).map(::unit)
+    private val kick = Morph(MaterialShapes.Cookie12Sided, MaterialShapes.SoftBurst)
+    private val kickBounds = kick.calculateBounds()
+    private val scratch = android.graphics.Path()
+    private val matrix = android.graphics.Matrix()
+
+    fun spark(index: Int): Path = sparkShapes[index % sparkShapes.size]
+
+    /** The record [progress] of the way to the soft burst (a path reused: draw it at once). */
+    fun morph(progress: Float): Path {
+        scratch.rewind()
+        kick.toPath(progress, scratch)
+        matrix.setTranslate(-kickBounds[0], -kickBounds[1])
+        matrix.postScale(1f / (kickBounds[2] - kickBounds[0]), 1f / (kickBounds[3] - kickBounds[1]))
+        scratch.transform(matrix)
+        return scratch.asComposePath()
+    }
+
+    private fun unit(polygon: RoundedPolygon): Path {
+        val bounds = polygon.calculateBounds()
+        val path = polygon.toPath()
+        val m = android.graphics.Matrix()
+        m.setTranslate(-bounds[0], -bounds[1])
+        m.postScale(1f / (bounds[2] - bounds[0]), 1f / (bounds[3] - bounds[1]))
+        path.transform(m)
+        return path.asComposePath()
+    }
+}
+
+/** [unit] (a path in a unit square) drawn [side] wide around [centre], turned by [degrees], filled or stroked. */
+private fun DrawScope.drawUnit(unit: Path, centre: Offset, side: Float, degrees: Float, color: Color, style: DrawStyle = Fill) {
+    withTransform({
+        rotate(degrees, pivot = centre)
+        translate(centre.x - side / 2f, centre.y - side / 2f)
+        scale(side, side, pivot = Offset.Zero)
+    }) {
+        drawPath(unit, color, style = style)
+    }
 }
 
 // -- Image ---------------------------------------------------------------------------------------

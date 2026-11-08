@@ -1,6 +1,7 @@
 package com.cuscus.ffmpeggui.core.model
 
 import java.util.UUID
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -24,6 +25,11 @@ import kotlin.math.roundToInt
  *
  * [look] gives it an outline, a shadow and a box behind it; [fontFile] draws
  * it with a font the user added instead of [font].
+ *
+ * It is turned by [rotationDegrees] (clockwise) about its anchor: the point
+ * of its box at ([x], [y]) of its size, which lies at ([x], [y]) of the frame
+ * (the middle of a centred caption). [blend] mixes it with what lies under it
+ * (see LayerBlend), as a picture's.
  *
  * A [hidden] caption is kept in the project but neither shown nor exported; a
  * [locked] one cannot be picked or moved on the picture (it is chosen from the
@@ -67,7 +73,14 @@ data class TextOverlay(
     val hidden: Boolean = false,
     /** Not picked nor moved by hand on the picture (the layers list's lock). */
     val locked: Boolean = false,
-)
+    /** How far it is turned, clockwise, about its anchor (degrees). */
+    val rotationDegrees: Float = 0f,
+    /** How it mixes with what lies under it. */
+    val blend: LayerBlend = LayerBlend.NORMAL,
+) {
+    /** Drawn as a layer of its own (turned, or blended), rather than straight on the frame. */
+    val layered: Boolean get() = blend != LayerBlend.NORMAL || abs(rotationDegrees % 360f) > 0.01f
+}
 
 /**
  * A caption's outline, shadow and background box, as FFmpeg's drawtext draws

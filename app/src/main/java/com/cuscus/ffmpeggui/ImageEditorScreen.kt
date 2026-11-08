@@ -163,6 +163,7 @@ import com.cuscus.ffmpeggui.core.preview.eqMatrix
 import androidx.compose.material.icons.rounded.ContentCut
 import com.cuscus.ffmpeggui.core.model.KeyMode
 import com.cuscus.ffmpeggui.preview.stillPicture
+import com.cuscus.ffmpeggui.preview.stillRaster
 import com.cuscus.ffmpeggui.preview.SubjectMasks
 import com.cuscus.ffmpeggui.preview.toBitmap
 import com.cuscus.ffmpeggui.preview.toRaster
@@ -254,7 +255,7 @@ internal enum class ImageTool(@StringRes val labelRes: Int, val icon: ImageVecto
 
 private val TEXT_TOOLS = listOf(
     ImageTool.TEXT_EDIT, ImageTool.TEXT_STYLE, ImageTool.TEXT_OUTLINE, ImageTool.TEXT_SHADOW, ImageTool.TEXT_BOX,
-    ImageTool.LAYOUT, ImageTool.LAYERS,
+    ImageTool.LAYOUT, ImageTool.ROTATE, ImageTool.BLEND, ImageTool.LAYERS,
 )
 private val STICKER_TOOLS = listOf(
     ImageTool.LAYOUT, ImageTool.STICKER_CROP, ImageTool.ROTATE, ImageTool.STICKER_BORDER, ImageTool.STICKER_SHADOW,
@@ -384,7 +385,7 @@ fun ImageEditorScreen(
         if (!described) return@produceState
         if (grabber == null) {
             // Opaque, as the export reads it (rgb24); its own alpha apart, for a picture that keeps it.
-            val raw = withContext(Dispatchers.IO) { stillPicture(context, uri)?.toRaster() }
+            val raw = withContext(Dispatchers.IO) { stillRaster(context, uri) }
             sourceAlpha = raw?.takeIf { keepsAlpha }?.let { withContext(Dispatchers.Default) { alphaOf(it) } }
             value = raw?.let { withContext(Dispatchers.Default) { it.opaque() } }
             loadFailed = value == null
@@ -506,7 +507,7 @@ fun ImageEditorScreen(
     val firstUri = source?.originalUri
     val firstPicture by produceState<android.graphics.Bitmap?>(initialValue = null, firstUri) {
         val uri = firstUri ?: return@produceState
-        val raw = withContext(Dispatchers.IO) { stillPicture(context, uri)?.toRaster() } ?: return@produceState
+        val raw = withContext(Dispatchers.IO) { stillRaster(context, uri) } ?: return@produceState
         value = withContext(Dispatchers.Default) { (if (keepsAlpha) raw else raw.opaque()).toBitmap() }
     }
     val current = remember(sourceRaster, sourceAlpha) {
@@ -674,6 +675,15 @@ fun ImageEditorScreen(
             }
         }
     }
+    // The phone's photo picker: its gallery's pictures.
+    val stickerGallery = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            onAddOverlays(uris.map { PickedFile(it, stickerName) }) { id ->
+                selectedOverlayId = id
+                if (selectedTool != ImageTool.LAYERS) selectedTool = null
+            }
+        }
+    }
     val addShape: () -> Unit = {
         onAddShape(0L) { id ->
             selectedOverlayId = id
@@ -770,7 +780,7 @@ fun ImageEditorScreen(
     if (stickerSheetOpen && stickerShelf != null) {
         com.cuscus.ffmpeggui.stickers.StickerSheet(
             shelf = stickerShelf,
-            pickLabel = stringResource(R.string.stickers_from_phone_picture),
+            galleryHint = stringResource(R.string.stickers_source_gallery_pictures),
             onPick = { sticker ->
                 onAddOverlays(listOf(PickedFile(sticker.uri, stickerName))) { id ->
                     selectedOverlayId = id
@@ -778,6 +788,9 @@ fun ImageEditorScreen(
                 }
             },
             onFromPhone = { stickerPicker.launch(arrayOf("image/*")) },
+            onFromGallery = {
+                stickerGallery.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
             onDismiss = { stickerSheetOpen = false },
         )
     }
@@ -840,6 +853,13 @@ fun ImageEditorScreen(
         lifter?.forget()
     }
     var liftShown by remember { mutableStateOf<LiftedShow?>(null) }
+    // Where the magic eraser fills in behind a subject lifted, while it does.
+    var liftFilling by remember { mutableStateOf<LiftArea?>(null) }
+    // What the long press leaves behind (see LiftMode): read when it happens.
+    val liftSettings by rememberUpdatedState(com.cuscus.ffmpeggui.ui.theme.LocalAppSettings.current)
+    val liftHoles = remember { com.cuscus.ffmpeggui.cutout.LiftHoles(context) }
+    val liftErase = com.cuscus.ffmpeggui.erase.LocalMagicErase.current
+    val currentLiftErase by rememberUpdatedState(liftErase)
     var liftNote by remember { mutableStateOf<LiftNote?>(null) }
     val liftLook by rememberUpdatedState(Triple(shownEdit, viewEffects, keepsAlpha))
     // The picture the subject is lifted from: larger than the preview, made with the same look.
@@ -874,7 +894,7 @@ fun ImageEditorScreen(
                 val (edit, effects, alphaKept) = liftLook
                 val key = Triple(uri, edit, effects)
                 val picture = liftPicture?.takeIf { it.first == key }?.second ?: run {
-                    val raw = withContext(Dispatchers.IO) { stillPicture(context, uri, LIFT_PX)?.toRaster() } ?: throw java.io.IOException("Unreadable picture")
+                    val raw = withContext(Dispatchers.IO) { stillRaster(context, uri, LIFT_PX) } ?: throw java.io.IOException("Unreadable picture")
                     withContext(Dispatchers.Default) {
                         val opaque = raw.opaque()
                         val alpha = if (alphaKept) alphaOf(raw) else null
@@ -901,6 +921,73 @@ fun ImageEditorScreen(
                     onAddPlacedSticker(overlay) { id ->
                         if (selectedTool != null && selectedTool !in STICKER_TOOLS && selectedTool !in SELECTION_FREE_TOOLS) selectedTool = null
                         selectedOverlayId = id
+                    }
+                    // Cut or erased behind, as the settings say: in the photo itself, under its turns and crop.
+                    val mode = liftSettings.liftMode
+                    val photo = source
+                    // A job of its own: the finger may leave now that the sticker is laid.
+                    if (mode != com.cuscus.ffmpeggui.settings.LiftMode.COPY && photo != null) liftScope.launch {
+                        try {
+                            val raw = withContext(Dispatchers.IO) { stillPicture(context, uri, LIFT_PX) } ?: throw java.io.IOException("Unreadable picture")
+                            val stages = com.cuscus.ffmpeggui.core.image.imageStages(edit, effects, raw.width, raw.height)
+                            val hole = if (stages.none { it.isGeometry }) {
+                                lifted
+                            } else {
+                                // The press taken back to the photo, and the subject found there.
+                                val (sx, sy) = com.cuscus.ffmpeggui.core.image.LiftHole.sourcePoint(
+                                    stages, (fx * picture.width).toDouble(), (fy * picture.height).toDouble(), raw.width, raw.height,
+                                )
+                                engine.lift(raw, sx.toFloat(), sy.toFloat())
+                            }
+                            if (hole != null) {
+                                val cover = liftHoles.cover(hole)
+                                if (hole !== lifted) hole.file.delete()
+                                when (mode) {
+                                    com.cuscus.ffmpeggui.settings.LiftMode.CUT -> {
+                                        val cut = liftHoles.cut(
+                                            uri, cover,
+                                            transparent = liftSettings.liftHoleTransparent,
+                                            color = liftSettings.liftHoleColor,
+                                            opaqueColor = liftSettings.liftHoleOpaque,
+                                        )
+                                        onReplacePicture(photo.id, cut)
+                                    }
+                                    com.cuscus.ffmpeggui.settings.LiftMode.ERASE -> {
+                                        val eraser = currentLiftErase
+                                        // The model chosen, or the other one when only that is on the phone.
+                                        val variant = eraser?.variant?.takeIf { eraser.ready[it] == true }
+                                            ?: eraser?.ready?.entries?.firstOrNull { it.value }?.key
+                                        if (eraser != null && variant != null) {
+                                            if (variant != eraser.variant) eraser.onChoose(variant)
+                                            val mask = liftHoles.eraseMask(cover)
+                                            liftNote = LiftNote.FILLING
+                                            // The waves go where the subject was, on the picture as it shows.
+                                            liftFilling = LiftArea(
+                                                left = lifted.left.toFloat() / lifted.pictureWidth,
+                                                top = lifted.top.toFloat() / lifted.pictureHeight,
+                                                width = lifted.width.toFloat() / lifted.pictureWidth,
+                                                height = lifted.height.toFloat() / lifted.pictureHeight,
+                                            )
+                                            eraser.onErase(uri, mask) { erased ->
+                                                liftFilling = null
+                                                onReplacePicture(photo.id, erased)
+                                            }
+                                        }
+                                    }
+                                    com.cuscus.ffmpeggui.settings.LiftMode.COPY -> Unit
+                                }
+                            }
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            // The sticker is laid all the same: only what is behind it stays as it was.
+                            android.util.Log.w("ImageEditor", "Could not cut behind the subject", e)
+                            liftNote = LiftNote.BEHIND_FAILED
+                        } catch (e: OutOfMemoryError) {
+                            liftNote = LiftNote.MEMORY
+                        } finally {
+                            releaseLiftModel()
+                        }
                     }
                     if (image != null) {
                         liftShown = LiftedShow(
@@ -962,9 +1049,30 @@ fun ImageEditorScreen(
             if (note == LiftNote.NEEDS_MODEL) openSmartFeatures?.invoke()
         },
         onNoteGone = { liftNote = null },
+        filling = liftFilling,
     )
+    // The eraser stopped without a picture (failed, or called off): the waves go, and a note says so.
+    val eraseStatus = liftErase?.status
+    var eraseSeenWorking by remember { mutableStateOf(false) }
+    LaunchedEffect(eraseStatus) {
+        if (eraseStatus is com.cuscus.ffmpeggui.conversion.EraseStatus.Working) {
+            eraseSeenWorking = true
+        } else if (eraseSeenWorking) {
+            eraseSeenWorking = false
+            if (liftFilling != null) {
+                liftFilling = null
+                if (eraseStatus is com.cuscus.ffmpeggui.conversion.EraseStatus.Failed) liftNote = LiftNote.BEHIND_FAILED
+            }
+        }
+    }
 
     val stage: @Composable (Modifier) -> Unit = { modifier ->
+        // The long press's note rises above the selected sticker's actions while they show.
+        val noteBottom by animateDpAsState(
+            targetValue = if (overlayActions != null && selectedTool == null) NOTE_OVER_ACTIONS else 12.dp,
+            animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+            label = "liftNoteBottom",
+        )
         // While cropping the picture steps back from the edges, so that its handles are easy to take.
         val cropInset by animateDpAsState(
             targetValue = if (cropping) CROP_FRAME_INSET else 0.dp,
@@ -1011,6 +1119,8 @@ fun ImageEditorScreen(
                 brush = brush,
                 onStroke = onAddStroke,
                 lift = pictureLift,
+                // Above the selected sticker's actions while they show (the note would sit under them).
+                noteBottom = noteBottom,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -1167,6 +1277,12 @@ fun ImageEditorScreen(
                         onBlend = { mode -> onUpdateImage(sticker.id, null) { it.copy(blend = mode) } },
                         enabled = !isManualMode,
                     )
+                } ?: selectedText?.let { text ->
+                    ImageBlendPanel(
+                        blend = text.blend,
+                        onBlend = { mode -> onUpdateText(text.id, null) { it.copy(blend = mode) } },
+                        enabled = !isManualMode,
+                    )
                 }
                 ImageTool.DRAW -> ImageDrawPanel(
                     brush = brush,
@@ -1277,6 +1393,15 @@ fun ImageEditorScreen(
                         onDegrees = { value -> onUpdateImage(sticker.id, "rotate") { it.copy(rotationDegrees = value) } },
                         onFlipHorizontal = { flip -> onUpdateImage(sticker.id, null) { it.copy(flipHorizontal = flip) } },
                         onFlipVertical = { flip -> onUpdateImage(sticker.id, null) { it.copy(flipVertical = flip) } },
+                    )
+                } ?: selectedText?.let { text ->
+                    OverlayRotateContent(
+                        degrees = text.rotationDegrees,
+                        flipHorizontal = false,
+                        flipVertical = false,
+                        onDegrees = { value -> onUpdateText(text.id, "rotate") { it.copy(rotationDegrees = value) } },
+                        onFlipHorizontal = null,
+                        onFlipVertical = null,
                     )
                 }
                 ImageTool.OPACITY -> selectedSticker?.let { sticker ->
@@ -1536,6 +1661,8 @@ private fun PictureStage(
     onStroke: (Stroke) -> Unit,
     /** The long press that lifts a subject off the picture, and what it shows; null: none. */
     lift: PictureLift? = null,
+    /** Room kept under the long press's note: the selected sticker's actions sit there. */
+    noteBottom: androidx.compose.ui.unit.Dp = 12.dp,
     modifier: Modifier = Modifier,
 ) {
     val zoom = rememberStageZoom()
@@ -1720,7 +1847,7 @@ private fun PictureStage(
                 onGone = lift.onNoteGone,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 12.dp, start = 16.dp, end = 16.dp),
+                    .padding(bottom = noteBottom, start = 16.dp, end = 16.dp),
             )
         }
     }
@@ -1976,3 +2103,6 @@ private fun stackPlace(id: String, texts: List<TextOverlay>, images: List<ImageO
 
 /** How a touch on the picture ended before it became a long press. */
 private enum class EarlyEnd { TAP, OTHER }
+
+/** Where the long press's note sits while the selected sticker's actions show under it. */
+private val NOTE_OVER_ACTIONS = 92.dp

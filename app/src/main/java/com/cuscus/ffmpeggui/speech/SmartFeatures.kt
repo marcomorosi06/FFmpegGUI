@@ -133,7 +133,8 @@ class SmartFeatures(
         // The chosen build's recordings, else the other's.
         (listOf(store) + speechStores.values).asSequence().map { it.samples() }.firstOrNull { it.isNotEmpty() }.orEmpty()
     }
-    private val extractor = FfmpegAudioExtractor(context, executor)
+    /** Takes a file's sound out with FFmpeg (the speech model's, voice separation's, the AI check's). */
+    internal val extractor = FfmpegAudioExtractor(context, executor)
     val transcriber = SpeechTranscriber(context, engine, extractor)
 
     val cutoutStores: Map<CutoutVariant, CutoutModelStore> =

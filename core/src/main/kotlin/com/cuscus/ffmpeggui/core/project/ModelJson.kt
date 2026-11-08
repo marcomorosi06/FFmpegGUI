@@ -21,6 +21,7 @@ import com.cuscus.ffmpeggui.core.model.ImageTone
 import com.cuscus.ffmpeggui.core.model.EaseCurve
 import com.cuscus.ffmpeggui.core.model.EasePoint
 import com.cuscus.ffmpeggui.core.model.KeyEasing
+import com.cuscus.ffmpeggui.core.model.LayerBlend
 import com.cuscus.ffmpeggui.core.model.KeyProperty
 import com.cuscus.ffmpeggui.core.model.Keyframe
 import com.cuscus.ffmpeggui.core.model.Keyframes
@@ -429,6 +430,8 @@ object ModelJson {
         put("fontFile", t.fontFile)
         put("hidden", t.hidden)
         put("locked", t.locked)
+        if (t.rotationDegrees != 0f) put("rotationDegrees", t.rotationDegrees)
+        if (t.blend != LayerBlend.NORMAL) put("blend", t.blend.name)
         putKeyframes(t.keyframes)
     }
 
@@ -481,6 +484,8 @@ object ModelJson {
             fontFile = o.stringOrNull("fontFile", d.fontFile),
             hidden = o.bool("hidden", d.hidden),
             locked = o.bool("locked", d.locked),
+            rotationDegrees = o.float("rotationDegrees", d.rotationDegrees),
+            blend = LayerBlend.named(o.stringOrNull("blend")),
         )
     }
 

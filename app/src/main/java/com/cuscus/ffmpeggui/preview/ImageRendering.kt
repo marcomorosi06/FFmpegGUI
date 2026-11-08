@@ -2,6 +2,7 @@ package com.cuscus.ffmpeggui.preview
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
@@ -59,6 +60,50 @@ fun fitted(bitmap: Bitmap, boxPx: Int): Bitmap {
         (bitmap.height * scale).roundToInt().coerceAtLeast(1),
         true,
     )
+}
+
+/**
+ * The picture at [uri] as pixels to work on, as [stillPicture] gives it (the
+ * same size) but decoded without premultiplying: a see-through pixel keeps its
+ * colour, which is what a file that holds no transparency shows there (a hole
+ * cut by the long press, see LiftHole). Null when unreadable.
+ */
+fun stillRaster(context: Context, uri: Uri, boxPx: Int = IMAGE_PREVIEW_PX): Raster? = try {
+    val resolver = context.contentResolver
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        null
+    } else {
+        // The same sample as smallPicture, then the same fit as stillPicture.
+        var sample = 1
+        while (max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= boxPx) sample *= 2
+        resolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPremultiplied = false
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            })
+        }?.let { decoded ->
+            val raster = decoded.toRaster()
+            decoded.recycle()
+            val longer = max(raster.width, raster.height)
+            if (longer <= boxPx) {
+                raster
+            } else {
+                val scale = boxPx.toFloat() / longer
+                com.cuscus.ffmpeggui.core.image.scaledRaster(
+                    raster,
+                    (raster.width * scale).roundToInt().coerceAtLeast(1),
+                    (raster.height * scale).roundToInt().coerceAtLeast(1),
+                )
+            }
+        }
+    }
+} catch (e: Exception) {
+    null
+} catch (e: OutOfMemoryError) {
+    null
 }
 
 /** A still of the project (an upright PNG), at most [boxPx] on its longer side; null when unreadable. */

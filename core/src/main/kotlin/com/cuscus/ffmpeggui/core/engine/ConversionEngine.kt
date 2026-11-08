@@ -18,6 +18,7 @@ import com.cuscus.ffmpeggui.core.output.OutputPlanner
 import com.cuscus.ffmpeggui.core.output.PartsArchive
 import com.cuscus.ffmpeggui.core.provenance.AiDisclosure
 import com.cuscus.ffmpeggui.core.provenance.AiSeal
+import com.cuscus.ffmpeggui.core.provenance.SoundSeal
 import com.cuscus.ffmpeggui.core.provenance.withAiNote
 import com.cuscus.ffmpeggui.core.provenance.Xmp
 import com.cuscus.ffmpeggui.core.provenance.aiDisclosure
@@ -70,6 +71,8 @@ class ConversionEngine(
     private val hdrMaker: HdrPictureMaker? = null,
     /** The font text art is chosen with; without it ASCII and ANSI art cannot be written. */
     private val glyphs: GlyphAtlasSource? = null,
+    /** Marks a finished file's whole sound when a dub is heard in it (see SoundSeal); without it only the dub carries the mark. */
+    private val soundSealer: SoundSeal.SoundSealer? = null,
 ) {
 
     /**
@@ -354,6 +357,8 @@ class ConversionEngine(
             if (disclosure.isEmpty) continue
             val way = AiSeal.wayFor(path)
             if (way == AiSeal.Way.NONE) return ConversionOutcome.Failure(FailureReason.AI_MARKS_NO_PLACE, path.substringAfterLast('.', "").lowercase())
+            // A dub mixed with the rest: the whole sound gets AudioSeal's mark, before the tags.
+            if (disclosure.speech) sealSound(job, path, index, session, full, onEvent)?.let { return it }
             if (manual && (way == AiSeal.Way.TAGS || way == AiSeal.Way.MP4)) {
                 val copy = session.scratchFile("marked_$index.${path.substringAfterLast('.')}")
                 val command = AiSeal.remux(path, copy, disclosure)
@@ -385,6 +390,74 @@ class ConversionEngine(
         }
         onEvent(ConversionEvent.LogLine("Marked as made with AI (EU AI Act, Article 50(2)): ${all.text}"))
         return null
+    }
+
+    /**
+     * The whole sound of the file at [path] marked by [soundSealer] (see
+     * SoundSeal): taken out, marked, put back in place of the first sound,
+     * everything else copied. Best effort: the dub in it carries its own mark
+     * already, so a file this cannot do (no sound, a format it does not know, a
+     * failure) is kept as it is, said in the log. Null but when stopped, or the
+     * storage is full.
+     */
+    private suspend fun sealSound(
+        job: ConversionJob,
+        path: String,
+        index: Int,
+        session: StagingSession,
+        full: StorageFull,
+        onEvent: (ConversionEvent) -> Unit,
+    ): ConversionOutcome? {
+        val sealer = soundSealer ?: return null
+        val extension = path.substringAfterLast('.', "").lowercase()
+        val codec = SoundSeal.codecFor(extension, job.request.encoding.audio)
+        if (codec == null) {
+            onEvent(ConversionEvent.LogLine("Sound not marked again: .$extension"))
+            return null
+        }
+        val wav = session.scratchFile("sound_$index.wav")
+        val marked = session.scratchFile("sound_marked_$index.wav")
+        val again = session.scratchFile("sound_sealed_$index.$extension")
+        try {
+            when (logged(SoundSeal.decode(path, wav), null, full, onEvent)) {
+                ExecutionResult.Success -> Unit
+                ExecutionResult.Cancelled -> return ConversionOutcome.Cancelled
+                is ExecutionResult.Failed -> {
+                    if (full.seen) return full.or(FailureReason.AI_MARKS_FAILED, "")
+                    onEvent(ConversionEvent.LogLine("No sound to mark in ${File(path).name}"))
+                    return null
+                }
+            }
+            // A stage of its own, with its progress: it takes a while (about a second per 10 s of sound).
+            onEvent(ConversionEvent.StageChanged(ConversionStage.MARKING))
+            onEvent(ConversionEvent.Progress(0f))
+            try {
+                sealer.seal(File(wav), File(marked)) { fraction -> onEvent(ConversionEvent.Progress(fraction.coerceIn(0f, 1f))) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                onEvent(ConversionEvent.LogLine("Sound not marked again (${e.message}): the dub keeps its own mark"))
+                return null
+            }
+            when (val result = logged(SoundSeal.remux(path, marked, again, codec), null, full, onEvent)) {
+                ExecutionResult.Success -> try {
+                    File(again).copyTo(File(path), overwrite = true)
+                    onEvent(ConversionEvent.LogLine("Whole sound marked with AudioSeal"))
+                } catch (e: IOException) {
+                    return ConversionOutcome.Failure(FailureReason.AI_MARKS_FAILED, e.message.orEmpty())
+                }
+                ExecutionResult.Cancelled -> return ConversionOutcome.Cancelled
+                is ExecutionResult.Failed -> {
+                    if (full.seen) return full.or(FailureReason.AI_MARKS_FAILED, "")
+                    onEvent(ConversionEvent.LogLine("Sound not marked again (exit code ${result.returnCode}): the dub keeps its own mark"))
+                }
+            }
+            return null
+        } finally {
+            File(wav).delete()
+            File(marked).delete()
+            File(again).delete()
+        }
     }
 
     /**

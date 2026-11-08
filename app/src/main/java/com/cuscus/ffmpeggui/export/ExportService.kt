@@ -27,9 +27,12 @@ class ExportService : Service() {
             notifier?.cancelRequested()
             return START_NOT_STICKY
         }
-        val notification = notifier?.progressNotification()
+        // Started in the foreground, it must take the foreground at once, whatever happened
+        // meanwhile: else Android closes the app. An export over already (a command that fails
+        // at once, "pwd" for one) gets a quiet notification, held only to let go of it.
+        val running = notifier?.progressNotification()
+        val notification = running ?: notifier?.closingNotification()
         if (notification == null) {
-            // Nothing runs (any more): nothing to hold.
             stopSelf()
             return START_NOT_STICKY
         }
@@ -38,7 +41,23 @@ class ExportService : Service() {
                 startForeground(AndroidExportNotifier.PROGRESS_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
             else -> startForeground(AndroidExportNotifier.PROGRESS_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         }
+        holding = true
+        if (running == null || stopWanted) {
+            stopWanted = false
+            letGo()
+        }
         return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        holding = false
+        super.onDestroy()
+    }
+
+    /** Out of the foreground, its notification gone, and stopped. */
+    private fun letGo() {
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     /** Android 15 ends a media processing service after six hours: the export is stopped. */
@@ -56,9 +75,28 @@ class ExportService : Service() {
     companion object {
         private const val ACTION_CANCEL = "com.cuscus.ffmpeggui.export.CANCEL"
 
-        /** Lets the service go: the export is over. */
+        /** The service has taken the foreground (and has not ended since). */
+        @Volatile private var holding = false
+
+        /** The export ended before the service took the foreground: it lets go as soon as it has. */
+        @Volatile private var stopWanted = false
+
+        /** A new export is about to start the service: no stop is pending any more. */
+        fun expectStart() {
+            stopWanted = false
+        }
+
+        /**
+         * Lets the service go: the export is over. Not before it has taken the
+         * foreground, which Android would answer by closing the app: then it
+         * lets go by itself as soon as it has.
+         */
         fun stop(context: Context) {
-            context.stopService(Intent(context, ExportService::class.java))
+            if (holding) {
+                context.stopService(Intent(context, ExportService::class.java))
+            } else {
+                stopWanted = true
+            }
         }
 
         /** What the notification's cancel button sends. */

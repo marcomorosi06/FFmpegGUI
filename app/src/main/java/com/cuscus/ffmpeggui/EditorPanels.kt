@@ -1487,8 +1487,9 @@ internal fun OverlayRotateContent(
     flipHorizontal: Boolean,
     flipVertical: Boolean,
     onDegrees: (Float) -> Unit,
-    onFlipHorizontal: (Boolean) -> Unit,
-    onFlipVertical: (Boolean) -> Unit,
+    /** Null: it cannot be mirrored (a caption), and the flips are not offered. */
+    onFlipHorizontal: ((Boolean) -> Unit)?,
+    onFlipVertical: ((Boolean) -> Unit)?,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         Row(
@@ -1511,7 +1512,7 @@ internal fun OverlayRotateContent(
                 icon = Icons.Rounded.RotateRight,
                 chosenShape = MaterialShapes.Clover4Leaf,
             )
-            OptionTile(
+            if (onFlipHorizontal != null) OptionTile(
                 label = stringResource(R.string.flip_horizontal),
                 selected = flipHorizontal,
                 onClick = { onFlipHorizontal(!flipHorizontal) },
@@ -1519,7 +1520,7 @@ internal fun OverlayRotateContent(
                 icon = Icons.Rounded.Flip,
                 chosenShape = MaterialShapes.Flower,
             )
-            OptionTile(
+            if (onFlipVertical != null) OptionTile(
                 label = stringResource(R.string.flip_vertical),
                 selected = flipVertical,
                 onClick = { onFlipVertical(!flipVertical) },

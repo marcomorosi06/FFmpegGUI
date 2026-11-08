@@ -99,7 +99,9 @@ internal fun StudioReply(joke: Joke?) {
             ) {
                 Text(stringResource(shown.reply), style = MaterialTheme.typography.bodyLargeEmphasized, color = scheme.onTertiaryContainer)
                 Spacer(modifier = Modifier.padding(top = 4.dp))
-                Text(stringResource(R.string.studio_joke_safe), style = MaterialTheme.typography.labelMedium, color = scheme.onTertiaryContainer.copy(alpha = 0.75f))
+                // The cat has its own second line; every other reply says that nothing runs.
+                val after = if (shown == Joke.CAT) R.string.studio_joke_cat_after else R.string.studio_joke_safe
+                Text(stringResource(after), style = MaterialTheme.typography.labelMedium, color = scheme.onTertiaryContainer.copy(alpha = 0.75f))
             }
         }
     }
@@ -109,17 +111,41 @@ internal fun StudioReply(joke: Joke?) {
 private val Joke.reply: Int
     get() = when (this) {
         Joke.ROOT -> R.string.studio_joke_root
+        Joke.PLEASE -> R.string.studio_joke_please
         Joke.SANDWICH -> R.string.studio_joke_sandwich
         Joke.SANDWICH_SUDO -> R.string.studio_joke_sandwich_sudo
         Joke.WIPE -> R.string.studio_joke_wipe
+        Joke.RM -> R.string.studio_joke_rm
         Joke.WAY_OUT -> R.string.studio_joke_way_out
+        Joke.EXIT -> R.string.studio_joke_exit
+        Joke.VIM -> R.string.studio_joke_vim
         Joke.EDITOR -> R.string.studio_joke_editor
         Joke.PING -> R.string.studio_joke_ping
         Joke.WHOAMI -> R.string.studio_joke_whoami
         Joke.FILES -> R.string.studio_joke_files
+        Joke.CAT -> R.string.studio_joke_cat
+        Joke.PWD -> R.string.studio_joke_pwd
+        Joke.CD -> R.string.studio_joke_cd
+        Joke.PYTHON -> R.string.studio_joke_python
+        Joke.APT -> R.string.studio_joke_apt
+        Joke.DNF -> R.string.studio_joke_dnf
+        Joke.PACMAN -> R.string.studio_joke_pacman
+        Joke.SL -> R.string.studio_joke_sl
+        Joke.CLEAR -> R.string.studio_joke_clear
+        Joke.TOP -> R.string.studio_joke_top
+        Joke.GIT_STATUS -> R.string.studio_joke_git_status
+        Joke.KILL -> R.string.studio_joke_kill
+        Joke.MAN -> R.string.studio_joke_man
+        Joke.HISTORY -> R.string.studio_joke_history
+        Joke.ECHO -> R.string.studio_joke_echo
+        Joke.REBOOT -> R.string.studio_joke_reboot
+        Joke.NMAP -> R.string.studio_joke_nmap
+        Joke.GREP -> R.string.studio_joke_grep
+        Joke.HELL -> R.string.studio_joke_hell
         Joke.HELLO -> R.string.studio_joke_hello
         Joke.XYZZY -> R.string.studio_joke_xyzzy
         Joke.TEAPOT -> R.string.studio_joke_teapot
         Joke.ANSWER -> R.string.studio_joke_answer
         Joke.PUSH -> R.string.studio_joke_push
+        Joke.SHELL -> R.string.studio_joke_shell
     }

@@ -554,7 +554,9 @@ private fun StepRow(step: PlanStep, index: Int, count: Int, fraction: Float?) {
     val scheme = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val (badge, content) = when (step.state) {
-        StepState.WORKING -> scheme.tertiary to scheme.onTertiary
+        // The running step's badge is the row's own pair turned over: it stands out on the row
+        // whatever tone the wallpaper gives the container.
+        StepState.WORKING -> scheme.onTertiaryContainer to scheme.tertiaryContainer
         StepState.DONE -> scheme.primary to scheme.onPrimary
         StepState.MISSING -> scheme.errorContainer to scheme.onErrorContainer
         StepState.SKIPPED -> scheme.surfaceContainerHighest to scheme.outline
@@ -564,6 +566,26 @@ private fun StepRow(step: PlanStep, index: Int, count: Int, fraction: Float?) {
         if (step.state == StepState.WORKING) scheme.tertiaryContainer else scheme.surfaceContainerHigh,
         motion.defaultEffectsSpec(),
         label = "stepRow",
+    )
+    // The words in the colours made for the row's container (a running row is tertiary).
+    val working = step.state == StepState.WORKING
+    val titleColor by animateColorAsState(
+        when {
+            working -> scheme.onTertiaryContainer
+            step.state == StepState.SKIPPED -> scheme.onSurfaceVariant
+            else -> scheme.onSurface
+        },
+        motion.defaultEffectsSpec(),
+        label = "stepTitle",
+    )
+    val textColor by animateColorAsState(
+        when {
+            step.state == StepState.MISSING -> scheme.error
+            working -> scheme.onTertiaryContainer.copy(alpha = 0.8f)
+            else -> scheme.onSurfaceVariant
+        },
+        motion.defaultEffectsSpec(),
+        label = "stepText",
     )
     val shape = com.cuscus.ffmpeggui.settings.groupShape(index, count)
     Column(
@@ -596,13 +618,13 @@ private fun StepRow(step: PlanStep, index: Int, count: Int, fraction: Float?) {
                 Text(
                     step.title,
                     style = MaterialTheme.typography.titleSmallEmphasized,
-                    color = if (step.state == StepState.SKIPPED) scheme.onSurfaceVariant else scheme.onSurface,
+                    color = titleColor,
                 )
                 if (step.text.isNotEmpty()) {
                     Text(
                         step.text,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (step.state == StepState.MISSING) scheme.error else scheme.onSurfaceVariant,
+                        color = textColor,
                     )
                 }
             }
@@ -610,9 +632,18 @@ private fun StepRow(step: PlanStep, index: Int, count: Int, fraction: Float?) {
         if (step.state == StepState.WORKING) {
             Spacer(modifier = Modifier.height(10.dp))
             if (fraction != null) {
-                LinearWavyProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+                LinearWavyProgressIndicator(
+                    progress = { fraction },
+                    color = scheme.onTertiaryContainer,
+                    trackColor = scheme.onTertiaryContainer.copy(alpha = 0.2f),
+                    modifier = Modifier.fillMaxWidth(),
+                )
             } else {
-                LinearWavyProgressIndicator(modifier = Modifier.fillMaxWidth())
+                LinearWavyProgressIndicator(
+                    color = scheme.onTertiaryContainer,
+                    trackColor = scheme.onTertiaryContainer.copy(alpha = 0.2f),
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
     }

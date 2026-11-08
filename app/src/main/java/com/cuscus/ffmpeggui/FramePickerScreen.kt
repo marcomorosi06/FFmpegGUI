@@ -43,6 +43,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.ArrowBackIosNew
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -140,6 +141,8 @@ import kotlin.math.roundToLong
  * @param initialMs    the frame chosen before, in the file.
  * @param onEditAsPhoto the frame at that position of the file is edited as a photo.
  * @param onExportFrames every frame at that rate, between those positions of the file, into a zip.
+ * @param placeInto    the name of a project the frame is laid over (a shared video added to a
+ *   picture project): the frame is placed there with [onEditAsPhoto] instead, and no zip is offered.
  */
 @Composable
 fun FramePickerScreen(
@@ -153,6 +156,7 @@ fun FramePickerScreen(
     onEditAsPhoto: (Long) -> Unit,
     onExportFrames: (framesPerSecond: Float, startMs: Long, endMs: Long) -> Unit,
     onBack: () -> Unit,
+    placeInto: String? = null,
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -255,6 +259,7 @@ fun FramePickerScreen(
                 rangeEndMs = end,
                 onFrame = go,
                 onTogglePlay = togglePlay,
+                placeInto = placeInto,
                 onEditAsPhoto = {
                     haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                     player.pause()
@@ -455,6 +460,7 @@ private fun FrameControls(
     onTogglePlay: () -> Unit,
     onEditAsPhoto: () -> Unit,
     onExport: () -> Unit,
+    placeInto: String? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
@@ -548,17 +554,25 @@ private fun FrameControls(
             onClick = onEditAsPhoto,
             modifier = Modifier.fillMaxWidth().height(64.dp),
         ) {
-            Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(24.dp))
+            Icon(if (placeInto != null) Icons.Rounded.AddPhotoAlternate else Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(24.dp))
             Spacer(modifier = Modifier.width(10.dp))
-            Text(stringResource(R.string.frame_picker_edit), style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = if (placeInto != null) stringResource(R.string.intake_frame_place, placeInto) else stringResource(R.string.frame_picker_edit),
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-        FilledTonalButton(
-            onClick = onExport,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-        ) {
-            Icon(Icons.Rounded.Archive, contentDescription = null, modifier = Modifier.size(22.dp))
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(stringResource(R.string.frame_picker_all), style = MaterialTheme.typography.titleSmall)
+        // A frame laid over a project is one frame: no zip of them all.
+        if (placeInto == null) {
+            FilledTonalButton(
+                onClick = onExport,
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+            ) {
+                Icon(Icons.Rounded.Archive, contentDescription = null, modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(stringResource(R.string.frame_picker_all), style = MaterialTheme.typography.titleSmall)
+            }
         }
         PanelHint(stringResource(R.string.frame_picker_hint))
     }

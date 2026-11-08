@@ -129,6 +129,11 @@ import com.cuscus.ffmpeggui.ui.expressive.ConnectedChoiceGroup
 import com.cuscus.ffmpeggui.export.PublicCopies
 import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
 import com.cuscus.ffmpeggui.ui.expressive.OptionTileRow
+import com.cuscus.ffmpeggui.speech.SpeechModelStore
+import androidx.compose.material.icons.rounded.CenterFocusStrong
+import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.ContentCut
+import androidx.compose.material.icons.rounded.ContentCopy
 import com.cuscus.ffmpeggui.ui.expressive.TileOption
 import com.cuscus.ffmpeggui.ui.theme.dynamicColorAvailable
 import com.cuscus.ffmpeggui.ui.theme.appColorScheme
@@ -417,6 +422,10 @@ fun SettingsCategoryScreen(
     canCalibrate: Boolean = true,
     /** The smart features (the speech model and its test). */
     smart: SmartFeaturesUi? = null,
+    /** A magic eraser's model is on the phone (the long press can fill in what it leaves). */
+    eraseReady: Boolean = false,
+    /** Goes to where the magic eraser's models are set up. */
+    onGetEraseModel: () -> Unit = {},
 ) {
     // The smart features are a showcase of their own: a hub and a page per feature.
     if (category == SettingsCategory.SMART && smart != null) {
@@ -436,7 +445,7 @@ fun SettingsCategoryScreen(
         CategoryArt(category, settings, modifier = Modifier.popIn(true, 0))
         when (category) {
             SettingsCategory.APPEARANCE -> AppearanceSettings(settings, onChange)
-            SettingsCategory.EDITOR -> EditorSettings(settings, onChange)
+            SettingsCategory.EDITOR -> EditorSettings(settings, onChange, eraseReady, onGetEraseModel, smart?.erase)
             SettingsCategory.VIBRATION -> VibrationSettings(settings, onChange)
             SettingsCategory.EXPORTS -> ExportSettings(
                 settings, onChange, exportsUsage, canDeleteExports, onDeleteExports,
@@ -644,7 +653,13 @@ private fun PaletteSample(first: Color, second: Color, third: Color) {
 
 /** How the editors look and lay themselves out. */
 @Composable
-private fun EditorSettings(settings: AppSettings, onChange: ((AppSettings) -> AppSettings) -> Unit) {
+private fun EditorSettings(
+    settings: AppSettings,
+    onChange: ((AppSettings) -> AppSettings) -> Unit,
+    eraseReady: Boolean,
+    onGetEraseModel: () -> Unit,
+    erase: EraseFeatureUi?,
+) {
     val scheme = MaterialTheme.colorScheme
     // Where the player goes on a screen wider than it is tall: three pictures that morph when chosen.
     Column(
@@ -709,7 +724,201 @@ private fun EditorSettings(settings: AppSettings, onChange: ((AppSettings) -> Ap
             },
         ),
     )
+    LiftSettings(settings, onChange, eraseReady, onGetEraseModel, erase)
 }
+
+/**
+ * The photo editor's long press on a subject: a copy (the photo untouched), a
+ * cut (a hole where it was: see-through, with a colour for the files that
+ * hold no transparency, or a colour) or a fill by the magic eraser, offered
+ * only with its model (else the tile leads to it).
+ */
+@Composable
+private fun LiftSettings(
+    settings: AppSettings,
+    onChange: ((AppSettings) -> AppSettings) -> Unit,
+    eraseReady: Boolean,
+    onGetEraseModel: () -> Unit,
+    /** The magic eraser's models: which one erases (the same choice as the eraser's own panel). */
+    erase: EraseFeatureUi?,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    // A section of its own: it is the photo editor's, not the timeline's.
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = stringResource(R.string.settings_editor_photo),
+            style = SettingsGroupTitle,
+            color = scheme.primary,
+            modifier = Modifier.padding(start = 20.dp, bottom = 10.dp, top = 8.dp),
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(28.dp))
+                .background(scheme.surfaceContainerHigh)
+                .padding(16.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.settings_lift),
+                style = SettingsRowTitle,
+                color = scheme.onSurface,
+                modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+            )
+            Text(
+                text = stringResource(
+                    when (settings.liftMode) {
+                        LiftMode.COPY -> R.string.settings_lift_copy_summary
+                        LiftMode.CUT -> R.string.settings_lift_cut_summary
+                        LiftMode.ERASE -> R.string.settings_lift_erase_summary
+                    },
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, bottom = 10.dp),
+            )
+            OptionTileRow(
+                options = listOf(
+                    TileOption(LiftMode.COPY, stringResource(R.string.settings_lift_copy), Icons.Rounded.ContentCopy),
+                    TileOption(LiftMode.CUT, stringResource(R.string.settings_lift_cut), Icons.Rounded.ContentCut),
+                    TileOption(LiftMode.ERASE, stringResource(R.string.settings_lift_erase), Icons.Rounded.AutoFixHigh),
+                ),
+                selected = settings.liftMode,
+                onSelect = { mode ->
+                    if (mode == LiftMode.ERASE && !eraseReady) onGetEraseModel() else onChange { it.copy(liftMode = mode) }
+                },
+            )
+            if (!eraseReady) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                    Text(
+                        text = stringResource(R.string.settings_lift_erase_needs_model),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f).padding(start = 4.dp),
+                    )
+                    androidx.compose.material3.TextButton(onClick = onGetEraseModel) { Text(stringResource(R.string.erase_get_model)) }
+                }
+            }
+            // Which of the eraser's models fills in: one on the phone, or the way to get the other.
+            if (erase != null) {
+                AnimatedVisibility(
+                    visible = settings.liftMode == LiftMode.ERASE,
+                    enter = expandVertically(motion.defaultSpatialSpec()) + androidx.compose.animation.fadeIn(motion.defaultEffectsSpec()),
+                    exit = androidx.compose.animation.shrinkVertically(motion.fastSpatialSpec()) + androidx.compose.animation.fadeOut(motion.fastEffectsSpec()),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(top = 14.dp)) {
+                        Text(
+                            text = stringResource(R.string.settings_lift_erase_model),
+                            style = MaterialTheme.typography.labelLargeEmphasized,
+                            color = scheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+                        )
+                        val ready: (com.cuscus.ffmpeggui.erase.EraseVariant) -> Boolean = { erase.variants[it] is SpeechModelStore.State.Ready }
+                        OptionTileRow(
+                            options = listOf(
+                                TileOption(
+                                    com.cuscus.ffmpeggui.erase.EraseVariant.FAST,
+                                    stringResource(R.string.erase_variant_fast),
+                                    Icons.Rounded.Speed,
+                                ),
+                                TileOption(
+                                    com.cuscus.ffmpeggui.erase.EraseVariant.PRECISE,
+                                    stringResource(R.string.erase_variant_precise),
+                                    Icons.Rounded.CenterFocusStrong,
+                                ),
+                            ),
+                            selected = erase.variant,
+                            enabled = erase.idle,
+                            onSelect = { variant ->
+                                erase.onChoose(variant)
+                                // Not on the phone: straight to where it is set up.
+                                if (!ready(variant)) onGetEraseModel()
+                            },
+                        )
+                        Text(
+                            text = stringResource(
+                                R.string.settings_lift_erase_model_state,
+                                if (erase.variant == com.cuscus.ffmpeggui.erase.EraseVariant.FAST) {
+                                    com.cuscus.ffmpeggui.erase.EraseModel.MIGAN_NAME
+                                } else {
+                                    com.cuscus.ffmpeggui.erase.EraseModel.LAMA_NAME
+                                },
+                                stringResource(if (ready(erase.variant)) R.string.settings_lift_erase_model_here else R.string.settings_lift_erase_model_missing),
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = scheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 4.dp, top = 8.dp),
+                        )
+                    }
+                }
+            }
+            AnimatedVisibility(
+                visible = settings.liftMode == LiftMode.CUT,
+                enter = expandVertically(motion.defaultSpatialSpec()) + androidx.compose.animation.fadeIn(motion.defaultEffectsSpec()),
+                exit = androidx.compose.animation.shrinkVertically(motion.fastSpatialSpec()) + androidx.compose.animation.fadeOut(motion.fastEffectsSpec()),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 14.dp)) {
+                    Text(
+                        text = stringResource(R.string.settings_lift_hole),
+                        style = MaterialTheme.typography.labelLargeEmphasized,
+                        color = scheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+                    )
+                    OptionTileRow(
+                        options = listOf(
+                            TileOption(
+                                true,
+                                stringResource(R.string.settings_lift_hole_clear),
+                                preview = { _ ->
+                                    com.cuscus.ffmpeggui.Checkerboard(
+                                        modifier = Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)),
+                                        cell = 7.dp,
+                                    )
+                                },
+                            ),
+                            TileOption(
+                                false,
+                                stringResource(R.string.settings_lift_hole_color),
+                                preview = { _ ->
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(androidx.compose.foundation.shape.CircleShape)
+                                            .background(androidx.compose.ui.graphics.Color(settings.liftHoleColor)),
+                                    )
+                                },
+                            ),
+                        ),
+                        selected = settings.liftHoleTransparent,
+                        onSelect = { clear -> onChange { it.copy(liftHoleTransparent = clear) } },
+                    )
+                    Text(
+                        text = stringResource(if (settings.liftHoleTransparent) R.string.settings_lift_hole_opaque else R.string.settings_lift_hole_which),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp, top = 12.dp),
+                    )
+                    if (settings.liftHoleTransparent) {
+                        com.cuscus.ffmpeggui.ui.expressive.ColorSwatchRow(
+                            colors = LIFT_HOLE_COLORS,
+                            selected = settings.liftHoleOpaque,
+                            onSelect = { color -> onChange { it.copy(liftHoleOpaque = color) } },
+                        )
+                    } else {
+                        com.cuscus.ffmpeggui.ui.expressive.ColorSwatchRow(
+                            colors = LIFT_HOLE_COLORS,
+                            selected = settings.liftHoleColor,
+                            onSelect = { color -> onChange { it.copy(liftHoleColor = color) } },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Colours offered for the hole a cut subject leaves: white, black, greys, a green and a blue screen. */
+private val LIFT_HOLE_COLORS = listOf(0xFFFFFFFFL, 0xFF000000L, 0xFF808080L, 0xFFD0D0D0L, 0xFF00B140L, 0xFF0047BBL)
 
 // -- Vibration ----------------------------------------------------------------------------
 

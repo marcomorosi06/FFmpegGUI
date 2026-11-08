@@ -61,6 +61,7 @@ class AndroidExportNotifier(
         lastPercent = -1
         shownEndsAt = null
         // The service shows the notification as its own and keeps the app alive meanwhile.
+        ExportService.expectStart()
         try {
             app.startForegroundService(Intent(app, ExportService::class.java))
         } catch (e: RuntimeException) {
@@ -76,7 +77,7 @@ class AndroidExportNotifier(
             current.name,
             stage,
             null,
-            if (stage == ConversionStage.ENCODING) SystemClock.elapsedRealtime() else current.encodingSince,
+            if (stage == ConversionStage.ENCODING || stage == ConversionStage.MARKING) SystemClock.elapsedRealtime() else current.encodingSince,
         )
         post(force = true)
     }
@@ -121,6 +122,20 @@ class AndroidExportNotifier(
     /** The notification of the export running now, or null when none runs. */
     internal fun progressNotification(): Notification? = progress?.let(::build)
 
+    /**
+     * A quiet notification for the service to hold for a moment, when the export
+     * is over before the service got to start (Android asks a service started in
+     * the foreground to show one before it may go, or the app is closed).
+     */
+    internal fun closingNotification(): Notification {
+        ensureChannels()
+        return Notification.Builder(app, PROGRESS_CHANNEL)
+            .setSmallIcon(R.drawable.ic_notification_export)
+            .setContentTitle(app.getString(R.string.app_name))
+            .setOnlyAlertOnce(true)
+            .build()
+    }
+
     /** Shows the progress again: at once with [force], else at most a few times a second. */
     private fun post(force: Boolean) {
         val current = progress ?: return
@@ -143,6 +158,7 @@ class AndroidExportNotifier(
                 ConversionStage.ANALYZING -> R.string.export_stage_analyzing
                 ConversionStage.ENCODING -> R.string.export_stage_encoding
                 ConversionStage.PACKING -> R.string.export_stage_packing
+                ConversionStage.MARKING -> R.string.export_stage_marking
             },
         )
         return LiveProgress.build(
@@ -168,7 +184,7 @@ class AndroidExportNotifier(
      */
     private fun endsAt(current: Progress): Long? {
         val fraction = current.fraction
-        if (current.stage != ConversionStage.ENCODING || fraction == null || fraction < MIN_FRACTION_FOR_ETA || fraction >= 1f) {
+        if ((current.stage != ConversionStage.ENCODING && current.stage != ConversionStage.MARKING) || fraction == null || fraction < MIN_FRACTION_FOR_ETA || fraction >= 1f) {
             shownEndsAt = null
             return null
         }
@@ -197,7 +213,7 @@ class AndroidExportNotifier(
         }
     }
 
-    private fun ensureChannels() {
+    internal fun ensureChannels() {
         manager.createNotificationChannel(
             NotificationChannel(PROGRESS_CHANNEL, app.getString(R.string.export_channel_name), NotificationManager.IMPORTANCE_LOW).apply {
                 description = app.getString(R.string.export_channel_description)

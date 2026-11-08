@@ -15,6 +15,7 @@ class ConversionMessages(private val resources: Resources) {
             ConversionStage.ANALYZING -> R.string.status_analyzing
             ConversionStage.ENCODING -> R.string.status_encoding
             ConversionStage.PACKING -> R.string.status_packing
+            ConversionStage.MARKING -> R.string.status_marking
         },
     )
 

@@ -180,6 +180,11 @@ class AppContainer(
             fonts = fontProvider,
             hdrMaker = AndroidHdrPictureMaker(stillGainMaps),
             glyphs = glyphAtlas,
+            // A dub's export gets AudioSeal's mark on its whole sound (the models load only then).
+            soundSealer = object : com.cuscus.ffmpeggui.core.provenance.SoundSeal.SoundSealer {
+                override suspend fun seal(input: java.io.File, output: java.io.File, onProgress: (Float) -> Unit) =
+                    com.cuscus.ffmpeggui.marking.SoundSealer(smartFeatures.marker).seal(input, output, onProgress)
+            },
         )
     }
 }

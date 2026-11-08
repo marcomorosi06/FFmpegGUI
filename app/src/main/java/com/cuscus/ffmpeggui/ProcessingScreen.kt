@@ -167,7 +167,13 @@ fun ProcessingScreen(
     // A tide rising behind the whole screen as the export goes (and ebbing once it is done).
     val running = state as? ConversionState.Processing
     val tide by animateFloatAsState(
-        targetValue = if (running != null && running.stage == ConversionStage.ENCODING) running.progress.coerceIn(0f, 1f) else 0f,
+        targetValue = when {
+            running == null -> 0f
+            running.stage == ConversionStage.ENCODING -> running.progress.coerceIn(0f, 1f)
+            // The picture and sound are written: the tide stays up while the sound is marked.
+            running.stage == ConversionStage.MARKING -> 1f
+            else -> 0f
+        },
         animationSpec = MaterialTheme.motionScheme.slowEffectsSpec(),
         label = "tide",
     )
@@ -270,7 +276,7 @@ private fun ColumnScope.RunningContent(state: ConversionState.Processing, fileNa
     }
     val elapsedMs = if (state.startedAtMs > 0L) now - state.startedAtMs else 0L
     val leftMs = timeLeftMs(state, now)
-    val known = state.progress > 0f && state.stage == ConversionStage.ENCODING
+    val known = state.progress > 0f && (state.stage == ConversionStage.ENCODING || state.stage == ConversionStage.MARKING)
 
     if (part != Part.PICTURE) {
         FileRow(fileName = fileName, format = format)
@@ -629,7 +635,7 @@ private fun TimeTile(icon: ImageVector, label: String, value: String?, emphasize
 
 /** The time left, once the encoding has run long enough to tell; null before. */
 private fun timeLeftMs(state: ConversionState.Processing, now: Long): Long? {
-    if (state.stage != ConversionStage.ENCODING || state.encodingSinceMs <= 0L) return null
+    if ((state.stage != ConversionStage.ENCODING && state.stage != ConversionStage.MARKING) || state.encodingSinceMs <= 0L) return null
     val fraction = state.progress
     val encoding = now - state.encodingSinceMs
     if (fraction < MIN_FRACTION_FOR_ETA || encoding < MIN_ELAPSED_FOR_ETA_MS) return null
@@ -641,6 +647,7 @@ private fun stageLabelRes(stage: ConversionStage): Int = when (stage) {
     ConversionStage.ANALYZING -> R.string.export_stage_analyzing
     ConversionStage.ENCODING -> R.string.export_stage_encoding
     ConversionStage.PACKING -> R.string.export_stage_packing
+    ConversionStage.MARKING -> R.string.export_stage_marking
 }
 
 /** 0:42, 12:05, 1:02:03. */

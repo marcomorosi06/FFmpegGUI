@@ -46,6 +46,13 @@ object SpeechMarking {
     /** Less speech than this (0.25 s) cannot be told marked or not. */
     const val LEAST_VOICED = RATE / 4
 
+    /**
+     * In a mix (a dub under music and effects, whose sound is not all speech,
+     * nor all marked), at least this much found marked (2 s) says the mark is
+     * there, with its message.
+     */
+    const val LEAST_MARKED_IN_MIX = RATE * 2
+
     /** A part of the speech: [start] and the [length] of real samples in it (the rest is padding). */
     data class Window(val start: Int, val length: Int)
 
@@ -153,6 +160,15 @@ object SpeechMarking {
         if (start >= 0) out += maxOf(0, start - margin)..minOf(samples.size - 1, lastLoud + margin)
         return out
     }
+
+    /**
+     * True when [markedSamples] (at 16 kHz) found marked are enough, and the
+     * message read where they were ([message]) is the app's own: a dub mixed
+     * with other sounds. Both are asked for, so that stray detections in a
+     * long sound that is not marked do not count.
+     */
+    fun inMix(markedSamples: Int, message: FloatArray): Boolean =
+        markedSamples >= LEAST_MARKED_IN_MIX && Marks.speechMessageIsOurs(message)
 
     /** The message read over every window, each weighed by its speech ([voicedPerWindow]). */
     fun message(perWindow: List<FloatArray>, voicedPerWindow: List<Int>): FloatArray {

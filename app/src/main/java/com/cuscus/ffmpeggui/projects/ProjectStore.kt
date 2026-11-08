@@ -19,6 +19,7 @@ import com.cuscus.ffmpeggui.core.project.JsonText
 import com.cuscus.ffmpeggui.effects.EffectLibrary
 import com.cuscus.ffmpeggui.settings.AppSettings
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -131,6 +132,45 @@ class ProjectStore(
 
     /** Runs [block] once everything asked before it is done. */
     fun afterPending(block: () -> Unit) = enqueue { block() }
+
+    /**
+     * The project [id] as saved once everything asked before is done (a save
+     * just handed over included), or null. Suspends; reads away from the main thread.
+     */
+    suspend fun loadWhenSaved(id: String): SavedProject? {
+        val answer = CompletableDeferred<SavedProject?>()
+        enqueue { answer.complete(runCatching { read(id) }.getOrNull()) }
+        return answer.await()
+    }
+
+    /**
+     * An editor that has a project open. Each window of the app has an editor of
+     * its own (a file shared from another app opens a second one, in that app's
+     * task), so a project open in one must be let go before another opens it:
+     * else the first, saving its own state later, would undo what the second did.
+     */
+    fun interface Holder {
+        /** Saves the project at once and lets it go; it is opened again from the saved state when wanted. */
+        fun handOver()
+    }
+
+    /** Which editor has each project open. Main thread only. */
+    private val holders = HashMap<String, Holder>()
+
+    /**
+     * Marks project [id] as open in [holder]. The editor that had it open
+     * before saves it and lets it go first (see [Holder]); load it with
+     * [loadWhenSaved] so that its save is read. Main thread only.
+     */
+    fun claim(id: String, holder: Holder) {
+        val before = holders.put(id, holder)
+        if (before != null && before !== holder) before.handOver()
+    }
+
+    /** [holder] has closed project [id]. Main thread only. */
+    fun release(id: String, holder: Holder) {
+        if (holders[id] === holder) holders.remove(id)
+    }
 
     /**
      * Saves [project] (unless projects are turned off, or the user deleted it):

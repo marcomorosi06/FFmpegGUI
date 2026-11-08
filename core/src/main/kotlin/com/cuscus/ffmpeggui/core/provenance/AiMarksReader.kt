@@ -34,12 +34,62 @@ object AiMarksReader {
     }
 
     /** True when [xmp] says the picture was made or changed by a trained model (IPTC's Digital Source Type). */
-    fun changedWithAi(xmp: String): Boolean {
-        val type = Regex("Iptc4xmpExt:DigitalSourceType\\s*=\\s*\"([^\"]*)\"").find(xmp)?.groupValues?.get(1)
-            ?: Regex("<Iptc4xmpExt:DigitalSourceType(?:\\s[^>]*)?>([^<]*)<").find(xmp)?.groupValues?.get(1)
-            ?: return false
-        return type.trim() == AiDisclosure.COMPOSITE || type.trim() == AiDisclosure.TRAINED
+    fun changedWithAi(xmp: String): Boolean = isAi(sourceType(xmp))
+
+    /** IPTC's Digital Source Type [xmp] gives, or null. */
+    fun sourceType(xmp: String): String? =
+        (
+            Regex("Iptc4xmpExt:DigitalSourceType\\s*=\\s*\"([^\"]*)\"").find(xmp)?.groupValues?.get(1)
+                ?: Regex("<Iptc4xmpExt:DigitalSourceType(?:\\s[^>]*)?>([^<]*)<").find(xmp)?.groupValues?.get(1)
+            )?.trim()
+
+    /** True when [sourceType] is one of a trained model's: made with one, or changed with one. */
+    fun isAi(sourceType: String?): Boolean = sourceType == AiDisclosure.COMPOSITE || sourceType == AiDisclosure.TRAINED
+
+    /**
+     * What a file's metadata says: [hasXmp] when it has any XMP, [sourceType]
+     * the first Digital Source Type of a trained model found (else the first
+     * found at all, else null), [inTags] when that type was found in the
+     * container's own tags rather than in XMP (Matroska, MP3, FLAC, Ogg), and
+     * [voice] when the file says a voice in it was made by AI.
+     */
+    class Found(val hasXmp: Boolean, val sourceType: String?, val inTags: Boolean = false, val voice: Boolean = false) {
+        val ai: Boolean get() = isAi(sourceType)
     }
+
+    /**
+     * The AI marks anywhere in [bytes] (a whole file of any format, or its
+     * head and tail): XMP packets (JPEG, PNG, WebP, GIF, TIFF, SVG, MP4, WAV...),
+     * kept as plain text by every format the app marks, so they are found by
+     * their wrapper rather than by walking each format's structure; failing
+     * that, a trained model's Digital Source Type alone, as the container's
+     * own tags hold it (DIGITAL_SOURCE_TYPE, in plain text too).
+     */
+    fun scan(bytes: ByteArray): Found {
+        val text = String(bytes, Charsets.ISO_8859_1)
+        val voice = text.contains(AiDisclosure.SPEECH_TEXT)
+        var from = 0
+        var any = false
+        var first: String? = null
+        while (true) {
+            val start = text.indexOf(XMP_OPEN, from)
+            if (start < 0) break
+            val close = text.indexOf(XMP_CLOSE, start)
+            if (close < 0) break
+            val end = close + XMP_CLOSE.length
+            any = true
+            val type = sourceType(String(bytes, start, end - start, Charsets.UTF_8))
+            if (isAi(type)) return Found(true, type, voice = voice)
+            if (first == null) first = type
+            from = end
+        }
+        val tagged = listOf(AiDisclosure.TRAINED, AiDisclosure.COMPOSITE).firstOrNull { text.contains(it) }
+        if (tagged != null) return Found(any, tagged, inTags = true, voice = voice)
+        return Found(any, first)
+    }
+
+    private const val XMP_OPEN = "<x:xmpmeta"
+    private const val XMP_CLOSE = "</x:xmpmeta>"
 
     private fun png(data: DataInputStream): String? {
         val rest = ByteArray(6)

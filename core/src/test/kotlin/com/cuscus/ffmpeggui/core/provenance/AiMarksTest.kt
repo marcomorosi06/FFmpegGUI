@@ -312,6 +312,39 @@ class AiMarksTest {
     }
 
     @Test
+    fun `the AI check finds the marks of every picture format the app writes`() {
+        for ((format, name) in listOf("png" to "c.png", "jpg" to "c.jpg", "gif" to "c.gif", "tiff" to "c.tiff")) {
+            val file = picture(format, name)
+            assertFalse(name, AiMarksReader.scan(file.readBytes()).ai)
+            assertEquals(name, AiSeal.Marked.WRITTEN, AiSeal.mark(file, erased))
+            val found = AiMarksReader.scan(file.readBytes())
+            assertTrue(name, found.hasXmp)
+            assertEquals(name, AiDisclosure.COMPOSITE, found.sourceType)
+            assertTrue(name, found.ai)
+        }
+        val svg = temp.newFile("c.svg").apply { writeText("<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0 0\"/></svg>") }
+        assertEquals(AiSeal.Marked.WRITTEN, AiSeal.mark(svg, erased, AiDisclosure.TRAINED))
+        assertEquals(AiDisclosure.TRAINED, AiMarksReader.scan(svg.readBytes()).sourceType)
+        // A camera's XMP is XMP, not an AI mark; a later packet that says AI still counts.
+        fun packet(type: String) = """<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:Description Iptc4xmpExt:DigitalSourceType="$type"/></x:xmpmeta>"""
+        val camera = "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture"
+        val one = AiMarksReader.scan(("junk" + packet(camera) + "junk").toByteArray())
+        assertTrue(one.hasXmp)
+        assertFalse(one.ai)
+        assertEquals(camera, one.sourceType)
+        assertTrue(AiMarksReader.scan((packet(camera) + packet(AiDisclosure.TRAINED)).toByteArray()).ai)
+        // A container's own tag (Matroska, MP3, FLAC, Ogg): the type alone, and a voice said so.
+        val tags = AiMarksReader.scan("DIGITAL_SOURCE_TYPE\u0000${AiDisclosure.TRAINED}\u0000${AiDisclosure.SPEECH_TEXT}".toByteArray())
+        assertTrue(tags.ai)
+        assertTrue(tags.inTags)
+        assertTrue(tags.voice)
+        assertFalse(tags.hasXmp)
+        // Nothing, or a packet never closed.
+        assertFalse(AiMarksReader.scan(ByteArray(0)).hasXmp)
+        assertFalse(AiMarksReader.scan("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">".toByteArray()).hasXmp)
+    }
+
+    @Test
     fun `a picture a model changed says so in its EXIF comment, before the user's own`() {
         val none = com.cuscus.ffmpeggui.core.model.MetadataTags()
         assertTrue(none.isEmpty)

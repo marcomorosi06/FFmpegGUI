@@ -243,7 +243,7 @@ private fun ProjectCardContent(project: ProjectCard, open: Float, modifier: Modi
 
 /** A project without a picture (sound only): its format's shape, large and turned a little. */
 @Composable
-private fun NoPicture(project: ProjectCard, tint: Color) {
+internal fun NoPicture(project: ProjectCard, tint: Color) {
     val shape = remember(project.format) { PolygonShape(categoryShape(shownCategory(project.format))) }
     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
         Box(

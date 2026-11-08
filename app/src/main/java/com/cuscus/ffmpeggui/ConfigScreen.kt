@@ -914,11 +914,27 @@ fun ConfigScreen(
     val savableImage = selectedImage?.takeIf { it.shape == null && !it.isEffect && !it.isVideo && it.uri != null }
     val savableImageColours = savableImage?.stickerColours()
     val imageSavedId = com.cuscus.ffmpeggui.stickers.rememberSavedSticker(stickerShelf, savableImage?.uri, savableImage?.key, savableImageColours)
+    // The phone's photo picker: its gallery, pictures and videos.
+    val galleryPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia(),
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            onAddOverlays(
+                uris.mapIndexed { index, uri -> PickedFile(uri, context.getString(R.string.image_fallback_name, overlayCount + 1 + index)) },
+                playback.snapshot.value.outputMs,
+                { id ->
+                    selectOverlay(id)
+                    if (selectedTool != EditorTool.LAYERS) selectedTool = null
+                },
+                { android.widget.Toast.makeText(context, overlayReadFailed, android.widget.Toast.LENGTH_SHORT).show() },
+            )
+        }
+    }
     val addImage: () -> Unit = { if (stickerShelf != null) stickerSheetOpen = true else imagePicker.launch(OVERLAY_TYPES) }
     if (stickerSheetOpen && stickerShelf != null) {
         com.cuscus.ffmpeggui.stickers.StickerSheet(
             shelf = stickerShelf,
-            pickLabel = stringResource(R.string.stickers_from_phone_any),
+            galleryHint = stringResource(R.string.stickers_source_gallery_any),
             onPick = { sticker ->
                 onAddOverlays(
                     listOf(PickedFile(sticker.uri, context.getString(R.string.image_fallback_name, overlayCount + 1))),
@@ -931,6 +947,13 @@ fun ConfigScreen(
                 )
             },
             onFromPhone = { imagePicker.launch(OVERLAY_TYPES) },
+            onFromGallery = {
+                galleryPicker.launch(
+                    androidx.activity.result.PickVisualMediaRequest(
+                        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageAndVideo,
+                    ),
+                )
+            },
             onDismiss = { stickerSheetOpen = false },
         )
     }
@@ -1888,6 +1911,12 @@ fun ConfigScreen(
                         onBlend = { mode -> updateImage(image.id, null) { it.copy(blend = mode) } },
                         enabled = !isManualMode,
                     )
+                } ?: selectedText?.let { text ->
+                    ImageBlendPanel(
+                        blend = text.blend,
+                        onBlend = { mode -> updateText(text.id, null) { it.copy(blend = mode) } },
+                        enabled = !isManualMode,
+                    )
                 }
                 EditorTool.OVERLAY_SHAPE -> selectedImage?.let { image ->
                     image.shape?.let { shape ->
@@ -1966,6 +1995,15 @@ fun ConfigScreen(
                         onDegrees = { value -> updateImage(image.id, "rotate") { it.copy(rotationDegrees = value) } },
                         onFlipHorizontal = { flip -> updateImage(image.id, null) { it.copy(flipHorizontal = flip) } },
                         onFlipVertical = { flip -> updateImage(image.id, null) { it.copy(flipVertical = flip) } },
+                    )
+                } ?: selectedText?.let { text ->
+                    OverlayRotateContent(
+                        degrees = text.rotationDegrees,
+                        flipHorizontal = false,
+                        flipVertical = false,
+                        onDegrees = { value -> updateText(text.id, "rotate") { it.copy(rotationDegrees = value) } },
+                        onFlipHorizontal = null,
+                        onFlipVertical = null,
                     )
                 }
                 EditorTool.OVERLAY_VOLUME -> selectedImage?.takeIf { it.isVideo }?.let { image ->
@@ -2318,7 +2356,8 @@ private const val JOIN_LEAD_MS = 300L
 /** The tools of a selected text, in toolbar order. */
 private val TEXT_TOOLS = listOf(
     EditorTool.TEXT_EDIT, EditorTool.TEXT_STYLE, EditorTool.TEXT_OUTLINE, EditorTool.TEXT_SHADOW, EditorTool.TEXT_BOX,
-    EditorTool.OVERLAY_LAYOUT, EditorTool.OVERLAY_ANIMATE, EditorTool.OVERLAY_FADE, EditorTool.OVERLAY_TIMING,
+    EditorTool.OVERLAY_LAYOUT, EditorTool.OVERLAY_ROTATE, EditorTool.OVERLAY_BLEND,
+    EditorTool.OVERLAY_ANIMATE, EditorTool.OVERLAY_FADE, EditorTool.OVERLAY_TIMING,
 )
 
 /**

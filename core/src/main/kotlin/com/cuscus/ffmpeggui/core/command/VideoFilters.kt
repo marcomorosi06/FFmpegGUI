@@ -298,19 +298,64 @@ internal class VideoFilters(private val fonts: FontProvider) {
      * (see [TextLook]) are in whole pixels of a frame [frameHeight] high
      * ([REFERENCE_FRAME_HEIGHT] when not known), at its starting size.
      */
-    internal fun drawtext(overlay: TextOverlay, timed: Boolean, time: String = "t", frameHeight: Int = 0): String {
+    internal fun drawtext(overlay: TextOverlay, timed: Boolean, time: String = "t", frameHeight: Int = 0): String =
+        if (overlay.layered) layeredText(overlay, timed, time, frameHeight) else letters(overlay, timed, time, frameHeight, canvas = false)
+
+    /**
+     * A caption turned or blended: drawn on a see-through canvas twice the
+     * frame's size with its anchor (see TextOverlay) in the middle, turned
+     * there about it, and laid on the frame with the anchor at its place:
+     * plainly, or mixed as a picture with a blend mode is (see CommandBuilder's
+     * layOver). The canvas is in the letters' colour, so that the turn's
+     * smoothing brings in no other at their edges.
+     */
+    private fun layeredText(overlay: TextOverlay, timed: Boolean, time: String, frameHeight: Int): String {
+        val label = "tl" + (labelCount++)
+        val keys = overlay.keyframes
+        fun place(property: KeyProperty, value: Float): String =
+            if (keys.animates(property)) "(${keys.expression(property, value, time)})" else fmt("%.4f", keys.valueAt(property, 0L, value))
+        val x = place(KeyProperty.X, overlay.x)
+        val y = place(KeyProperty.Y, overlay.y)
+        val r = (overlay.color shr 16) and 0xFF
+        val g = (overlay.color shr 8) and 0xFF
+        val b = overlay.color and 0xFF
+        val paper = String.format(Locale.US, "0x%06X@0", overlay.color and 0xFFFFFF)
+        val turn = ((overlay.rotationDegrees % 360f) + 360f) % 360f
+        val turned = if (turn > 0.01f && turn < 359.99f) ",rotate=a=${fmt("%.6f", Math.toRadians(turn.toDouble()))}:c=none" else ""
+        val canvas = "format=rgba,lutrgb=r=$r:g=$g:b=$b:a=0,pad=w=iw*2:h=ih*2:x=iw/2:y=ih/2:color=$paper," +
+            letters(overlay, timed, time, frameHeight, canvas = true) + turned
+        val at = "x='main_w*$x-overlay_w/2':y='main_h*$y-overlay_h/2'"
+        val mode = overlay.blend.ffmpegMode
+            ?: return "split[${label}m][${label}s];[${label}s]$canvas[${label}t];[${label}m][${label}t]overlay=$at:format=auto"
+        return "split=4[${label}b][${label}c][${label}k][${label}s];" +
+            "[${label}s]$canvas[${label}t];" +
+            "[${label}k]format=rgba,colorchannelmixer=aa=0[${label}z];" +
+            "[${label}z][${label}t]overlay=$at:format=rgb,format=gbrap,split[${label}u][${label}v];" +
+            "[${label}b]format=gbrap[${label}g];" +
+            "[${label}u][${label}g]blend=all_mode=$mode[${label}x];" +
+            "[${label}v]alphaextract[${label}a];" +
+            "[${label}x][${label}a]alphamerge[${label}y];" +
+            "[${label}c][${label}y]overlay=x=0:y=0:format=auto"
+    }
+
+    /**
+     * The letters of a caption, with their outline, shadow and box: on the
+     * frame, or ([canvas]) on a canvas twice its size, the caption's anchor
+     * in its middle.
+     */
+    private fun letters(overlay: TextOverlay, timed: Boolean, time: String, frameHeight: Int, canvas: Boolean): String {
         val look = overlay.look.sane()
         val height = if (frameHeight > 0) frameHeight else REFERENCE_FRAME_HEIGHT
         val fontPixels = height * overlay.keyframes.valueAt(KeyProperty.SIZE, 0L, overlay.size).toDouble()
         val blur = if (look.hasShadow) TextLook.pixels(look.shadowBlur, fontPixels) else 0
         val letters = String.format(Locale.US, "0x%06X", overlay.color and 0xFFFFFF)
         // A sharp shadow is drawtext's own; a soft one is drawn apart and blurred (below).
-        val main = drawtextOf(overlay, timed, time, letters, 0, lookOptions(look, fontPixels, sharpShadow = blur == 0))
+        val main = drawtextOf(overlay, timed, time, letters, 0, lookOptions(look, fontPixels, sharpShadow = blur == 0), canvas)
         if (blur == 0) return main
         // The soft shadow: the letters in the shadow's colour on a see-through copy of the frame (its
         // colour everywhere, so that the blur brings in no other), moved, blurred, laid under the text.
         val shift = TextLook.pixels(look.shadow, fontPixels)
-        val shadow = drawtextOf(overlay, timed, time, drawtextColor(look.shadowColor), shift, "")
+        val shadow = drawtextOf(overlay, timed, time, drawtextColor(look.shadowColor), shift, "", canvas)
         val label = "ts" + (labelCount++)
         val r = (look.shadowColor shr 16) and 0xFF
         val g = (look.shadowColor shr 8) and 0xFF
@@ -327,9 +372,10 @@ internal class VideoFilters(private val fonts: FontProvider) {
     /**
      * One drawtext of [overlay]: its letters in [color] (0xRRGGBB, @alpha allowed),
      * moved right and down by [shift] pixels, with [extra] options; its place, size,
-     * opacity, fades and times as [drawtext] says.
+     * opacity, fades and times as [drawtext] says. On a [canvas] (twice the
+     * frame's size) its anchor is in the middle and its size that of the frame.
      */
-    private fun drawtextOf(overlay: TextOverlay, timed: Boolean, time: String, color: String, shift: Int, extra: String): String {
+    private fun drawtextOf(overlay: TextOverlay, timed: Boolean, time: String, color: String, shift: Int, extra: String, canvas: Boolean = false): String {
         // A font the user added, while it can be read; else the family's file.
         val font = overlay.fontFile?.let(fonts::customFontPath) ?: fonts.fontPath(overlay.font, overlay.isBold)
         var filter = "drawtext=fontfile=${filterOptionValue(font)}" +
@@ -338,7 +384,19 @@ internal class VideoFilters(private val fonts: FontProvider) {
             extra
         val move = if (shift > 0) "+$shift" else ""
         val keys = overlay.keyframes
-        filter += if (keys.animatesAny(Keyframes.TEXT)) {
+        filter += if (canvas) {
+            // The anchor, the point of the text at (x, y) of its size, in the middle.
+            val sizeOf = if (keys.animates(KeyProperty.SIZE)) {
+                "'h/2*${size(keys.expression(KeyProperty.SIZE, overlay.size, time), true)}'"
+            } else {
+                fmt("h/2*%.4f", keys.valueAt(KeyProperty.SIZE, 0L, overlay.size))
+            }
+            fun along(property: KeyProperty, value: Float): String =
+                if (keys.animates(property)) "(${keys.expression(property, value, time)})" else fmt("%.4f", keys.valueAt(property, 0L, value))
+            ":fontsize=$sizeOf" +
+                ":x='w/2-tw*${along(KeyProperty.X, overlay.x)}$move'" +
+                ":y='h/2-th*${along(KeyProperty.Y, overlay.y)}$move'"
+        } else if (keys.animatesAny(Keyframes.TEXT)) {
             ":fontsize='h*${size(keys.expression(KeyProperty.SIZE, overlay.size, time), keys.animates(KeyProperty.SIZE))}'" +
                 ":x='(w-tw)*${keys.expression(KeyProperty.X, overlay.x, time)}$move'" +
                 ":y='(h-th)*${keys.expression(KeyProperty.Y, overlay.y, time)}$move'"

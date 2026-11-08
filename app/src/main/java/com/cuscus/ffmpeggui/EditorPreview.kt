@@ -125,6 +125,7 @@ import com.cuscus.ffmpeggui.core.model.FrameExtractionMode
 import com.cuscus.ffmpeggui.core.model.OutputFormat
 import com.cuscus.ffmpeggui.core.model.Rotation
 import com.cuscus.ffmpeggui.core.model.TextOverlay
+import com.cuscus.ffmpeggui.core.model.LayerBlend
 import com.cuscus.ffmpeggui.core.model.VideoPlacement
 import com.cuscus.ffmpeggui.core.model.StackSlot
 import com.cuscus.ffmpeggui.core.model.stackOrder
@@ -1498,10 +1499,15 @@ internal fun BoxScope.TextOverlaysLayer(
                         // Its opacity and fades, read while drawing so that the clock does not recompose.
                         .graphicsLayer {
                             // Each part drawn with the opacity, as drawtext blends them, and nothing cut
-                            // at the text's bounds (a box, a shadow reach past them).
-                            compositingStrategy = CompositingStrategy.ModulateAlpha
+                            // at the text's bounds (a box, a shadow reach past them). A blended one is
+                            // drawn apart first and mixed whole, as the export mixes its layer.
+                            compositingStrategy = if (current.blend == LayerBlend.NORMAL) CompositingStrategy.ModulateAlpha else CompositingStrategy.Offscreen
+                            blendMode = current.blend.composeMode()
                             alpha = current.opacity.coerceIn(0f, 1f) *
                                 (if (outputMs != null) overlayFade(current.startMs, current.endMs, current.fadeInSeconds, current.fadeOutSeconds, outputMs()) else 1f)
+                            // Turned about its anchor, the point of it at (x, y) of its size (see TextOverlay).
+                            rotationZ = current.rotationDegrees
+                            transformOrigin = TransformOrigin(current.x.coerceIn(0f, 1f), current.y.coerceIn(0f, 1f))
                         }
                         .onSizeChanged {
                             textWidth = it.width.toFloat()
@@ -1516,21 +1522,24 @@ internal fun BoxScope.TextOverlaysLayer(
                                 currentOnSelect(current.id)
                             }
                         }
-                        // One finger moves it, two also resize it; it sticks to the guides (SnapScene).
+                        // One finger moves it, two also resize and turn it; it sticks to the guides
+                        // (SnapScene) and its turn to whole steps.
                         .pointerInput(overlay.id, overlay.locked) {
                             if (overlay.locked) return@pointerInput
                             var startX = 0f
                             var startY = 0f
                             var startSize = 0f
+                            var startTurn = 0f
                             detectTotalTransform(
                                 onStart = {
                                     if (!currentEditable) currentOnSelect(current.id)
                                     startX = current.x
                                     startY = current.y
                                     startSize = current.size
+                                    startTurn = current.rotationDegrees
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 },
-                                onMove = { pan, zoom, _ ->
+                                onMove = { pan, zoom, rotation ->
                                     val width = currentCanvasWidth
                                     val height = currentCanvasHeight
                                     val freeWidth = width - textWidth
@@ -1542,7 +1551,13 @@ internal fun BoxScope.TextOverlaysLayer(
                                     val x = if (freeWidth > 0f) ((left + (snap?.dx ?: 0f)) / freeWidth).coerceIn(ImagePlacement.POSITION_MIN, ImagePlacement.POSITION_MAX) else current.x
                                     val y = if (freeHeight > 0f) ((top + (snap?.dy ?: 0f)) / freeHeight).coerceIn(ImagePlacement.POSITION_MIN, ImagePlacement.POSITION_MAX) else current.y
                                     val size = if (zoom != 1f) (startSize * zoom).coerceIn(0.02f, 0.5f) else null
-                                    currentOnUpdate(current.id, "move") { if (size != null) it.copy(x = x, y = y, size = size) else it.copy(x = x, y = y) }
+                                    val turn = if (kotlin.math.abs(rotation) > 0.5f) (currentScene?.turn(startTurn + rotation, haptic) ?: (startTurn + rotation)) else null
+                                    currentOnUpdate(current.id, "move") {
+                                        var moved = it.copy(x = x, y = y)
+                                        if (size != null) moved = moved.copy(size = size)
+                                        if (turn != null) moved = moved.copy(rotationDegrees = turn)
+                                        moved
+                                    }
                                 },
                                 onEnd = {
                                     currentScene?.clear()
@@ -1663,6 +1678,16 @@ internal fun BoxScope.TextOverlaysLayer(
                         )
                     }
                 }
+                // The knob that turns it, beyond its top, about its anchor (see TextOverlay).
+                if (editable && !overlay.locked) {
+                    RotateHandle(
+                        pivot = { Offset(currentCanvasWidth * current.x, currentCanvasHeight * current.y) },
+                        reach = { current.y.coerceIn(0f, 1f) * textHeight + with(density) { ROTATE_REACH.toPx() } },
+                        degrees = { current.rotationDegrees },
+                        scene = currentScene,
+                        onTurn = { turn -> currentOnUpdate(current.id, "rotate") { it.copy(rotationDegrees = turn) } },
+                    )
+                }
             }
         }
     }
@@ -1724,7 +1749,8 @@ internal fun BoxScope.ImageOverlaysLayer(
     /** Pictures drawn from these bitmaps rather than decoded from their files, by id. */
     pictures: Map<String, android.graphics.Bitmap> = emptyMap(),
 ) {
-    val threshold = snapThreshold(LocalDensity.current)
+    val density = LocalDensity.current
+    val threshold = snapThreshold(density)
     val currentScene by rememberUpdatedState(scene)
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -2046,11 +2072,32 @@ internal fun BoxScope.ImageOverlaysLayer(
                             )
                         }
                     }
+                    // The knob that turns it, beyond its top, about its middle.
+                    if (editable && !overlay.locked) {
+                        RotateHandle(
+                            pivot = {
+                                Offset(
+                                    (currentCanvasWidth - boxWidth) * current.x + boxWidth / 2f,
+                                    (currentCanvasHeight - boxHeight) * current.y + boxHeight / 2f,
+                                )
+                            },
+                            reach = {
+                                val widthPx = current.scaleW.coerceIn(0.01f, ImagePlacement.MAX_WIDTH) * currentCanvasWidth * (1f + 2f * look.margin)
+                                widthPx / laidRatio / 2f + with(density) { ROTATE_REACH.toPx() }
+                            },
+                            degrees = { current.rotationDegrees },
+                            scene = currentScene,
+                            onTurn = { turn -> currentOnUpdate(current.id, "rotate") { it.copy(rotationDegrees = turn) } },
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+/** How far beyond the top of what is selected its turning knob's middle is. */
+private val ROTATE_REACH = 44.dp
 
 /**
  * Places its content at ([x], [y]) of the free space of the box it is in, like

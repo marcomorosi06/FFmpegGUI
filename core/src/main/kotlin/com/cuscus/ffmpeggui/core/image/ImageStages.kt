@@ -100,7 +100,24 @@ sealed class ImageStage {
         override fun apply(input: Raster): Raster {
             val w = input.width
             val h = input.height
-            // The filter's projective mapping (sense=source), from the frame to the source.
+            val (x0, x1, x2, x3, x4, x5, x6, x7, x8) = mapping(w, h)
+            val out = IntArray(w * h)
+            for (y in 0 until h) for (x in 0 until w) {
+                val d = x6 * x + x7 * y + x8
+                out[y * w + x] = sample(input, (x0 * x + x1 * y + x2) / d, (x3 * x + x4 * y + x5) / d)
+            }
+            return Raster(w, h, out)
+        }
+
+        /** Where in the source ([w] x [h]) the frame's point ([x], [y]) is taken from. */
+        fun sourceOf(x: Double, y: Double, w: Int, h: Int): Pair<Double, Double> {
+            val (x0, x1, x2, x3, x4, x5, x6, x7, x8) = mapping(w, h)
+            val d = x6 * x + x7 * y + x8
+            return (x0 * x + x1 * y + x2) / d to (x3 * x + x4 * y + x5) / d
+        }
+
+        /** The filter's projective mapping (sense=source), from the frame to the source: nine numbers. */
+        private fun mapping(w: Int, h: Int): Nine {
             val ref = Array(4) { i -> doubleArrayOf(corners[2 * i] * w, corners[2 * i + 1] * h) }
             val x6 = ((ref[0][0] - ref[1][0] - ref[2][0] + ref[3][0]) * (ref[2][1] - ref[3][1]) -
                 (ref[0][1] - ref[1][1] - ref[2][1] + ref[3][1]) * (ref[2][0] - ref[3][0])) * h
@@ -114,12 +131,7 @@ sealed class ImageStage {
             val x4 = q * (ref[2][1] - ref[0][1]) * w + x7 * ref[2][1]
             val x5 = q * ref[0][1] * w * h
             val x8 = q * w * h
-            val out = IntArray(w * h)
-            for (y in 0 until h) for (x in 0 until w) {
-                val d = x6 * x + x7 * y + x8
-                out[y * w + x] = sample(input, (x0 * x + x1 * y + x2) / d, (x3 * x + x4 * y + x5) / d)
-            }
-            return Raster(w, h, out)
+            return Nine(x0, x1, x2, x3, x4, x5, x6, x7, x8)
         }
     }
 
@@ -138,6 +150,16 @@ sealed class ImageStage {
         /** Size of the output for an input of [width] x [height], as the filter rounds it. */
         fun outputSize(width: Int, height: Int): Pair<Int, Int> =
             max(1, (width / zoom + 0.5).toInt()) to max(1, (height / zoom + 0.5).toInt())
+
+        /** Where in the source ([inw] x [inh]) the output's point ([x], [y]) is taken from. */
+        fun sourceOf(x: Double, y: Double, inw: Int, inh: Int): Pair<Double, Double> {
+            val (outw, outh) = outputSize(inw, inh)
+            val c = kotlin.math.cos(radians)
+            val s = kotlin.math.sin(radians)
+            val dx = x - (outw - 1) / 2.0
+            val dy = y - (outh - 1) / 2.0
+            return ((inw - 1) / 2.0 + dx * c + dy * s) to ((inh - 1) / 2.0 - dx * s + dy * c)
+        }
 
         override fun apply(input: Raster): Raster {
             val inw = input.width
@@ -681,3 +703,10 @@ internal fun boxPass(plane: IntArray, width: Int, height: Int, radius: Int, hori
     }
     return out
 }
+
+/** Nine numbers: a projective mapping's. */
+private data class Nine(
+    val x0: Double, val x1: Double, val x2: Double,
+    val x3: Double, val x4: Double, val x5: Double,
+    val x6: Double, val x7: Double, val x8: Double,
+)

@@ -1122,13 +1122,32 @@ is left out: FFmpeg's formula is not the spec's.
 
 **Preview.** The picture's layer in `ImageOverlaysLayer` gets the mode as its
 `blendMode` (`composeMode()`, `BlendPanels.kt`), drawn over the photo or the
-video's `TextureView`. Texts are always laid normally (`drawtext` cannot blend).
+video's `TextureView`.
+
+**Captions** blend too, and turn (`TextOverlay.blend`, `rotationDegrees`). A
+caption turned or blended (`TextOverlay.layered`) is drawn as a layer of its
+own (`VideoFilters.layeredText`): on a see-through canvas twice the frame's
+size, in the letters' colour (so the turn's smoothing brings in no other),
+its anchor in the middle (the point of the text at (x, y) of its size, which
+lies at (x, y) of the frame: `drawtext` places it so, whatever its width);
+`rotate` about that middle; laid back with the anchor at its place, plainly or
+by the same blend as a picture. The preview turns it about the same point
+(`transformOrigin`) and mixes it with its `blendMode` (offscreen). Upright and
+normal, a caption is drawn straight on the frame as before.
 
 **Panel.** `ImageBlendPanel`: the chosen mode large, in a badge that morphs into
 the mode's own shape, and every mode on a tile that shows itself (a warm-to-cold
 backdrop with a disc mixed onto it by that mode). In the picture editor it is a
-tool of a sticker or a shape, in the video editor of a picture, a video or a
-shape laid over it.
+tool of a sticker, a shape or a caption, in the video editor of a picture, a
+video, a shape or a caption laid over it.
+
+**Turning by hand.** What is selected on the picture (a caption, a picture, a
+video) has a knob beyond its top (`RotateHandle`): dragged, it turns the thing
+to face the finger, about its middle (a caption: its anchor), caught by whole
+steps of 45 degrees with a tick (`SnapScene.turn`), the angle in a pill
+meanwhile; a double tap stands it upright. Where the knob would leave the
+frame it sits below. Two fingers turn a caption as they do a picture, and the
+Rotate tool has the angle on a slider (a caption has no flips).
 
 ## Video effects
 
@@ -1503,7 +1522,9 @@ chosen that way shows chosen at the end of the row.
 
 ## Compressor
 
-A tool of its own from home (`CompressScreen`): a file picked there is opened
+A tool of its own from home (`CompressScreen`): the home's tile asks for the
+file first (no screen between), and the screen opens on it; it can pick
+another. The file is opened
 as usual (`setInputUri`) and exported at once with `ConversionSettings.compression`
 set for that export only (never saved). `Compression` (`core/model`) is a level
 (same quality, balanced, smallest) or a size to fit:
@@ -1675,6 +1696,31 @@ be `content://` URIs of another app (`isForeignContentUri`): any app can start
 would make it open its own private files (cache, exports, projects) on the
 sender's behalf. Such an intent opens nothing. Files picked inside the app go
 through the system picker and are not affected.
+
+**A shared file into a project under way** (`IntakeProjects.kt`,
+`core/project/ProjectIntake`, tested). Above the formats, a file shared from
+another app is offered the recent projects in an uncontained carousel.
+`ProjectIntake.ways` says how a project of each format takes each kind of
+file (a sound, a picture, a video with or without sound), the most wanted way
+first: a video project takes a clip at the end, an overlay from the start or a
+sound from the start; an audio project a clip or a sound, and a picture as its
+cover when the format holds one; a picture project an overlay, or a frame of a
+video chosen first in the frame picker (`placeInto`); SVG, ASCII and ANSI art,
+transcripts and commands take nothing. Projects that cannot take the file are
+greyed, say why and shake when touched; one way is simply done, more are asked
+in a sheet. `ConversionViewModel.addToProject` opens the project, adds the file
+as one step of its history and saves at once: the file is only lent by the
+share, and the save keeps a copy in `media/`.
+
+Each window of the app has an editor of its own (a share opens a second
+`MainActivity` in the sender's task), so a project must never be open in two
+at once: the later one's work would be undone by the first one's next save.
+`ProjectStore.claim` marks which editor has a project open; the one that had it
+before saves it at once and lets it go (`ProjectStore.Holder`), the new one
+reads it after that save (`loadWhenSaved`), and the first opens it again from
+what was saved when its window comes back to the front (`reclaimProject`, on
+resume, or when it gets the focus again beside another window). Each switch
+costs the undo history of the project, which is not saved.
 
 ## Offline guarantee
 
@@ -1964,7 +2010,9 @@ dub, drifts) is brought back by playing it 4 % faster or slower until it is
 
 **Result** (`DubEngine`). Every line, at its place, in one mono WAV at 24 kHz
 in `files/dubs/`, laid on the video as a placed sound (`AudioClip`): it is
-moved, trimmed and levelled like any other, and a project keeps its own copy.
+moved, trimmed and levelled like any other (its "Level loudness" on from the
+start, the file measured right away: the voices come out of the models louder
+or softer than one another), and a project keeps its own copy.
 A new dub takes the place of the one made before. With "lower" or "take
 out", every clip's `voiceLevel` is set (see "Voice and the rest"): the files
 without stems are separated first, in the same run.
@@ -2251,9 +2299,54 @@ noise reduction among what is not). `core.provenance`, pure and tested:
   pins (`scripts/pin-ai-markers.py`) nothing can be imported and no app
   release passes `scripts/check-model-pins.py`. See docs/MODELS.md.
 
+**The whole sound of a dubbed file** (`SoundSeal`, `ConversionEngine.sealSound`,
+`marking/SoundSealer`). A dub carries AudioSeal's mark from the moment it is
+said, but in a finished file it is mixed with music and effects, and there the
+mark sinks under them: tested with the real models, 4 s of 14 found with the
+wrong message under moderate music, under 1.5 s under louder music, so the
+AI check could not find it. So the export that holds a dub marks its whole
+sound once mixed, after FFmpeg and before the XMP: the first sound taken out as
+a 32-bit float WAV at its own rate and channels (`SoundSeal.decode`), marked
+30 s at a time (mixed down to mono at 16 kHz, `MarkEngine.watermarkOf` over
+every part that is not digital silence, the watermark brought back to the
+file's rate and added to every channel), and put back in place of the first
+sound, every other stream, the tags and the chapters copied
+(`SoundSeal.remux`), encoded as the file's sound is (`codecFor`: a video's AAC
+at 192 kbit/s, being its second encoding; an audio file at the bitrate chosen).
+Found then on 99.7 % of the sound after AAC. Where the dub's own mark and this
+one lie together the message reads less surely, so the check goes by the share
+first. It is a step more for such an export (AudioSeal's generator: about half
+a second per 5 s of sound on two cores), shown as a stage of its own
+(`ConversionStage.MARKING`, "Marking the AI voice") with its own progress,
+10 s of sound at a time, and its own time left, rather than a bar held at
+99 %; and best effort: the dub keeps its own
+mark if it cannot be done (no sound, a format it does not know, a failure),
+which the log says.
+
 The terms (README, About) ask not to remove the marks. Their limits: a
 sound or a picture changed enough (re-recorded, heavily cropped, painted
 over) can lose the invisible mark, as any mark today.
+
+**The AI check** (`AiCheckScreen`, `provenance/AiCheck`): from the home, a
+picture, a sound or a video is picked and its marks are looked for, on the
+phone, nothing sent. Its metadata anywhere in the file (`AiMarksReader.scan`
+on the whole file, or its first 64 MB and last 32 MB: every format the app
+marks keeps its XMP as plain text, and Matroska, MP3, FLAC and Ogg their
+DIGITAL_SOURCE_TYPE tag; "made" for `trainedAlgorithmicMedia`, "changed" for
+the composite, "AI voice" when it says "AI-generated voice"). Then, when the
+AI marks are installed (else it says so and leads to them), its invisible
+mark: TrustMark's in a picture's pixels (`MarkEngine.pictureMarked`, decoded
+at most 24 megapixels), AudioSeal's in the speech of a sound or a video's
+first sound track (`FfmpegAudioExtractor.extract` at 16 kHz, its first 10
+minutes; `SpeechMarking.runs`, then `MarkEngine.speech`), so a dub is found
+even with its metadata gone. A dub on its own is marked in most of its speech
+(`SpeechVerdict.marked`); in a finished video it is mixed with music and
+effects, which count as sound too and are not marked, so the share falls (a
+test mix: 13 %). There the mark is found by how much is marked, at least 2 s,
+with the app's message read where it is (`SpeechMarking.inMix`); stray
+detections in a sound that is not marked come to a fraction of a second, with
+another message. It reads only these marks: "no AI mark found" is
+said as such, never as "not made with AI".
 
 ## Smart subtitles (speech)
 
@@ -2532,6 +2625,47 @@ of after the step under way, never in the middle of one, and loads again for
 the next press. The correction dialog holds it from the first stroke to its
 closing, confirmed or not (see Models in memory).
 
+**What the long press leaves behind** (Settings, Editor: `AppSettings.liftMode`,
+`LiftMode`). "Copy it" (the default) lays the sticker and leaves the photo as
+it was. "Cut it out" also cuts a hole where the subject was, in the photo
+itself, under its turns and crop: the press is taken back through the
+geometry steps (`LiftHole.sourcePoint`: each step undone, mirrors, quarter
+turns and the crop exactly, the keystone and the straighten by their own
+mappings) and the subject found there again (on the photo as it is, when it
+has no geometry step: the first lift is that one). Its shape covers the photo
+at its own size (`LiftHoles.cover`, `LiftHole.scaled`), and the hole is
+see-through or a colour (`LiftHole.punch`): see-through, its pixels keep the
+colour chosen for files that hold no transparency, which drop the alpha and
+show it (the picture is looked at anew once it takes the photo's place,
+`replacePicture`: its transparency is what lets a PNG keep the hole). The result is written by `RgbaPng` (Android's encoder works from
+premultiplied pixels, where a see-through one has lost its colour) to
+`files/lift-holes/` and takes the photo's place (`onReplacePicture`).
+"Erase behind" gives the same shape to the magic eraser as its mask
+(`LiftHoles.eraseMask`, `MagicEraseUi.onErase`; the model chosen, or the other
+when only that one is there), and the filled-in photo takes its place, marked
+as any erased picture. It can be chosen only with one of the eraser's models
+on the phone (else its tile leads to them), and under it the model that
+fills in is chosen (MI-GAN or LaMa: the eraser's one choice, the same as in its
+panel and its settings page; one not on the phone leads to where it is set
+up); when none is there any more,
+MainActivity sets the long press back to "Copy it". This runs as a job of its
+own once the sticker is laid, so the finger may leave; if it fails, the
+sticker stays and a note says the photo behind it is unchanged. While the
+eraser works, waves show where (`LiftFilling`): over the subject's box a veil
+that wavy bands of the theme's colour sweep through, wavy rings spreading from
+its middle, and a badge with the expressive wavy progress indicator round the
+eraser's wand; they fade when the new photo is in, or when the eraser stops
+without one (then a note says so). The setting sits under its own "Photo
+editor" heading in Settings, Editor. The note under the picture rises above
+the selected sticker's actions while they show (`noteBottom`), so that it is
+not hidden under them.
+
+A see-through hole keeps its colour only if nothing premultiplies it on the
+way: the photo editor reads its pictures as pixels with `stillRaster`
+(decoded with `inPremultiplied = false`, fitted by `scaledRaster`, channel by
+channel), so a picture shown without its transparency (a JPG export) shows the
+colour chosen for the hole, as the export does, not black.
+
 **The project's own ONNX files** (docs/MODELS.md has the whole record).
 EdgeTAM is published by Meta for PyTorch only, and BiRefNet-lite's own ONNX
 needs more than 5.7 GB at 1024 x 1024 (its deformable convolutions written as
@@ -2572,8 +2706,12 @@ short message says when it could not be made.
 Saved from: the floating actions of a selected sticker or picture (a subject
 just lifted with a long press is selected, its actions in view), and the Cut
 out panel (`ColorKeyContent`'s `onSaveSticker`). The photo editor's Sticker and the video editor's Overlay open
-`StickerSheet` first: the saved stickers on a checkerboard (a tap lays one, a
-long press offers to take it away) and a large button to pick a file. A
+`StickerSheet` first ("Add on top"): two connected tiles take it from the
+phone, the gallery (the system photo picker, `PickMultipleVisualMedia`:
+pictures and videos in the video editor, pictures in the photo editor) or any
+file (`OpenMultipleDocuments`); under them the saved stickers on soft tiles
+that morph under the finger (a tap lays one). "Edit" (or a long press) sets
+them all wobbling out of step, each with a button to take it away. A
 sticker deleted from the gallery stays in the projects that use it (they keep
 their own copy).
 
@@ -2851,11 +2989,26 @@ animations (off: they stand still, or do not show).
   eras and eons (a tick for each new span); it springs back to the video's own
   time when the fingers leave.
 - **The command studio's small talk** (`command/StudioReply.kt`,
-  `core/command/studio/CommandJokes`, tested). A terminal classic typed as the
-  whole command (sudo, rm -rf of the root, make me a sandwich, :wq, vim,
-  ping, whoami, xyzzy, coffee and a few more) gets a reply in a bubble that
-  springs out under the header, read out by TalkBack; such a command can
-  never be run (Run is off), and a real command is never taken for one.
+  `core/command/studio/CommandJokes`, tested). What is typed at terminals gets
+  a reply in a bubble that springs out under the header, read out by
+  TalkBack; such a command can never be run (Run is off), and a real FFmpeg
+  command is never taken for one. A few classics match as the whole command
+  (rm -rf of the root, make me a sandwich, :wq, git status, xyzzy, coffee,
+  42...); a few programs get their own reply whatever follows them (cat, pwd,
+  cd, python, apt, dnf, pacman, rm, ls, sl, clear, top, exit, sudo and sudo
+  please, vim, kill, whoami, man, ping, history, echo, reboot, nmap, grep, ssh
+  and su); any other program a terminal would run (a lowercase word first,
+  not FFmpeg's nor on its way to being typed as one) gets the general one
+  ("bruh you're not on termux my guy"). The cat's reply is a kaomoji, written
+  in `strings.xml` as escaped code points so the file stays ASCII.
+
+**A foreground service that must take the foreground.** An export that ends
+at once (a command that fails straight away) used to stop `ExportService`
+before it had called `startForeground`, which Android answers by closing the
+app (`ForegroundServiceDidNotStartInTimeException`). The service now always
+takes the foreground when it starts (a quiet notification when the export is
+over already) and then lets go; `ExportService.stop` before that only asks it
+to let go as soon as it has.
 
 ## Known limitations (backend)
 

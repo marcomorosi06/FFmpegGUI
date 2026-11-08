@@ -112,6 +112,11 @@ fun FormatPickerScreen(
      * (a track of silence), null while it is being listened to or not known.
      */
     audible: Boolean? = null,
+    /**
+     * A file shared from another app: the projects it can be added to, above
+     * the formats (see IntakeProjectsSection); null for none.
+     */
+    addToProject: (@Composable (Modifier) -> Unit)? = null,
 ) {
     val groupedFormats = OutputFormat.entries.groupBy { shownCategory(it) }
     val suggestion = suggestedFormat(mediaInfo)
@@ -136,6 +141,24 @@ fun FormatPickerScreen(
         var order = 0
         item(span = { GridItemSpan(columns) }, key = "header") {
             Header(fileName = fileName, mediaInfo = mediaInfo, onBack = onBack)
+        }
+        if (addToProject != null) {
+            val at = order++
+            item(span = { GridItemSpan(columns) }, key = "intake") {
+                addToProject(Modifier.enterOnce("intake", at, entrance))
+            }
+            val newAt = order++
+            item(span = { GridItemSpan(columns) }, key = "intake_new") {
+                Text(
+                    text = stringResource(R.string.intake_new),
+                    style = MaterialTheme.typography.titleMediumEmphasized,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .enterOnce("intake_new", newAt, entrance)
+                        .padding(start = 8.dp, top = 12.dp)
+                        .semantics { heading() },
+                )
+            }
         }
         if (suggestion != null) {
             val at = order++

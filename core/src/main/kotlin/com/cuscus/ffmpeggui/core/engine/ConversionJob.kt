@@ -63,6 +63,9 @@ enum class ConversionStage {
 
     /** The parts or frames are being packed into a zip. */
     PACKING,
+
+    /** The finished sound, a dub in it, is being marked as made with AI (see SoundSeal); with its progress. */
+    MARKING,
 }
 
 sealed interface ConversionEvent {
