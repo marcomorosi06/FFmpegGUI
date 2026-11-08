@@ -24,7 +24,8 @@ name: AI model files (ONNX)
 # It runs only by hand (Actions > AI model files > Run workflow): before the
 # first app release that pins new files, or to check that they still build
 # to the same bytes (untick "publish"). A release that already exists is never
-# replaced: it is checked against the pins instead.
+# replaced: it is checked against the pins instead. A new release's page is
+# written by scripts/model-release-notes.py.
 
 on:
   workflow_dispatch:
@@ -285,25 +286,9 @@ jobs:
             if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
               echo "Release $tag exists: only what it lacks is uploaded."
             else
-              {
-                case "$model" in
-                  edgetam) echo "EdgeTAM by Meta (Apache License 2.0), converted to ONNX by FFmpeg GUI for its cut-out correction and its \"lift the subject\" gesture." ;;
-                  birefnet) echo "BiRefNet-lite (general use) by Zheng Peng et al. (MIT License), converted to ONNX by FFmpeg GUI for its finest subject cut-out." ;;
-                  bandit) echo "Bandit v2 (multilingual) by Karn N. Watcharasupat, Chih-Wei Wu and Iroro Orife (weights CC BY-SA 4.0, code Apache License 2.0), converted to ONNX by FFmpeg GUI to split a video's sound into dialogue, music and effects. This file is licensed CC BY-SA 4.0, as its weights." ;;
-                  spleeter) echo "Spleeter 5 stems by Deezer (MIT License), converted to ONNX by FFmpeg GUI to split music into vocals, piano, drums, bass and the rest." ;;
-                esac
-                echo
-                echo "Made from the upstream code, weights and licence pinned in \`${lock}\` at ${GITHUB_SHA},"
-                echo "twice (ubuntu-24.04; ubuntu-26.04 on two cores), with byte-identical results. Nothing was"
-                echo "trained or changed: see NOTICE for what the conversion does, PROVENANCE for everything the"
-                echo "files were made from. The licence and the notice are also inside each ONNX file (its metadata)."
-                echo
-                echo '```'
-                cat "$dir/SHA256SUMS"
-                echo '```'
-                echo
-                echo "The record of every model the app can use: docs/MODELS.md. This is not legal advice."
-              } > notes.md
+              python3 -I scripts/model-release-notes.py "$model" --commit "$GITHUB_SHA" --sums "$dir/SHA256SUMS" \
+                --repo "$GITHUB_REPOSITORY" --server "$GITHUB_SERVER_URL" \
+                --run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > notes.md
               # A create that failed may still have made the release: never two.
               if ! gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
                 --title "$tag" --notes-file notes.md --draft --prerelease --latest=false; then
@@ -360,3 +345,4 @@ jobs:
             echo "::endgroup::"
             echo "### Published: \`${tag}\`" >> "$GITHUB_STEP_SUMMARY"
           done
+

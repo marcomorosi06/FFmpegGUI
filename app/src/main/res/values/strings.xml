@@ -2566,7 +2566,7 @@
     <string name="voice_mix_locked">Set the voice apart first: then the two levels apply.</string>
     <string name="voice_scope_all_hint">These levels go to every clip. Select a clip to give it levels of its own.</string>
     <string name="voice_scope_clip_hint">These levels go to this clip only.</string>
-    <string name="voice_section">Voice and the rest</string>
+    <string name="voice_section">Split your audio</string>
     <string name="voice_intro">Splits the sound of a video or a song into dialogue, music and effects, and the music into its instruments: to keep the voice alone, take it out, change its level, or lay every part on the video as a track of its own. About 150 MB, and 200 MB more for the instruments.</string>
     <string name="voice_model_title">Voice model, %1$s</string>
     <string name="voice_busy">Not while the editor is setting a voice apart with the model.</string>
@@ -2616,7 +2616,6 @@
     <string name="stems_step_instruments">Listening for each instrument, %1$d%%</string>
     <string name="stems_problem_instruments_model">The instruments\' model is not ready. Set it up in Smart features.</string>
     <string name="stems_problem_no_tracks">No clip here can get tracks: played backwards or on a speed curve, a clip\'s sound cannot be followed.</string>
-    <string name="stems_showcase">One sound, every part of it: the dialogue, the music and the effects, then the music\'s singing, piano, drums, bass and the rest. All on the phone.</string>
     <string name="stems_scene_section">Dialogue, music and effects</string>
     <string name="stems_scene_intro">Bandit v2 finds the three in any sound: what the voice levels, the dub and every track need.</string>
     <string name="stems_instruments_section">The music\'s instruments</string>
@@ -2641,7 +2640,7 @@
     <string name="work_voice_extracting">Taking the sound out</string>
     <string name="work_voice_loading">Loading the voice model</string>
     <string name="work_voice_separating">Listening for the voice</string>
-    <string name="work_voice_saving">Keeping the voice and the rest</string>
+    <string name="work_voice_saving">Keeping every part</string>
     <string name="work_voice_done_title">The voice is set apart</string>
     <string name="work_voice_failed_title">The voice could not be set apart</string>
 
@@ -2902,7 +2901,7 @@
     <string name="smart_tag_translate">Subtitles in another language</string>
     <string name="smart_tag_cutout">The subject lifted off any picture</string>
     <string name="smart_tag_erase">Paint over it, and it is gone</string>
-    <string name="smart_tag_voice">Dialogue, music, effects, instruments</string>
+    <string name="smart_tag_voice">Dialogue, music, effects, every instrument</string>
     <string name="smart_tag_dub">A new voice, said over the video</string>
     <string name="smart_tag_about">Where each model comes from, and its licence</string>
     <string name="smart_about_models">The models</string>

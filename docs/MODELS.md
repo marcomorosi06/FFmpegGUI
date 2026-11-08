@@ -30,6 +30,10 @@ drift apart.
   or in a form a phone cannot run: EdgeTAM, BiRefNet-lite, Bandit v2 and
   Spleeter's five stems. For those the project is a distributor, and keeps
   every condition of their licences (below).
+  Each release's page (written by `scripts/model-release-notes.py`) gives
+  the model's makers and licence (for Bandit v2, the CC BY-SA attribution and
+  the changes), links every file it holds, the commit and the lock it was
+  made from, its SHA-256, the paper and the sources.
 
 ## At a glance
 

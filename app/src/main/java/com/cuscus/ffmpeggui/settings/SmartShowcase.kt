@@ -3,6 +3,10 @@
 package com.cuscus.ffmpeggui.settings
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.material.icons.rounded.Waves
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -72,7 +76,7 @@ import kotlin.math.sin
  * animations are off), as the welcome's pictures are. Each says at a glance
  * what its feature does: words lit as they are said, a word passing from one
  * language to the next, a subject lifted off its picture, a thing brushed
- * away and gone, a voice parting from its music, a voice speaking under
+ * away and gone, one sound fanning out into its parts, a voice speaking under
  * subtitles, the models' licences fanned like cards.
  */
 
@@ -437,72 +441,178 @@ private fun DrawScope.drawSparkle(at: Offset, radius: Float, color: Color) {
 // -- Voice and the rest --------------------------------------------------------------------------
 
 /**
- * One sound's wave that parts into two: the voice rising in one colour, the
- * music sinking in another, each with its badge, then joining again. Both
- * waves are always drawn, so nothing jumps where they part.
+ * One sound split into its parts, as a prism splits light: from the left a
+ * single wave, every part of it in it, runs into a turning, breathing shape;
+ * out of it the wave fans into five, each in a colour of its own (the
+ * dialogue, the music, the effects, the drums, the bass), sparks running along
+ * each, a badge springing up at its end. Then they gather back into one and it
+ * starts again. Small on a tile, large on its page, the same film.
  */
 @Composable
 private fun VoiceShowcase(modifier: Modifier) {
     val scheme = MaterialTheme.colorScheme
-    val t by rememberLoop(4_800, "voiceApart", still = 0.5f)
-    val flow by rememberLoop(2_400, "voiceFlow", still = 0f)
-    // Together until 0.2, apart by 0.45, held, together again by 0.95.
-    val apart = when {
-        t < 0.2f -> 0f
-        t < 0.45f -> (t - 0.2f) / 0.25f
-        t < 0.7f -> 1f
-        t < 0.95f -> 1f - (t - 0.7f) / 0.25f
+    val t by rememberLoop(6_400, "splitApart", still = 0.5f)
+    val flow by rememberLoop(2_600, "splitFlow", still = 0.2f)
+    // One until 0.12, fanned out by 0.38, held, one again by 0.94.
+    val spread = when {
+        t < 0.12f -> 0f
+        t < 0.38f -> backOut((t - 0.12f) / 0.26f)
+        t < 0.72f -> 1f
+        t < 0.94f -> 1f - smooth((t - 0.72f) / 0.22f)
         else -> 0f
-    }.let { it * it * (3 - 2 * it) }
+    }
+    val prismMorph = remember { Morph(MaterialShapes.Cookie9Sided, MaterialShapes.SoftBurst) }
+    val parts = listOf(
+        SplitPart(Icons.Rounded.RecordVoiceOver, scheme.primary, scheme.onPrimary, cycles = 3.2f, amp = 0.9f),
+        SplitPart(Icons.Rounded.MusicNote, scheme.tertiary, scheme.onTertiary, cycles = 2.0f, amp = 0.75f),
+        SplitPart(Icons.Rounded.Bolt, scheme.secondary, scheme.onSecondary, cycles = 5.0f, amp = 0.55f),
+        SplitPart(Icons.Rounded.GraphicEq, lerp(scheme.primary, scheme.tertiary, 0.5f), scheme.onPrimary, cycles = 6.5f, amp = 0.45f),
+        SplitPart(Icons.Rounded.Waves, lerp(scheme.secondary, scheme.tertiary, 0.55f), scheme.onSecondary, cycles = 1.3f, amp = 0.8f),
+    )
     val mixed = scheme.onSurfaceVariant
-    val voice = lerp(mixed, scheme.primary, apart)
-    val music = lerp(mixed, scheme.tertiary, apart)
-    Box(
-        modifier = modifier.background(Brush.verticalGradient(listOf(scheme.primaryContainer, scheme.tertiaryContainer))),
+    BoxWithConstraints(
+        modifier = modifier.background(Brush.linearGradient(listOf(scheme.surfaceContainerHigh, scheme.primaryContainer, scheme.tertiaryContainer))),
     ) {
+        val w = constraints.maxWidth.toFloat()
+        val h = constraints.maxHeight.toFloat()
+        val prismX = 0.34f
+        val endX = 0.86f
+        // Room for the five, whatever the size.
+        val lane = h * 0.17f
+        val amp = h * 0.075f
+        val badge = (minOf(maxWidth, maxHeight) * 0.17f).coerceIn(18.dp, 36.dp)
         Canvas(modifier = Modifier.fillMaxSize()) {
             val mid = size.height / 2
-            val gap = size.height * 0.22f * apart
-            val stroke = (size.minDimension * 0.035f).coerceIn(2.dp.toPx(), 5.dp.toPx())
-            fun wave(color: Color, dy: Float, cycles: Float, amp: Float, shift: Float) {
+            val px = size.width * prismX
+            val ex = size.width * endX
+            val stroke = (size.minDimension * 0.03f).coerceIn(2.dp.toPx(), 5.dp.toPx())
+            // A part's height at x: its own wave grows and its lane opens as it leaves the prism.
+            fun partY(index: Int, x: Float): Float {
+                val part = parts[index]
+                val u = ((x - px) / (ex - px)).coerceIn(0f, 1f)
+                val open = smooth((u * 2.4f).coerceAtMost(1f)) * spread
+                val target = (index - 2) * lane
+                val own = sin(((u * part.cycles) + flow * (1f + index * 0.15f)) * 2 * PI).toFloat() * amp * part.amp
+                val together = mixedY(u, flow) * amp
+                return mid + target * open + own * open + together * (1f - open)
+            }
+            // The one wave coming in: every part of it at once.
+            val incoming = Path()
+            val n = 72
+            for (i in 0..n) {
+                val u = i / n.toFloat()
+                val x = px * u
+                val envelope = sin(u * PI / 2).toFloat()
+                val y = mid + mixedY(u - 1f, flow) * amp * 1.1f * envelope
+                if (i == 0) incoming.moveTo(x, y) else incoming.lineTo(x, y)
+            }
+            drawPath(
+                incoming,
+                Brush.horizontalGradient(listOf(mixed.copy(alpha = 0.2f), mixed, parts[0].color), startX = 0f, endX = px),
+                style = Stroke(width = stroke * 1.6f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round),
+            )
+            // The parts going out, back to front so the dialogue is on top.
+            for (index in parts.indices.reversed()) {
+                val part = parts[index]
                 val path = Path()
-                val n = 96
                 for (i in 0..n) {
-                    val u = i / n.toFloat()
-                    // Fades in and out at the ends, so the line never starts on a cliff.
-                    val envelope = sin(u * PI).toFloat()
-                    val y = mid + dy + sin((u * cycles + flow + shift) * 2 * PI).toFloat() * amp * envelope
-                    val x = size.width * u
+                    val x = px + (ex - px) * i / n
+                    val y = partY(index, x)
                     if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 }
+                val color = lerp(mixed, part.color, spread.coerceIn(0f, 1f))
+                // A soft glow under the line, then the line.
+                drawPath(path, color.copy(alpha = 0.18f * spread.coerceIn(0f, 1f)), style = Stroke(width = stroke * 3.2f, cap = StrokeCap.Round))
                 drawPath(path, color, style = Stroke(width = stroke, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+                // Two sparks running along it, out of the prism towards the badge.
+                for (k in 0..1) {
+                    val u = (flow * 1.4f + k * 0.5f + index * 0.17f) % 1f
+                    val x = px + (ex - px) * u
+                    val r = stroke * (1.1f + 0.5f * sin(u * PI).toFloat())
+                    drawCircle(part.content.copy(alpha = 0.9f * spread.coerceIn(0f, 1f) * sin(u * PI).toFloat()), r, Offset(x, partY(index, x)))
+                }
             }
-            wave(music, gap, 2f, size.height * 0.12f, 0.25f)
-            wave(voice, -gap, 3.5f, size.height * 0.14f, 0f)
         }
-        // The two badges come out as the waves part.
-        Badge(Icons.Rounded.RecordVoiceOver, scheme.primary, scheme.onPrimary, apart, Modifier.align(Alignment.TopEnd).padding(10.dp))
-        Badge(Icons.Rounded.MusicNote, scheme.tertiary, scheme.onTertiary, apart, Modifier.align(Alignment.BottomEnd).padding(10.dp))
+        // The prism: turning, breathing, a cookie that bursts open as the parts come out.
+        val prismSize = (minOf(maxWidth, maxHeight) * 0.36f).coerceIn(36.dp, 88.dp)
+        val breath = 0.5f - 0.5f * kotlin.math.cos(2f * PI.toFloat() * t * 2f)
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .graphicsLayer {
+                    translationX = w * prismX - prismSize.toPx() / 2
+                    translationY = h / 2 - prismSize.toPx() / 2
+                    val sc = 0.92f + 0.08f * breath + 0.06f * spread.coerceIn(0f, 1f)
+                    scaleX = sc
+                    scaleY = sc
+                }
+                .size(prismSize)
+                .clip(MorphShape(prismMorph, spread.coerceIn(0f, 1f), rotationDegrees = t * 360f))
+                .background(Brush.sweepGradient(parts.map { it.color } + parts[0].color)),
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(prismSize * 0.5f).clip(CircleShape).background(scheme.surfaceContainerLowest),
+            ) {
+                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = scheme.primary, modifier = Modifier.size(prismSize * 0.28f))
+            }
+        }
+        // A badge at the end of each part, springing up one after the other.
+        parts.forEachIndexed { index, part ->
+            val shape = remember(index) { PolygonShape(part.shapeFor(index)) }
+            val shown = ((spread - index * 0.08f) / 0.6f).coerceIn(0f, 1.2f)
+            val y = h / 2 + (index - 2) * lane * spread
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .graphicsLayer {
+                        translationX = w * endX + 4.dp.toPx()
+                        translationY = y - badge.toPx() / 2
+                        alpha = shown.coerceIn(0f, 1f)
+                        scaleX = 0.4f + 0.6f * shown
+                        scaleY = 0.4f + 0.6f * shown
+                    }
+                    .size(badge)
+                    .clip(shape)
+                    .background(part.color),
+            ) {
+                Icon(part.icon, contentDescription = null, tint = part.content, modifier = Modifier.size(badge * 0.56f))
+            }
+        }
     }
 }
 
-@Composable
-private fun Badge(icon: androidx.compose.ui.graphics.vector.ImageVector, container: Color, content: Color, shown: Float, modifier: Modifier) {
-    val shape = remember { PolygonShape(MaterialShapes.Cookie6Sided) }
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier
-            .size(30.dp)
-            .graphicsLayer {
-                alpha = shown
-                scaleX = 0.6f + 0.4f * shown
-                scaleY = 0.6f + 0.4f * shown
-            }
-            .clip(shape)
-            .background(container),
-    ) {
-        Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(17.dp))
-    }
+/** One part of the split: its badge's icon, its colour and how its own wave moves. */
+private class SplitPart(
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val color: Color,
+    val content: Color,
+    val cycles: Float,
+    val amp: Float,
+) {
+    fun shapeFor(index: Int) = SPLIT_SHAPES[index % SPLIT_SHAPES.size]
+}
+
+private val SPLIT_SHAPES = listOf(
+    MaterialShapes.Cookie9Sided,
+    MaterialShapes.Flower,
+    MaterialShapes.SoftBurst,
+    MaterialShapes.Sunny,
+    MaterialShapes.Cookie6Sided,
+)
+
+/** The wave of every part at once, at [u] along it: a few of them added, as a mix sounds. */
+private fun mixedY(u: Float, flow: Float): Float {
+    val a = sin(((u * 3.2f) + flow) * 2 * PI)
+    val b = sin(((u * 2.0f) + flow * 1.15f) * 2 * PI)
+    val c = sin(((u * 5.0f) + flow * 1.3f) * 2 * PI)
+    return ((0.45 * a + 0.35 * b + 0.2 * c)).toFloat()
+}
+
+/** Ease in and out. */
+private fun smooth(x: Float): Float {
+    val c = x.coerceIn(0f, 1f)
+    return c * c * (3 - 2 * c)
 }
 
 // -- Dubbing -------------------------------------------------------------------------------------

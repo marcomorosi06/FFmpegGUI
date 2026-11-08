@@ -624,7 +624,8 @@ internal fun AboutModelsSection() {
 }
 
 /**
- * The stems' section: Bandit v2's card (dialogue, music and effects: what
+ * The stems' section (its film, above, shows one sound split into its
+ * parts): Bandit v2's card (dialogue, music and effects: what
  * the voice levels, the dub and every split need), then Spleeter's five
  * stems' (the music's instruments) and, once files have been split, how many
  * are kept and the space they take, with a way to remove them all. While
@@ -635,7 +636,6 @@ internal fun AboutModelsSection() {
 internal fun VoiceSettingsSection(voice: VoiceFeatureUi) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
-    StemsShowcase()
     SectionTitle(stringResource(R.string.stems_scene_section), stringResource(R.string.stems_scene_intro))
     if (StemModels.BANDIT_PINNED) {
         val files = StemModels.SCENE.files.joinToString(", ") { it.name }
