@@ -65,6 +65,10 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.Dp
 import androidx.graphics.shapes.toPath
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.graphics.vector.VectorPainter
+import androidx.compose.ui.graphics.Shadow
+import com.cuscus.ffmpeggui.core.stems.StemKind
+import com.cuscus.ffmpeggui.voice.VoiceSeparator
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.asComposePath
@@ -720,7 +724,28 @@ fun EditorTimeline(
     val clipWave = androidx.compose.ui.graphics.lerp(colors.tertiary, Color.White, 0.55f)
     val selectedSoundWave = colors.onTertiary.copy(alpha = 0.55f)
     val mutedStyle = remember(muted) { TextStyle(fontSize = 10.sp, color = muted) }
-    val itemStyle = remember(onSurface) { TextStyle(fontSize = 10.sp, color = onSurface) }
+    // An item's name in the colour made for its fill (the container's "on" colour),
+    // light or dark alike.
+    val onPrimaryContainer = colors.onPrimaryContainer
+    val onSecondaryContainer = colors.onSecondaryContainer
+    val onTertiaryContainer = colors.onTertiaryContainer
+    val itemStyles = remember(onPrimaryContainer, onSecondaryContainer, onTertiaryContainer, onSurface) {
+        mapOf(
+            LaneKind.EFFECT to TextStyle(fontSize = 10.sp, color = onPrimaryContainer),
+            LaneKind.TEXT to TextStyle(fontSize = 10.sp, color = onSecondaryContainer),
+            LaneKind.IMAGE to TextStyle(fontSize = 10.sp, color = onSurface),
+            LaneKind.SOUND to TextStyle(fontSize = 10.sp, color = onTertiaryContainer),
+        )
+    }
+    // A stem made by the Stems tool shows what it is: its kind's icon before its name.
+    // Known by its file (kept by the separator), or by its name ("Dialogue (film)").
+    val stemPainters = StemKind.entries.associateWith { rememberVectorPainter(stemIcon(it)) }
+    val stemNames = StemKind.entries.associateWith { stemLabel(it) }
+    val stemKinds = remember(sounds, stemNames) {
+        sounds.associate { sound ->
+            sound.id to (VoiceSeparator.stemKindOf(sound.uri) ?: stemKindNamed(sound.name, stemNames))
+        }
+    }
     val onSecondary = colors.onSecondary
     val onTertiary = colors.onTertiary
     val onPrimaryItem = colors.onPrimary
@@ -1495,12 +1520,17 @@ fun EditorTimeline(
                         )
                     }
                     val label = if (sound != null && span is SoundSpan) soundLabel(sound, span) else item.label
+                    val fill = (if (selected) selectedColors.getValue(item.kind) else itemColors.getValue(item.kind)).faded(item.hidden)
                     drawLabel(
                         textMeasurer, label,
                         Offset(max(left, 0f) + (if (selected) 14.dp else 6.dp).toPx(), top + (height - 14.dp.toPx()) / 2f),
                         maxWidth = right - max(left, 0f) - 28.dp.toPx(),
                         background = null,
-                        style = if (selected) selectedStyles.getValue(item.kind) else itemStyle,
+                        // A sound's name has a soft halo of its own fill, so it reads over the
+                        // waveform without covering it.
+                        halo = if (sound != null) fill.copy(alpha = 1f) else null,
+                        style = if (selected) selectedStyles.getValue(item.kind) else itemStyles.getValue(item.kind),
+                        icon = if (sound != null) stemKinds[sound.id]?.let { stemPainters.getValue(it) } else null,
                     )
                     // The selected one's keyframes, where they are on the video.
                     if (selected) itemKeyframes = {
@@ -2177,18 +2207,27 @@ private fun DrawScope.drawLabel(
     maxWidth: Float,
     background: Color?,
     style: TextStyle,
+    /** Drawn before the text, as tall as it, in its colour. */
+    icon: VectorPainter? = null,
+    /** A soft glow of this colour around the text (and a dot behind the icon), to read over busy drawing. */
+    halo: Color? = null,
 ) {
+    val shown = if (halo != null) style.copy(shadow = Shadow(halo, Offset.Zero, 3.dp.toPx())) else style
     if (maxWidth < 12.dp.toPx()) return
-    val whole = measurer.measure(text = text, style = style, softWrap = false, maxLines = 1)
-    val layout = if (whole.size.width <= maxWidth) {
+    val iconSide = if (icon != null) 12.dp.toPx() else 0f
+    val iconRoom = if (icon != null) iconSide + 3.dp.toPx() else 0f
+    val textMax = maxWidth - iconRoom
+    if (icon != null && textMax < 12.dp.toPx()) return
+    val whole = measurer.measure(text = text, style = shown, softWrap = false, maxLines = 1)
+    val layout = if (whole.size.width <= textMax) {
         whole
     } else {
         val step = LABEL_WIDTH_STEP.dp.toPx()
-        val width = (floor(maxWidth / step) * step).toInt()
+        val width = (floor(textMax / step) * step).toInt()
         if (width < step) return
         measurer.measure(
             text = text,
-            style = style,
+            style = shown,
             overflow = TextOverflow.Ellipsis,
             softWrap = false,
             maxLines = 1,
@@ -2199,12 +2238,26 @@ private fun DrawScope.drawLabel(
         drawRoundRect(
             background,
             topLeft = Offset(topLeft.x - 2.dp.toPx(), topLeft.y),
-            size = Size(layout.size.width + 4.dp.toPx(), layout.size.height.toFloat()),
+            size = Size(iconRoom + layout.size.width + 4.dp.toPx(), layout.size.height.toFloat()),
             cornerRadius = CornerRadius(3.dp.toPx()),
         )
     }
-    drawText(layout, topLeft = topLeft)
+    if (icon != null) {
+        if (halo != null) {
+            drawCircle(halo, radius = iconSide / 2f + 1.dp.toPx(), center = Offset(topLeft.x + iconSide / 2f, topLeft.y + layout.size.height / 2f))
+        }
+        translate(topLeft.x, topLeft.y + (layout.size.height - iconSide) / 2f) {
+            with(icon) { draw(Size(iconSide, iconSide), colorFilter = ColorFilter.tint(style.color)) }
+        }
+    }
+    // The halo is drawn twice, to be strong enough over light bars.
+    if (halo != null) drawText(layout, topLeft = Offset(topLeft.x + iconRoom, topLeft.y))
+    drawText(layout, topLeft = Offset(topLeft.x + iconRoom, topLeft.y))
 }
+
+/** The stem a sound's [name] says it is: a stem's name alone, or with its file's after it. */
+private fun stemKindNamed(name: String, stemNames: Map<StemKind, String>): StemKind? =
+    stemNames.entries.firstOrNull { (_, stem) -> name == stem || name.startsWith("$stem (") }?.key
 
 /** Widths a label cut short is measured at are multiples of this (dp). */
 private const val LABEL_WIDTH_STEP = 16

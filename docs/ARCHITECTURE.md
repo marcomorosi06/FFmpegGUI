@@ -1908,6 +1908,11 @@ gave (dialogue, music, effects, instruments) lit as they are there; then
 "Quick mix" (the dialogue's level and the music's and effects' together,
 live, with presets) or "Tracks" (`StemTracksCard`: how far to split, which
 parts, one button).
+On the timeline a placed stem carries its kind's icon before its name: known
+by its file (`VoiceSeparator.stemKindOf`, its name in `voice-stems`) or by
+its own name ("Dialogue (film)", `stemKindNamed`). A sound's name is in its
+fill's "on" colour with a soft halo of the fill, so it reads over the
+waveform without covering it.
 
 ## Dubbing
 

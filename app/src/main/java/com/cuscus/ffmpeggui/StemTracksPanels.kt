@@ -108,7 +108,7 @@ internal fun stemLabel(kind: StemKind): String = stringResource(
     },
 )
 
-private fun stemIcon(kind: StemKind): ImageVector = when (kind) {
+internal fun stemIcon(kind: StemKind): ImageVector = when (kind) {
     StemKind.DIALOGUE -> Icons.Rounded.RecordVoiceOver
     StemKind.MUSIC -> Icons.Rounded.MusicNote
     StemKind.EFFECTS -> Icons.Rounded.Bolt

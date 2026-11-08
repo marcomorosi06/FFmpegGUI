@@ -409,6 +409,22 @@ class VoiceSeparator(
     }
 
     companion object {
+        /**
+         * The stem [sound] (a placed sound's address) is, when it is one of the
+         * tracks a separator keeps (in its folder, named after its kind); null
+         * for any other sound.
+         */
+        fun stemKindOf(sound: Uri): StemKind? {
+            if (sound.scheme != "file") return null
+            val file = sound.path?.let(::File) ?: return null
+            if (file.parentFile?.name != FOLDER) return null
+            val match = TRACK.matchEntire(file.name) ?: return null
+            return StemKind.of(match.groupValues[1])
+        }
+
+        /** A stem kept as a track: the media file's name, then the stem's. */
+        private val TRACK = Regex("[0-9a-f]{32}\\.([a-z]+)\\.flac")
+
         private const val TAG = "VoiceSeparator"
         private const val FOLDER = "voice-stems"
         private const val EXTENSION = ".flac"
