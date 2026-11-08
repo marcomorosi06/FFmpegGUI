@@ -58,8 +58,12 @@ MODELS = {
                  "([Zenodo record 12701995](https://zenodo.org/records/12701995)), the authors' code under the "
                  "Apache License 2.0. This ONNX file is an adaptation of those weights, and is licensed under CC BY-SA 4.0 too. "
                  "Attribution: \"Bandit v2, multilingual checkpoint\" by Karn N. Watcharasupat, Chih-Wei Wu and Iroro Orife, "
-                 "from the record above, licensed CC BY-SA 4.0. Changed: converted to ONNX, with nothing trained or changed "
-                 "in its weights (see NOTICE.txt).",
+                 "from the record above, licensed CC BY-SA 4.0. Changed: converted to ONNX, with nothing trained; "
+                 "its frequency weights are kept as 32-bit floats and its masks put together in one step per part "
+                 "(see NOTICE.txt).",
+        "replaces": ("bandit-onnx-1", "5988996",
+                     "which put the masks together band by band, in 64-bit floats: the same masks, "
+                     "from a graph nearly three times bigger and slower to load. It stays published, unchanged"),
         "files": [
             ("bandit-v2-multi.onnx", "The network, converted: from a sound's spectrogram, the masks of dialogue, music and effects"),
         ],
@@ -130,12 +134,19 @@ def page(model, commit, sums, assets, run, repo_url):
     out = [spec["intro"].format(repo=repo_url), ""]
     out += ["| File | What it is |", "|---|---|"]
     out += ["| %s | %s |" % row for row in rows]
+    if "replaces" in spec:
+        former, former_commit, why = spec["replaces"]
+        out += [
+            "",
+            "It replaces [%s](%s/releases/tag/%s) (built at [%s](%s/commit/%s)), %s."
+            % (former, repo_url, former, former_commit, repo_url, former_commit, why),
+        ]
     out += [
         "",
         "Made from what [`%s`](%s/%s) pins (the upstream code, weights and licence, every hash checked) at "
         "[%s](%s/commit/%s), by [the workflow](%s/.github/workflows/models-onnx.yml)%s, twice "
-        "(ubuntu-24.04, and ubuntu-26.04 on two cores), with byte-identical results. Nothing was trained "
-        "or changed: the NOTICE says what the conversion does. The licence and the notice are also inside each ONNX file (its metadata)."
+        "(ubuntu-24.04, and ubuntu-26.04 on two cores), with byte-identical results. Nothing was trained: "
+        "the NOTICE says what the conversion does. The licence and the notice are also inside each ONNX file (its metadata)."
         % (lock_path, at, lock_path, commit[:7], repo_url, commit, at, " ([this run](%s))" % run if run else ""),
         "",
         "```",
