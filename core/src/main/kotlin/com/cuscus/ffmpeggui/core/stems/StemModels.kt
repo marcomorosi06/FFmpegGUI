@@ -85,9 +85,9 @@ class BanditMasks(private val network: Network) : StemSeparation.Model {
         const val N = 2048
         const val HOP = 512
 
-        /** Frames seen at once: about 10.9 s, of which about 1 s at each end only heard around. */
+        /** Frames seen at once: about 10.9 s, of which half a second at each end only heard around. */
         const val FRAMES = 1024
-        const val CONTEXT = 96
+        const val CONTEXT = 48
 
         const val STEMS = 3
 

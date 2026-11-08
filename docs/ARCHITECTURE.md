@@ -1848,12 +1848,16 @@ stays the same. One stem, the one of "everything else", is the sound less the
 others: the stems always add up to the sound.
 
 - `BanditMasks`: 48 kHz, 2048 points, hop 512, 1024 frames seen (about
-  10.9 s) of which 96 at each end only heard around. The network is mono: it
+  10.9 s) of which 48 at each end only heard around. The network is mono: it
   reads the middle of the two channels, scaled as torchaudio's "normalized"
   transform, laid out [1][bin][frame][re, im], and its masks are laid on each
   channel's own spectrum, so the stems stay stereo. Effects take what the
   dialogue and the music leave. `scripts/export-bandit.py` checks these
-  transforms against the authors' model end to end.
+  transforms against the authors' model end to end. The published file
+  (bandit-onnx-1) gives its masks as doubles (the authors' frequency weights
+  are float64, and carry the sums after them): `VoiceSeparator` reads either.
+  Its recurrent layers (GRU) take most of the time and do not run on
+  XNNPACK, so its session stays on the plain kernels, threads spinning.
 - `SpleeterMasks`: 44.1 kHz, 4096 points, hop 1024, 512 frames (32 heard
   around), the magnitudes of the first 1024 bins of both channels; each
   instrument keeps e^2 / sum(e^2) of every bin. Above the 1024 bins nothing

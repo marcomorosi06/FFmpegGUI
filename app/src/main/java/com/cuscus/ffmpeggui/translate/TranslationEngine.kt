@@ -160,7 +160,10 @@ class TranslationEngine(context: Context, private val store: TranslationModelSto
         val config = if (configFile.isFile) MarianConfig.parse(configFile.readText()) else MarianConfig.fromVocab(vocab)
         val tokenizer = MarianTokenizer(SentencePieceModel.parse(store.file(id, OpusMt.Kind.SOURCE).readBytes()), vocab, config)
         val env = OrtEnvironment.getEnvironment()
-        val options = AiKernels.options(threads)
+        // The files are quantised (MatMulInteger and the like), which XNNPACK does not run: every
+        // heavy node stays on the plain kernels anyway, and the decoder runs once per token, many
+        // small runs, where the threads XNNPACK's setup puts to sleep would only be woken again.
+        val options = AiKernels.options(threads, xnnpack = false)
         try {
             val encoder = env.createSession(store.file(id, OpusMt.Kind.ENCODER).absolutePath, options)
             val decoder = try {

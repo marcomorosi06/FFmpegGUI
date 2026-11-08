@@ -1,5 +1,6 @@
 package com.cuscus.ffmpeggui.voice
 
+import ai.onnxruntime.OnnxJavaType
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
@@ -323,8 +324,7 @@ class VoiceSeparator(
         val shape = longArrayOf(1, (BanditMasks.N / 2 + 1).toLong(), frames.toLong(), 2)
         return OnnxTensor.createTensor(env, FloatBuffer.wrap(spectrogram), shape).use { input ->
             session.run(mapOf(session.inputNames.first() to input)).use { result ->
-                val buffer = (result.get(0) as OnnxTensor).floatBuffer
-                FloatArray(buffer.remaining()).also { buffer.get(it) }
+                floats(result.get(0) as OnnxTensor)
             }
         }
     }
@@ -334,9 +334,24 @@ class VoiceSeparator(
         val shape = longArrayOf(2, 1, SpleeterMasks.FRAMES.toLong(), SpleeterMasks.BINS.toLong())
         return OnnxTensor.createTensor(env, FloatBuffer.wrap(magnitudes), shape).use { input ->
             session.run(mapOf(session.inputNames.first() to input)).use { result ->
-                val buffer = (result.get(0) as OnnxTensor).floatBuffer
-                FloatArray(buffer.remaining()).also { buffer.get(it) }
+                floats(result.get(0) as OnnxTensor)
             }
+        }
+    }
+
+    /**
+     * A model's output as floats. Bandit's file (bandit-onnx-1) gives its masks
+     * as doubles: its frequency weights were exported as such, and they carry
+     * the sums after them. Either is read.
+     */
+    private fun floats(tensor: OnnxTensor): FloatArray = when (tensor.info.type) {
+        OnnxJavaType.DOUBLE -> {
+            val buffer = tensor.doubleBuffer ?: throw IOException("The stem model gave no values")
+            FloatArray(buffer.remaining()) { buffer.get(it).toFloat() }
+        }
+        else -> {
+            val buffer = tensor.floatBuffer ?: throw IOException("The stem model gave values of type ${tensor.info.type}")
+            FloatArray(buffer.remaining()).also { buffer.get(it) }
         }
     }
 
@@ -349,7 +364,10 @@ class VoiceSeparator(
         (appContext.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)?.getMemoryInfo(memory)
         if (memory.availMem in 1 until MIN_FREE_BYTES) throw NotEnoughMemory()
         val env = OrtEnvironment.getEnvironment()
-        val options = AiKernels.options(threads)
+        // Bandit is mostly recurrent layers (GRU), which XNNPACK does not run: they stay on the
+        // plain kernels, whose threads must be left spinning between the many small steps of a
+        // GRU, or waking them costs more than the steps (what XNNPACK's setup turns off).
+        val options = if (which == Which.SCENE) AiKernels.options(threads, xnnpack = false) else AiKernels.options(threads)
         try {
             val session = env.createSession(file.absolutePath, options)
             Log.i(TAG, "${store.model.name} loaded on $threads threads")
