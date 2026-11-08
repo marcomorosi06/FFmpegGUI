@@ -1853,9 +1853,11 @@ others: the stems always add up to the sound.
   transform, laid out [1][bin][frame][re, im], and its masks are laid on each
   channel's own spectrum, so the stems stay stereo. Effects take what the
   dialogue and the music leave. `scripts/export-bandit.py` checks these
-  transforms against the authors' model end to end. The published file
-  (bandit-onnx-1) gives its masks as doubles (the authors' frequency weights
-  are float64, and carry the sums after them): `VoiceSeparator` reads either.
+  transforms against the authors' model end to end. The first file
+  (bandit-onnx-1, retired) gave its masks as doubles (the authors' frequency
+  weights are float64, and carried the sums after them) and had some 23,000
+  nodes; bandit-onnx-2 puts the masks together in one scatter-add per stem,
+  in float32, and loads three times quicker. `VoiceSeparator` reads either.
   Its recurrent layers (GRU) take most of the time and do not run on
   XNNPACK, so its session stays on the plain kernels, threads spinning.
 - `SpleeterMasks`: 44.1 kHz, 4096 points, hop 1024, 512 frames (32 heard

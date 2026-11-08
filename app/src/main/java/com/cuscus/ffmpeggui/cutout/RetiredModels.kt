@@ -42,6 +42,9 @@ object RetiredModels {
 
         /** Newer models do the same work better, and more of it (a voice from the rest: every stem). */
         EXTENDED,
+
+        /** The same model, in a file that loads and runs quicker. */
+        QUICKER,
     }
 
     /** What [sweep] deleted: which model, and how much space it gave back. */
@@ -70,6 +73,19 @@ object RetiredModels {
             reason = Reason.EXTENDED,
             area = Area.VOICE,
             leftovers = listOf("voice/importing-voice"),
+        ),
+        // Bandit v2's first file (bandit-onnx-1): the same model, built band by band, that took
+        // three times as long to load and gave its masks as doubles. bandit-onnx-2 is the same
+        // weights, put together in one go: imported again once, from its own release.
+        Retired(
+            id = "bandit-onnx-1",
+            name = "Bandit v2 (first file)",
+            folder = "stems/bandit-v2",
+            prefs = "stems_bandit",
+            replacement = com.cuscus.ffmpeggui.voice.StemModels.BANDIT_NAME,
+            reason = Reason.QUICKER,
+            area = Area.VOICE,
+            leftovers = listOf("stems/importing-bandit"),
         ),
     )
 

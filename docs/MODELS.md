@@ -222,14 +222,22 @@ It replaced Spleeter's two stems (see "Retired models").
 
   | File | SHA-256 | Bytes |
   |---|---|---|
-  | `bandit-v2-multi.onnx` | `1601a8dc45ddea3b0d3d16378c9e0d42ba7e2b6cef3bd832d5f8e93808a65fd4` | 150,610,260 |
+  | `bandit-v2-multi.onnx` | `0000000000000000000000000000000000000000000000000000000000000000` | 0 |
 
   Zeros until its first build: `.github/workflows/models-onnx.yml` (without
   publishing) builds it twice, the two must be byte-identical, then
   `scripts/pin-stems.py bandit <the build's folder>` writes the pins here,
   in the lock, in the app and in the bundled NOTICE; the next run publishes
   the pre-release
-  [`bandit-onnx-1`](https://github.com/marcomorosi06/FFmpegGUI/releases/tag/bandit-onnx-1).
+  [`bandit-onnx-2`](https://github.com/marcomorosi06/FFmpegGUI/releases/tag/bandit-onnx-2).
+  The first file, [`bandit-onnx-1`](https://github.com/marcomorosi06/FFmpegGUI/releases/tag/bandit-onnx-1)
+  (SHA-256 `1601a8dc45ddea3b0d3d16378c9e0d42ba7e2b6cef3bd832d5f8e93808a65fd4`,
+  150,610,260 bytes), put the masks together band by band, with the
+  authors' float64 frequency weights: some 23,000 nodes, 12 s to load on a
+  computer, masks as doubles. bandit-onnx-2 is the same weights with one
+  scatter-add per stem and float32 throughout: under 9,000 nodes, about 3
+  times quicker to load, some 20% quicker to run.
+  The app retires the first (see "Retired models").
   Until then the app says the model is on its way and imports nothing.
 - **How CC BY-SA 4.0 is kept**: the attribution (the authors, the title of
   the work, the record's address), the licence's legal code and the note of
@@ -447,6 +455,7 @@ with what took its place and how much space came back
 | Model | Licence | Was used for | Folder deleted | Replaced by |
 |---|---|---|---|---|
 | SlimSAM-77 (Zigeng Chen et al., ONNX by Xenova) | Apache 2.0 | cut-out correction | `files/refine/slimsam-77` | EdgeTAM |
+| Bandit v2's first file, `bandit-onnx-1` (see above) | CC BY-SA 4.0 | stems | `files/stems/bandit-v2` | Bandit v2, `bandit-onnx-2` |
 | Spleeter 2stems (Deezer, MIT; int8 ONNX by sherpa-onnx, Apache 2.0: `sherpa-onnx-spleeter-2stems-int8.tar.bz2` `c5dc8edfa08cc9a6d82670fcca15cfe671e446385e1a28c9da8c1816d238ea17`, `vocals.int8.onnx` `6e9721864c0c1a6d86eaae92de71637b2daeb3df769c9c536053b46be8dd10aa`, `accompaniment.int8.onnx` `53a96a0d1520b45b8f3cc53262e3725defb686fc3a17490932f050721f4583f1`) | MIT | voice separation | `files/voice/spleeter-2stems-int8` | Bandit v2, and Spleeter 5 stems for the instruments |
 
 The voices Spleeter's two stems set apart stay (they are results, in

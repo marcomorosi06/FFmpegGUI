@@ -133,6 +133,9 @@ What was done to it (scripts/export-bandit.py of FFmpeg GUI):
   masks (speech, music, sfx), instead of sound in and sound out; the
   transforms between sound and spectrogram are left to the program that
   runs the file.
+- The masks are put together with one scatter-add per stem rather than band
+  by band, with the frequency weights as 32-bit floats (the authors keep
+  them as 64-bit).
 - No weight was trained, fine-tuned, pruned or quantised.
 
 The authors and the licensor have not reviewed or endorsed this file. It
@@ -206,7 +209,17 @@ def build(code):
 
 
 def masks_module(model):
-    """The network from spectrogram to masks, with real numbers (see the module's docstring)."""
+    """
+    The network from spectrogram to masks, with real numbers (see the module's
+    docstring). The masks are put together as the authors' code does (each
+    band's mask times its frequency weights, added where bands overlap), but
+    with one scatter-add per stem over every band's bins at once, and with the
+    frequency weights as 32-bit floats, as the masks are (the authors keep them
+    as float64 and store the sums as complex64 again). Band by band and in
+    float64, the graph had some 23,000 nodes, took 12 s to load and gave its
+    masks as doubles (bandit-onnx-1); this way it has under 9,000, loads in
+    a third of the time and gives floats.
+    """
     import torch
     from torch import nn
 
@@ -215,6 +228,16 @@ def masks_module(model):
             super().__init__()
             self.m = m
             self.specs = [tuple(int(v) for v in s) for s in m.band_specs.get_band_specs()]
+            self.freqs = N_FFT // 2 + 1
+            # Where each band's bins go, every band one after the other, and each bin's weight.
+            self.register_buffer("index", torch.cat([torch.arange(s, e) for s, e in self.specs]))
+            for stem in STEMS:
+                estimator = m.mask_estim[stem]
+                if estimator.use_freq_weights:
+                    weights = torch.cat([estimator.get_buffer("freq_weights/%d" % b).float() for b in range(len(self.specs))])
+                else:
+                    weights = torch.ones(self.index.numel())
+                self.register_buffer("weights_" + stem, weights)
 
         def forward(self, x):
             # x: [B, F, T, 2] -> [B, 3, F, T, 2]
@@ -236,23 +259,17 @@ def masks_module(model):
                     z = layer.fc(y) + z
                 else:
                     z = z.transpose(layer.dim0, layer.dim1)
-            # Each stem's mask, band by band, weighted where bands overlap.
+            # Each stem's mask: every band's, weighted, added into the bins it covers.
+            index = self.index[None, None, :, None].expand(batch, frames, -1, 2)
             stems = []
             for stem in STEMS:
                 estimator = m.mask_estim[stem]
-                real = torch.zeros(batch, freqs, frames)
-                imag = torch.zeros(batch, freqs, frames)
-                for b, (start, end) in enumerate(self.specs):
-                    mb = estimator.norm_mlp[b].combined(z[:, b, :, :]).reshape(batch, frames, end - start, 2)
-                    mr, mi = mb[..., 0], mb[..., 1]
-                    if estimator.use_freq_weights:
-                        weights = estimator.get_buffer("freq_weights/%d" % b)[None, None, :]
-                        mr, mi = mr * weights, mi * weights
-                    pad = (start, freqs - end)
-                    real = real + nn.functional.pad(mr, pad).transpose(1, 2)
-                    imag = imag + nn.functional.pad(mi, pad).transpose(1, 2)
-                stems.append(torch.stack([real, imag], dim=-1))
-            return torch.stack(stems, dim=1)
+                parts = [estimator.norm_mlp[b].combined(z[:, b, :, :]).reshape(batch, frames, end - start, 2)
+                         for b, (start, end) in enumerate(self.specs)]
+                weighted = torch.cat(parts, dim=2) * getattr(self, "weights_" + stem)[None, None, :, None]
+                masks = torch.zeros(batch, frames, self.freqs, 2, dtype=weighted.dtype).scatter_add(2, index, weighted)
+                stems.append(masks)
+            return torch.stack(stems, dim=1).permute(0, 1, 3, 2, 4)
 
     return Masks(model).eval()
 

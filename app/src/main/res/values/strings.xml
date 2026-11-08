@@ -1808,6 +1808,7 @@
     <string name="retired_next">To keep doing what they did, import %1$s once in Smart features: the links and the steps are there.</string>
     <string name="retired_set_up">Set up %1$s</string>
     <string name="retired_ok">Got it</string>
+    <string name="retired_reason_quicker">The same model, in a new file that loads three times quicker and splits quicker: import it once more</string>
     <string name="retired_reason_extended">Replaced by better models that do more: every part of the sound, not just the voice</string>
 
     <!-- Photo editor: a long press lifts the subject off the picture (SubjectLifter) -->

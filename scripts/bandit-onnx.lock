@@ -24,13 +24,17 @@ checkpoint_sha256   abcfccf65446752a057f4a302c941479a54b7560ebf8d7bca039d2ea98e6
 file                bandit-v2-multi.onnx
 opset               17
 
+# bandit-onnx-1 (SHA-256 1601a8dc45ddea3b0d3d16378c9e0d42ba7e2b6cef3bd832d5f8e93808a65fd4,
+# 150,610,260 bytes) was the first file: built band by band, in float64 for
+# its masks; RetiredModels deletes it from the phones that have it.
+
 # What it comes out as, byte for byte: the SHA-256 and size the app pins
 # (scripts/check-model-pins.py checks that the two agree), and the release of
 # this repository that serves it. Zeros until the first run of the workflow
 # (scripts/pin-stems.py writes them): until then the app cannot import it.
-file_sha256         1601a8dc45ddea3b0d3d16378c9e0d42ba7e2b6cef3bd832d5f8e93808a65fd4
-file_bytes          150610260
-release_tag         bandit-onnx-1
+file_sha256         0000000000000000000000000000000000000000000000000000000000000000
+file_bytes          0
+release_tag         bandit-onnx-2
 
 # The tools that write it: the same as the other models' (Python 3.13, CPU
 # only), installed with --require-hashes from scripts/model-export-requirements.txt.

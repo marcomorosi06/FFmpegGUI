@@ -24,6 +24,9 @@ What was done to it (scripts/export-bandit.py of FFmpeg GUI):
   masks (speech, music, sfx), instead of sound in and sound out; the
   transforms between sound and spectrogram are left to the program that
   runs the file.
+- The masks are put together with one scatter-add per stem rather than band
+  by band, with the frequency weights as 32-bit floats (the authors keep
+  them as 64-bit).
 - No weight was trained, fine-tuned, pruned or quantised.
 
 The authors and the licensor have not reviewed or endorsed this file. It

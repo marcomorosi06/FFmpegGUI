@@ -43,7 +43,7 @@ object StemModels {
     const val BANDIT_WEIGHTS_URL = "https://zenodo.org/records/12701995"
 
     /** The release of this repository that serves the ONNX file (see scripts/bandit-onnx.lock). */
-    const val BANDIT_RELEASE_TAG = "bandit-onnx-1"
+    const val BANDIT_RELEASE_TAG = "bandit-onnx-2"
 
     /** Where the ONNX file is, with its LICENSE, NOTICE and PROVENANCE. */
     const val BANDIT_FILES_URL = "https://github.com/marcomorosi06/FFmpegGUI/releases/tag/$BANDIT_RELEASE_TAG"
@@ -57,8 +57,8 @@ object StemModels {
      */
     val BANDIT = SpeechModel.ModelFile(
         name = "bandit-v2-multi.onnx",
-        sha256 = "1601a8dc45ddea3b0d3d16378c9e0d42ba7e2b6cef3bd832d5f8e93808a65fd4",
-        bytes = 150_610_260L,
+        sha256 = "0000000000000000000000000000000000000000000000000000000000000000",
+        bytes = 0L,
         role = SpeechModel.Role.ENCODER,
     )
 
@@ -71,8 +71,9 @@ object StemModels {
         name = BANDIT_NAME,
         archive = null,
         downloads = listOf(SpeechModel.Download(BANDIT.name, "$BANDIT_DOWNLOAD_URL/${BANDIT.name}")),
-        folder = "stems/bandit-v2",
-        prefs = "stems_bandit",
+        // bandit-onnx-2's: the first file (bandit-onnx-1) was in "stems/bandit-v2" (see RetiredModels).
+        folder = "stems/bandit-v2-2",
+        prefs = "stems_bandit_2",
         tempFolder = "importing-bandit",
         files = listOf(BANDIT),
         samples = emptyList(),
