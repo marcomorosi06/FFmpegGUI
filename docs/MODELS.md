@@ -222,7 +222,7 @@ It replaced Spleeter's two stems (see "Retired models").
 
   | File | SHA-256 | Bytes |
   |---|---|---|
-  | `bandit-v2-multi.onnx` | `0000000000000000000000000000000000000000000000000000000000000000` | 0 |
+  | `bandit-v2-multi.onnx` | `7836f01622021adc2fe2570f263ec365ef7677d598b51d27b015b94d869f2ff2` | 149,293,980 |
 
   Zeros until its first build: `.github/workflows/models-onnx.yml` (without
   publishing) builds it twice, the two must be byte-identical, then

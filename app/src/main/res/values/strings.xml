@@ -3025,4 +3025,16 @@
         <item quantity="one">%1$d sticker saved</item>
         <item quantity="other">%1$d stickers saved</item>
     </plurals>
+    <!-- Keep Android Open (KeepAndroidOpen.kt: the home's card; its switch in Settings, Appearance). -->
+    <string name="kao_title">Keep Android Open</string>
+    <string name="kao_text">Google is making every Android developer *register with Google, hand over an ID and pay a fee*. Apps from developers who do not *can no longer be installed normally*, even from outside the Play Store. Free apps from independent developers, like this one, are the first to lose. Keep Android Open asks Google to drop the plan, and says how you can help.</string>
+    <string name="kao_learn">What you can do</string>
+    <string name="kao_this_app">This app, like many others we all love, *will not register with Google*. So once the lockdown reaches your country, it will no longer install the easy way: only *through the extra steps Google allows*, or on an Android without Google, *such as GrapheneOS*.</string>
+    <string name="kao_short">Google wants every Android developer to register with Google first. Tap to see why it matters.</string>
+    <string name="link_opens">Opens %1$s: %2$s</string>
+    <string name="kao_close">Hide the Keep Android Open card</string>
+    <string name="settings_home">Home</string>
+    <string name="kao_setting">Keep Android Open card</string>
+    <string name="kao_setting_on">On the home: the campaign for apps from any developer</string>
+    <string name="kao_setting_off">Hidden from the home</string>
 </resources>

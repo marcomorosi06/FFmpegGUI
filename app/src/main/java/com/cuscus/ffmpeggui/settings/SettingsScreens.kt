@@ -21,6 +21,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import java.util.Locale
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Science
@@ -286,6 +287,7 @@ fun SettingsScreen(
                         title = stringResource(R.string.settings_github),
                         summary = stringResource(R.string.settings_github_summary),
                         badge = MaterialShapes.Gem,
+                        link = ProjectLinks.GITHUB,
                         onClick = { openLink(context, ProjectLinks.GITHUB) },
                         trailing = { OutLink() },
                     )
@@ -298,6 +300,7 @@ fun SettingsScreen(
                         summary = stringResource(R.string.settings_kofi_summary),
                         badge = MaterialShapes.Cookie6Sided,
                         colors = ToneColors(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer),
+                        link = ProjectLinks.KOFI,
                         onClick = { openLink(context, ProjectLinks.KOFI) },
                         trailing = { OutLink() },
                     )
@@ -595,6 +598,25 @@ private fun AppearanceSettings(settings: AppSettings, onChange: ((AppSettings) -
                     badge = MaterialShapes.Pill,
                     colors = ToneColors(scheme.inverseSurface, scheme.inverseOnSurface),
                     enabled = settings.themeMode != ThemeMode.LIGHT,
+                )
+            },
+        ),
+    )
+    SettingsGroup(
+        title = stringResource(R.string.settings_home),
+        rows = listOf<@Composable (Shape) -> Unit>(
+            { shape ->
+                SettingsSwitchRow(
+                    shape = shape,
+                    icon = Icons.Rounded.LockOpen,
+                    title = stringResource(R.string.kao_setting),
+                    summary = stringResource(
+                        if (settings.keepAndroidOpenBanner) R.string.kao_setting_on else R.string.kao_setting_off,
+                    ),
+                    checked = settings.keepAndroidOpenBanner,
+                    onCheckedChange = { on -> onChange { it.copy(keepAndroidOpenBanner = on) } },
+                    badge = MaterialShapes.Clover4Leaf,
+                    colors = ToneColors(scheme.tertiaryContainer, scheme.onTertiaryContainer),
                 )
             },
         ),

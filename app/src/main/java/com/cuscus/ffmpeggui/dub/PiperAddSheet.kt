@@ -198,6 +198,7 @@ internal fun PiperAddSheet(ui: PiperFeatureUi, onDismiss: () -> Unit) {
                             Icon(Icons.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
                         }
                     }
+                    com.cuscus.ffmpeggui.ui.expressive.LinkDestination(PiperVoiceStore.ARCHIVES_PAGE_URL, modifier = Modifier.padding(start = 12.dp))
                     PanelHint(stringResource(R.string.piper_licence_hint))
                 }
             }
@@ -274,16 +275,19 @@ private fun ListedRow(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(listed.archiveName, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                com.cuscus.ffmpeggui.ui.expressive.LinkDestination(listed.archiveUrl, modifier = Modifier.padding(start = 8.dp))
                 PanelHint(stringResource(R.string.piper_archive_hint))
                 if (listed.files.isNotEmpty() && ui.hasEspeak) {
                     Text(stringResource(R.string.piper_or_files), style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // One under the other, each with where it goes.
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         listed.files.forEach { (name, url) ->
                             OutlinedButton(onClick = { openLink(context, url) }, shapes = ButtonDefaults.shapes()) {
                                 Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(if (name == "MODEL_CARD") name else name.substringAfter(listed.key), style = MaterialTheme.typography.labelMedium)
                             }
+                            com.cuscus.ffmpeggui.ui.expressive.LinkDestination(url, modifier = Modifier.padding(start = 8.dp))
                         }
                     }
                 }
@@ -292,6 +296,7 @@ private fun ListedRow(
                     Spacer(modifier = Modifier.width(6.dp))
                     Icon(Icons.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
                 }
+                com.cuscus.ffmpeggui.ui.expressive.LinkDestination(listed.pageUrl, modifier = Modifier.padding(start = 12.dp))
                 Text(stringResource(R.string.piper_step_import), style = MaterialTheme.typography.labelLargeEmphasized)
                 Button(
                     onClick = { picker.launch(arrayOf("*/*")) },

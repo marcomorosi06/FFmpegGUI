@@ -32,8 +32,8 @@ opset               17
 # (scripts/check-model-pins.py checks that the two agree), and the release of
 # this repository that serves it. Zeros until the first run of the workflow
 # (scripts/pin-stems.py writes them): until then the app cannot import it.
-file_sha256         0000000000000000000000000000000000000000000000000000000000000000
-file_bytes          0
+file_sha256         7836f01622021adc2fe2570f263ec365ef7677d598b51d27b015b94d869f2ff2
+file_bytes          149293980
 release_tag         bandit-onnx-2
 
 # The tools that write it: the same as the other models' (Python 3.13, CPU

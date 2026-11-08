@@ -475,6 +475,8 @@ class MainActivity : ComponentActivity() {
                                 onNewRecording = vm::newRecordingUri,
                                 onRecordingDiscarded = vm::discardRecording,
                                 onOpenSettings = { navController.navigate(Screen.Settings.route) },
+                                showKeepAndroidOpen = appSettings.keepAndroidOpenBanner,
+                                onCloseKeepAndroidOpen = { settingsRepository.update { it.copy(keepAndroidOpenBanner = false) } },
                                 projects = if (appSettings.saveProjects) (projectCards.orEmpty() + drawingCards).sortedByDescending { it.editedAtMs } else emptyList(),
                                 onOpenProject = { project ->
                                     if (project.drawing) {

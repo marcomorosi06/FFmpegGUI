@@ -134,6 +134,9 @@ fun HomeScreen(
     onCreateBlank: (com.cuscus.ffmpeggui.core.model.BlankSpec) -> Unit = {},
     onSaveBlank: (com.cuscus.ffmpeggui.core.model.BlankSpec) -> Unit = {},
     onDeleteBlank: (com.cuscus.ffmpeggui.core.model.BlankSpec) -> Unit = {},
+    /** The Keep Android Open card is shown (closed, it comes back from the settings). */
+    showKeepAndroidOpen: Boolean = false,
+    onCloseKeepAndroidOpen: () -> Unit = {},
 ) {
     val context = LocalContext.current
     // Saveable: the camera app may run long enough for this activity to be recreated.
@@ -187,6 +190,7 @@ fun HomeScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp),
         )
+        KeepAndroidOpenBanner(visible = showKeepAndroidOpen, onClose = onCloseKeepAndroidOpen)
     }
     // The sheet that makes a blank: open (with the preset being edited, or none).
     var blankSheet by remember { mutableStateOf(false) }

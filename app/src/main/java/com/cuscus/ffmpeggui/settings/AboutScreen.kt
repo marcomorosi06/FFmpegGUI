@@ -272,6 +272,7 @@ fun AboutScreen(versionName: String, onBack: () -> Unit, life: FfmpegLife? = nul
                             title = stringResource(R.string.about_sherpa),
                             summary = stringResource(R.string.about_sherpa_summary),
                             badge = MaterialShapes.Clover8Leaf,
+                            link = ProjectLinks.SHERPA_ONNX,
                             onClick = { openLink(context, ProjectLinks.SHERPA_ONNX) },
                             trailing = { OutLinkIcon() },
                         )
@@ -347,7 +348,7 @@ fun AboutScreen(versionName: String, onBack: () -> Unit, life: FfmpegLife? = nul
                 } + listOf<@Composable (Shape) -> Unit>(
                     { shape ->
                         // The effects in the app are the project's own, drawn by its script.
-                        LicenceRow(shape, stringResource(R.string.about_licence_effects), stringResource(R.string.about_licence_effects_summary), icon = Icons.Rounded.AutoAwesome) {
+                        LicenceRow(shape, stringResource(R.string.about_licence_effects), stringResource(R.string.about_licence_effects_summary), icon = Icons.Rounded.AutoAwesome, link = ProjectLinks.EFFECTS_SCRIPT) {
                             openLink(context, ProjectLinks.EFFECTS_SCRIPT)
                         }
                     },
@@ -368,23 +369,23 @@ fun AboutScreen(versionName: String, onBack: () -> Unit, life: FfmpegLife? = nul
                 rows = listOf<@Composable (Shape) -> Unit>(
                     { shape ->
                         // The model is not in the app: the user downloads it; its licence asks for the credit.
-                        LicenceRow(shape, stringResource(R.string.about_licence_parakeet), stringResource(R.string.about_licence_cc_by)) {
+                        LicenceRow(shape, stringResource(R.string.about_licence_parakeet), stringResource(R.string.about_licence_cc_by), link = ProjectLinks.CC_BY) {
                             openLink(context, ProjectLinks.CC_BY)
                         }
                     },
                     { shape ->
                         // Also downloaded by the user: the cut-out models, and the project that converted them.
-                        LicenceRow(shape, stringResource(R.string.about_licence_isnet), stringResource(R.string.about_licence_apache)) {
+                        LicenceRow(shape, stringResource(R.string.about_licence_isnet), stringResource(R.string.about_licence_apache), link = CutoutModel.PRECISE.modelPageUrl) {
                             openLink(context, CutoutModel.PRECISE.modelPageUrl)
                         }
                     },
                     { shape ->
-                        LicenceRow(shape, stringResource(R.string.about_licence_u2net), stringResource(R.string.about_licence_apache)) {
+                        LicenceRow(shape, stringResource(R.string.about_licence_u2net), stringResource(R.string.about_licence_apache), link = CutoutModel.FAST.modelPageUrl) {
                             openLink(context, CutoutModel.FAST.modelPageUrl)
                         }
                     },
                     { shape ->
-                        LicenceRow(shape, stringResource(R.string.about_licence_rembg), stringResource(R.string.about_licence_mit)) {
+                        LicenceRow(shape, stringResource(R.string.about_licence_rembg), stringResource(R.string.about_licence_mit), link = CutoutModel.REMBG_URL) {
                             openLink(context, CutoutModel.REMBG_URL)
                         }
                     },
@@ -423,25 +424,25 @@ fun AboutScreen(versionName: String, onBack: () -> Unit, life: FfmpegLife? = nul
                     },
                     { shape ->
                         // Every model in one record: licences, sources, hashes, what they were trained on.
-                        LicenceRow(shape, stringResource(R.string.about_licence_models_record), stringResource(R.string.about_licence_models_record_summary)) {
+                        LicenceRow(shape, stringResource(R.string.about_licence_models_record), stringResource(R.string.about_licence_models_record_summary), link = ProjectLinks.MODELS_RECORD) {
                             openLink(context, ProjectLinks.MODELS_RECORD)
                         }
                     },
                     { shape ->
                         // The translation models: downloaded by the user, credited as their licence asks.
-                        LicenceRow(shape, stringResource(R.string.about_licence_opus_mt), stringResource(R.string.about_licence_cc_by)) {
+                        LicenceRow(shape, stringResource(R.string.about_licence_opus_mt), stringResource(R.string.about_licence_cc_by), link = com.cuscus.ffmpeggui.translate.OpusMt.PROJECT_URL) {
                             openLink(context, com.cuscus.ffmpeggui.translate.OpusMt.PROJECT_URL)
                         }
                     },
                     { shape ->
                         // The dubbing model: downloaded by the user, credited as its licence asks.
-                        LicenceRow(shape, stringResource(R.string.about_licence_kokoro), stringResource(R.string.about_licence_apache)) {
+                        LicenceRow(shape, stringResource(R.string.about_licence_kokoro), stringResource(R.string.about_licence_apache), link = com.cuscus.ffmpeggui.dub.DubModel.MODEL_PAGE_URL) {
                             openLink(context, com.cuscus.ffmpeggui.dub.DubModel.MODEL_PAGE_URL)
                         }
                     },
                     { shape ->
                         // Voices the user imports: each under the licence of its own model card.
-                        LicenceRow(shape, stringResource(R.string.about_licence_piper), stringResource(R.string.about_licence_piper_summary)) {
+                        LicenceRow(shape, stringResource(R.string.about_licence_piper), stringResource(R.string.about_licence_piper_summary), link = com.cuscus.ffmpeggui.dub.PiperVoiceStore.VOICES_PAGE_URL) {
                             openLink(context, com.cuscus.ffmpeggui.dub.PiperVoiceStore.VOICES_PAGE_URL)
                         }
                     },
@@ -467,12 +468,12 @@ fun AboutScreen(versionName: String, onBack: () -> Unit, life: FfmpegLife? = nul
                     },
                     { shape ->
                         // The magic eraser's two models, downloaded by the user.
-                        LicenceRow(shape, stringResource(R.string.about_licence_migan), stringResource(R.string.about_licence_mit)) {
+                        LicenceRow(shape, stringResource(R.string.about_licence_migan), stringResource(R.string.about_licence_mit), link = com.cuscus.ffmpeggui.erase.EraseModel.MIGAN_PAGE_URL) {
                             openLink(context, com.cuscus.ffmpeggui.erase.EraseModel.MIGAN_PAGE_URL)
                         }
                     },
                     { shape ->
-                        LicenceRow(shape, stringResource(R.string.about_licence_lama), stringResource(R.string.about_licence_apache)) {
+                        LicenceRow(shape, stringResource(R.string.about_licence_lama), stringResource(R.string.about_licence_apache), link = com.cuscus.ffmpeggui.erase.EraseModel.LAMA_PAGE_URL) {
                             openLink(context, com.cuscus.ffmpeggui.erase.EraseModel.LAMA_PAGE_URL)
                         }
                     },
@@ -627,6 +628,8 @@ private fun LicenceRow(
     licence: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Rounded.Gavel,
     local: Boolean = false,
+    /** The page it opens (null for a file of the app's own). */
+    link: String? = null,
     onClick: () -> Unit,
 ) {
     SettingsRow(
@@ -638,6 +641,7 @@ private fun LicenceRow(
         colors = ToneColors(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.colorScheme.onSurfaceVariant),
         onClick = onClick,
         trailing = if (local) null else ({ OutLinkIcon() }),
+        link = link,
     )
 }
 
@@ -781,6 +785,7 @@ private fun FactPills() {
 /** The source and the coffee: two big buttons side by side, their corners squishing on press. */
 @Composable
 private fun ProjectButtons(onGithub: () -> Unit, onKofi: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         Button(
             onClick = onGithub,
@@ -802,6 +807,12 @@ private fun ProjectButtons(onGithub: () -> Unit, onKofi: () -> Unit) {
             Spacer(modifier = Modifier.width(ButtonDefaults.iconSpacingFor(ButtonDefaults.MediumContainerHeight)))
             Text(stringResource(R.string.about_button_coffee), style = ButtonDefaults.textStyleFor(ButtonDefaults.MediumContainerHeight))
         }
+    }
+    // Where each of the two goes, under it.
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        com.cuscus.ffmpeggui.ui.expressive.LinkDestination(ProjectLinks.GITHUB, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+        com.cuscus.ffmpeggui.ui.expressive.LinkDestination(ProjectLinks.KOFI, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+    }
     }
 }
 

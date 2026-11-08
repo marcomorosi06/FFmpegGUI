@@ -101,6 +101,7 @@ internal fun MarksSection(marks: MarksFeatureUi) {
                     summary = stringResource(R.string.marks_law_text),
                     badge = MaterialShapes.Cookie9Sided,
                     colors = ToneColors(scheme.primaryContainer, scheme.onPrimaryContainer),
+                    link = AI_ACT_URL,
                     onClick = { openLink(context, AI_ACT_URL) },
                 )
             },
@@ -182,6 +183,7 @@ internal fun MarksSection(marks: MarksFeatureUi) {
                     icon = Icons.Rounded.VerifiedUser,
                     title = stringResource(R.string.marks_release_title),
                     summary = stringResource(R.string.marks_release_text, MarkerModel.RELEASE_TAG),
+                    link = MarkerModel.FILES_URL,
                     onClick = { openLink(context, MarkerModel.FILES_URL) },
                     trailing = { OutLinkIcon() },
                 )
@@ -192,6 +194,7 @@ internal fun MarksSection(marks: MarksFeatureUi) {
                     icon = Icons.Rounded.GraphicEq,
                     title = "${MarkerModel.AUDIO_NAME}, ${MarkerModel.AUDIO_MAKER}",
                     summary = stringResource(R.string.marks_audioseal_text),
+                    link = MarkerModel.AUDIO_PAGE_URL,
                     onClick = { openLink(context, MarkerModel.AUDIO_PAGE_URL) },
                     trailing = { OutLinkIcon() },
                 )
@@ -202,6 +205,7 @@ internal fun MarksSection(marks: MarksFeatureUi) {
                     icon = Icons.Rounded.Shield,
                     title = "${MarkerModel.PICTURE_NAME}, ${MarkerModel.PICTURE_MAKER}",
                     summary = stringResource(R.string.marks_trustmark_text),
+                    link = MarkerModel.TRUSTMARK_CONFIRMATION_URL,
                     onClick = { openLink(context, MarkerModel.TRUSTMARK_CONFIRMATION_URL) },
                     trailing = { OutLinkIcon() },
                 )

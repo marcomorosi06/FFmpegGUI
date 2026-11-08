@@ -461,6 +461,7 @@ internal fun AboutModelsSection() {
                     title = SpeechModel.NAME,
                     summary = stringResource(R.string.smart_model_summary, SpeechModel.MAKER, SpeechModel.LANGUAGES.size, SpeechModel.LICENCE),
                     badge = MaterialShapes.Gem,
+                    link = SpeechModel.MODEL_PAGE_URL,
                     onClick = { openLink(context, SpeechModel.MODEL_PAGE_URL) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
@@ -472,6 +473,7 @@ internal fun AboutModelsSection() {
                     title = stringResource(R.string.speech_variant_smoothquant),
                     summary = stringResource(R.string.smart_smoothquant_summary, SpeechModel.LICENCE),
                     badge = MaterialShapes.Diamond,
+                    link = SpeechModel.SMOOTHQUANT_PAGE_URL,
                     onClick = { openLink(context, SpeechModel.SMOOTHQUANT_PAGE_URL) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
@@ -483,6 +485,7 @@ internal fun AboutModelsSection() {
                     title = CutoutModel.FINEST.name,
                     summary = stringResource(R.string.cutout_model_ours_summary, CutoutModel.FINEST.maker, CutoutModel.FINEST.licence),
                     badge = MaterialShapes.Sunny,
+                    link = CutoutModel.FINEST.modelPageUrl,
                     onClick = { openLink(context, CutoutModel.FINEST.modelPageUrl) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
@@ -494,6 +497,7 @@ internal fun AboutModelsSection() {
                     title = CutoutModel.PRECISE.name,
                     summary = stringResource(R.string.cutout_model_summary, CutoutModel.PRECISE.maker, CutoutModel.PRECISE.licence),
                     badge = MaterialShapes.Clover4Leaf,
+                    link = CutoutModel.PRECISE.modelPageUrl,
                     onClick = { openLink(context, CutoutModel.PRECISE.modelPageUrl) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
@@ -505,6 +509,7 @@ internal fun AboutModelsSection() {
                     title = CutoutModel.FAST.name,
                     summary = stringResource(R.string.cutout_model_summary, CutoutModel.FAST.maker, CutoutModel.FAST.licence),
                     badge = MaterialShapes.Clover8Leaf,
+                    link = CutoutModel.FAST.modelPageUrl,
                     onClick = { openLink(context, CutoutModel.FAST.modelPageUrl) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
@@ -516,6 +521,7 @@ internal fun AboutModelsSection() {
                     title = EraseModel.MIGAN_NAME,
                     summary = stringResource(R.string.erase_model_summary, EraseModel.MIGAN_MAKER, EraseModel.MIGAN_LICENCE),
                     badge = MaterialShapes.Puffy,
+                    link = EraseModel.MIGAN_PAGE_URL,
                     onClick = { openLink(context, EraseModel.MIGAN_PAGE_URL) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
@@ -527,6 +533,7 @@ internal fun AboutModelsSection() {
                     title = EraseModel.LAMA_NAME,
                     summary = stringResource(R.string.erase_model_summary, EraseModel.LAMA_MAKER, EraseModel.LAMA_LICENCE),
                     badge = MaterialShapes.PuffyDiamond,
+                    link = EraseModel.LAMA_PAGE_URL,
                     onClick = { openLink(context, EraseModel.LAMA_PAGE_URL) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
@@ -538,6 +545,7 @@ internal fun AboutModelsSection() {
                     title = DubModel.NAME,
                     summary = stringResource(R.string.dub_model_summary, DubModel.MAKER, DubModel.LICENCE),
                     badge = MaterialShapes.Burst,
+                    link = DubModel.MODEL_PAGE_URL,
                     onClick = { openLink(context, DubModel.MODEL_PAGE_URL) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
@@ -549,6 +557,7 @@ internal fun AboutModelsSection() {
                     title = "Piper",
                     summary = stringResource(R.string.piper_summary),
                     badge = MaterialShapes.Cookie6Sided,
+                    link = PiperVoiceStore.VOICES_PAGE_URL,
                     onClick = { openLink(context, PiperVoiceStore.VOICES_PAGE_URL) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
@@ -560,6 +569,7 @@ internal fun AboutModelsSection() {
                     title = StemModels.BANDIT_NAME,
                     summary = stringResource(R.string.stems_bandit_summary, StemModels.BANDIT_MAKER, StemModels.BANDIT_LICENCE),
                     badge = MaterialShapes.Flower,
+                    link = StemModels.BANDIT_PAGE_URL,
                     onClick = { openLink(context, StemModels.BANDIT_PAGE_URL) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
@@ -571,6 +581,7 @@ internal fun AboutModelsSection() {
                     title = StemModels.SPLEETER_NAME,
                     summary = stringResource(R.string.stems_spleeter_summary, StemModels.SPLEETER_MAKER, StemModels.SPLEETER_LICENCE),
                     badge = MaterialShapes.Clover8Leaf,
+                    link = StemModels.SPLEETER_PAGE_URL,
                     onClick = { openLink(context, StemModels.SPLEETER_PAGE_URL) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
@@ -582,6 +593,7 @@ internal fun AboutModelsSection() {
                     title = RefineModel.NAME,
                     summary = stringResource(R.string.refine_model_summary, RefineModel.MAKER, RefineModel.LICENCE),
                     badge = MaterialShapes.SoftBurst,
+                    link = RefineModel.MODEL_PAGE_URL,
                     onClick = { openLink(context, RefineModel.MODEL_PAGE_URL) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
@@ -593,6 +605,7 @@ internal fun AboutModelsSection() {
                     title = stringResource(R.string.models_conversions_title),
                     summary = stringResource(R.string.models_conversions_summary, RefineModel.NAME, CutoutModel.FINEST.name),
                     badge = MaterialShapes.Cookie4Sided,
+                    link = ProjectLinks.MODELS_RECORD,
                     onClick = { openLink(context, ProjectLinks.MODELS_RECORD) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
@@ -604,6 +617,7 @@ internal fun AboutModelsSection() {
                     title = stringResource(R.string.smart_credit_title),
                     summary = stringResource(R.string.smart_credit_summary),
                     badge = MaterialShapes.Cookie7Sided,
+                    link = ProjectLinks.ANTI_VOCALE,
                     onClick = { openLink(context, ProjectLinks.ANTI_VOCALE) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
@@ -615,6 +629,7 @@ internal fun AboutModelsSection() {
                     title = stringResource(R.string.cutout_credit_title),
                     summary = stringResource(R.string.cutout_credit_summary),
                     badge = MaterialShapes.Cookie6Sided,
+                    link = CutoutModel.REMBG_URL,
                     onClick = { openLink(context, CutoutModel.REMBG_URL) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
@@ -1048,6 +1063,7 @@ internal fun ModelCard(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
+                        com.cuscus.ffmpeggui.ui.expressive.LinkDestination(url, modifier = Modifier.padding(start = 8.dp, bottom = 4.dp))
                     }
                     val other = spec.otherDownload
                     if (other != null) {
@@ -1071,6 +1087,7 @@ internal fun ModelCard(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(stringResource(R.string.smart_download_archive), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
+                        com.cuscus.ffmpeggui.ui.expressive.LinkDestination(other.second, modifier = Modifier.padding(start = 8.dp))
                     }
                 }
             }

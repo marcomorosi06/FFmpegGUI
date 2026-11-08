@@ -92,5 +92,10 @@ internal fun StemModelOnItsWay() {
         ) {
             Text(stringResource(R.string.stems_bandit_release), style = MaterialTheme.typography.titleSmallEmphasized)
         }
+        com.cuscus.ffmpeggui.ui.expressive.LinkDestination(
+            StemModels.BANDIT_FILES_URL,
+            color = scheme.onSecondaryContainer.copy(alpha = 0.8f),
+            modifier = Modifier.padding(start = 8.dp, top = 4.dp),
+        )
     }
 }

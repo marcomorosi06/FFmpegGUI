@@ -142,12 +142,14 @@ fun TranslationSettingsSection(ui: TranslationFeatureUi, showHeading: Boolean = 
                 .clickable { openLink(context, OpusMt.PROJECT_URL) }
                 .padding(horizontal = 8.dp, vertical = 6.dp),
         ) {
-            Text(
-                stringResource(R.string.translate_about, OpusMt.NAME, OpusMt.MAKER, OpusMt.LICENCE),
-                style = MaterialTheme.typography.bodySmall,
-                color = scheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.translate_about, OpusMt.NAME, OpusMt.MAKER, OpusMt.LICENCE),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                )
+                com.cuscus.ffmpeggui.ui.expressive.LinkDestination(OpusMt.PROJECT_URL)
+            }
             Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = scheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
         }
     }
@@ -397,13 +399,15 @@ private fun PairRow(repo: String, expanded: Boolean, onToggle: () -> Unit, ui: T
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
                 Text(stringResource(R.string.translate_step_download), style = MaterialTheme.typography.labelLargeEmphasized)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // One under the other, each with where it goes.
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     OpusMt.downloads(repo).forEach { d ->
                         FilledTonalButton(onClick = { openLink(context, d.url) }, shapes = ButtonDefaults.shapes()) {
                             Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(d.kind.fileName, style = MaterialTheme.typography.labelMedium)
                         }
+                        com.cuscus.ffmpeggui.ui.expressive.LinkDestination(d.url, modifier = Modifier.padding(start = 8.dp))
                     }
                 }
                 PanelHint(stringResource(R.string.translate_json_hint))
@@ -412,6 +416,7 @@ private fun PairRow(repo: String, expanded: Boolean, onToggle: () -> Unit, ui: T
                     Spacer(modifier = Modifier.width(6.dp))
                     Icon(Icons.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
                 }
+                com.cuscus.ffmpeggui.ui.expressive.LinkDestination(OpusMt.page(repo), modifier = Modifier.padding(start = 12.dp))
                 Text(stringResource(R.string.translate_step_import), style = MaterialTheme.typography.labelLargeEmphasized)
                 Button(
                     onClick = { picker.launch(arrayOf("*/*")) },

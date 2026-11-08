@@ -2871,3 +2871,28 @@ animations (off: they stand still, or do not show).
   "Denoise") (the photo editor has its
   own sharpen, blur, vignette and grain, see "Image files"; splitting and tags
   have their panels, see "Audio files").
+
+## Keep Android Open
+
+The home shows, under the tagline, one card for Keep Android Open
+(keepandroidopen.org), the campaign against Google's registration of every
+Android developer (`KeepAndroidOpen.kt`). Folded, it is one row as small as
+the home's other tiles (a little phone whose apps a padlock greys out, then
+springs open, three times, then still; the name; one line), so that the app stays the
+first thing on the screen. A tap unfolds what the registration means for an
+app like this one (its key words in bold), what it means for this one (it
+will not register with Google: once the lockdown reaches a country it
+installs only through the extra steps Google allows, or on an Android
+without Google such as GrapheneOS), and a button to the campaign's
+site, opened in the browser (nothing is fetched by the app). Its cross hides
+it for good (`AppSettings.keepAndroidOpenBanner`); Settings, Appearance,
+"Home" brings it back.
+
+## Links
+
+Every link of the app says where it goes before it is followed: under it,
+`LinkDestination` (ui/expressive) writes "Opens <site>: <address>", the
+site named as people call it (GitHub, Hugging Face, Zenodo...). A settings
+row that opens a page passes it as its `link`; a button has the line under
+it. The pages open in the browser (`openLink`): the app itself never goes
+online.

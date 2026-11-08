@@ -58,6 +58,12 @@ data class AppSettings(
     val landscapeLayout: LandscapeLayout = LandscapeLayout.AUTO,
     /** The welcome has been gone through (or skipped to its end): it shows on the first launch only. */
     val onboarded: Boolean = false,
+    /**
+     * The home's card for Keep Android Open (keepandroidopen.org), the
+     * campaign against Google's registration of every Android developer.
+     * Closed from the home, it comes back from the settings (Appearance).
+     */
+    val keepAndroidOpenBanner: Boolean = true,
 ) {
     companion object {
         const val DEFAULT_PROJECTS_LIMIT = 20

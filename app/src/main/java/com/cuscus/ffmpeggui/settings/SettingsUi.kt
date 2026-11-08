@@ -135,6 +135,8 @@ internal fun SettingsRow(
     haptic: HapticFeedbackType = HapticFeedbackType.ContextClick,
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    /** The page [onClick] opens, said under the summary (see LinkDestination). */
+    link: String? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
@@ -185,6 +187,10 @@ internal fun SettingsRow(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            if (link != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                com.cuscus.ffmpeggui.ui.expressive.LinkDestination(link)
             }
         }
         if (trailing != null) {
@@ -297,7 +303,10 @@ internal fun ColorDot(color: Color, size: Dp) {
     )
 }
 
-/** Opens [url] in the browser; a toast when nothing can. The app itself never goes online. */
+/**
+ * Opens [url] in the browser; a toast when nothing can. The app itself never goes online.
+ * Whatever calls it shows where it goes first (LinkDestination, or a row's link).
+ */
 internal fun openLink(context: Context, url: String) {
     try {
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

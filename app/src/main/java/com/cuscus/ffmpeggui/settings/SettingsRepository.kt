@@ -79,6 +79,7 @@ class SettingsRepository(context: Context) {
             clipWaveforms = this[CLIP_WAVEFORMS] ?: defaults.clipWaveforms,
             landscapeLayout = this[LANDSCAPE_LAYOUT]?.let { name -> LandscapeLayout.entries.firstOrNull { it.name == name } } ?: defaults.landscapeLayout,
             onboarded = this[ONBOARDED] ?: defaults.onboarded,
+            keepAndroidOpenBanner = this[KEEP_ANDROID_OPEN] ?: defaults.keepAndroidOpenBanner,
         )
     }
 
@@ -98,6 +99,7 @@ class SettingsRepository(context: Context) {
         this[CLIP_WAVEFORMS] = settings.clipWaveforms
         this[LANDSCAPE_LAYOUT] = settings.landscapeLayout.name
         this[ONBOARDED] = settings.onboarded
+        this[KEEP_ANDROID_OPEN] = settings.keepAndroidOpenBanner
     }
 
     private companion object {
@@ -116,5 +118,6 @@ class SettingsRepository(context: Context) {
         val CLIP_WAVEFORMS = booleanPreferencesKey("clip_waveforms")
         val LANDSCAPE_LAYOUT = stringPreferencesKey("landscape_layout")
         val ONBOARDED = booleanPreferencesKey("onboarded")
+        val KEEP_ANDROID_OPEN = booleanPreferencesKey("keep_android_open_banner")
     }
 }
