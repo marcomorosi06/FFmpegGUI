@@ -67,6 +67,7 @@ data class PreviewSound(
 }
 
 private const val MIN_RATE = 0.1f
+private const val MAX_ANDROID_RATE = 6f
 
 /**
  * Plays the placed sounds alongside the footage, each on a player of its own,
@@ -151,7 +152,11 @@ internal class SoundVoices(private val context: Context, private val live: LiveA
             // A sound a little off its place is brought back by playing it a little faster or
             // slower (not heard), rather than by a seek (heard): a long one such as a dub drifts.
             if (playing && inside) voice.nudge = nudge(voice, filePosition(sound, localMs), sound.rangeMs) else voice.nudge = 1f
-            val parameters = PlaybackParameters((sound.speed * voice.nudge).coerceAtLeast(MIN_RATE), (sound.pitch * live.pitch).coerceAtLeast(MIN_RATE))
+            // Within what Android changes (see processingPlayer): up to 6x, pitch within 0.25..4.
+            val parameters = PlaybackParameters(
+                (sound.speed * voice.nudge).coerceIn(MIN_RATE, MAX_ANDROID_RATE),
+                androidPitch(sound.pitch * live.pitch),
+            )
             if (parameters != voice.parameters) {
                 voice.parameters = parameters
                 voice.player.playbackParameters = parameters

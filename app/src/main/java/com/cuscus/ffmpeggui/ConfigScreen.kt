@@ -88,6 +88,7 @@ import com.cuscus.ffmpeggui.core.model.SplitMode
 import com.cuscus.ffmpeggui.core.model.MetadataTags
 import com.cuscus.ffmpeggui.core.model.AudioEncoding
 import com.cuscus.ffmpeggui.core.model.AudioEffects
+import com.cuscus.ffmpeggui.core.model.CanvasFit
 import com.cuscus.ffmpeggui.core.model.CanvasRatio
 import com.cuscus.ffmpeggui.core.model.FrameExtractionMode
 import com.cuscus.ffmpeggui.core.model.GifSettings
@@ -106,6 +107,7 @@ import com.cuscus.ffmpeggui.core.model.Transition
 import com.cuscus.ffmpeggui.core.model.transitionLengths
 import com.cuscus.ffmpeggui.core.model.stackOrder
 import kotlinx.coroutines.launch
+import com.cuscus.ffmpeggui.core.preview.frameRatio
 import com.cuscus.ffmpeggui.core.preview.turnedRatio
 import com.cuscus.ffmpeggui.core.timeline.Clip
 import com.cuscus.ffmpeggui.core.timeline.Timeline
@@ -189,6 +191,8 @@ fun ConfigScreen(
     /** Lets only clip (id) be heard: the whole video's track back on, every other clip muted. */
     onSoloClipSound: (String) -> Unit = {},
     projectRatio: CanvasRatio,
+    /** How the video meets a [projectRatio] of another shape. */
+    projectFit: CanvasFit = CanvasFit.FIT,
     customCommand: String,
     commandPreview: String,
     /** Adds a clip for each file, at the end of the timeline, in this order. */
@@ -206,6 +210,7 @@ fun ConfigScreen(
     onQualityLevel: (Float) -> Unit,
     onKeepHdr: (Boolean) -> Unit,
     onProjectRatioChange: (CanvasRatio) -> Unit,
+    onProjectFitChange: (CanvasFit) -> Unit = {},
     onCustomCommand: (String) -> Unit,
     onStart: () -> Unit,
     onBack: () -> Unit,
@@ -295,6 +300,8 @@ fun ConfigScreen(
     subtitles: SubtitleEditing = SubtitleEditing(),
     // The voice set apart from the rest of the sound
     voice: VoiceEditing = VoiceEditing(),
+    // The sound of clips played backwards, reversed by FFmpeg for the preview
+    reversedSounds: ReversedSounds = ReversedSounds(),
     // The dub in one go: listen, translate, set the voice apart, dub
     autoDub: com.cuscus.ffmpeggui.dub.AutoDubUi = com.cuscus.ffmpeggui.dub.AutoDubUi(),
     // Stream copy
@@ -423,6 +430,24 @@ fun ConfigScreen(
                 volume = clip.effects.volume,
                 muted = clip.effects.muted,
                 animated = clip.effects.keyframes.animates(KeyProperty.VOLUME),
+            )
+        }
+    }
+    // The clips that play (not pictures, which have no speed), for the speed tool of the whole video.
+    val clipPaces = remember(timeline, playingClips, sources, audioMode) {
+        val playing = playingClips.map { it.id }.toSet()
+        timeline.clips.mapIndexedNotNull { index, clip ->
+            val source = sources.firstOrNull { it.id == clip.sourceId } ?: return@mapIndexedNotNull null
+            if (clip.id !in playing || source.isStill) return@mapIndexedNotNull null
+            ClipPace(
+                id = clip.id,
+                number = index + 1,
+                fileName = source.fileName,
+                pictureUri = if (audioMode) null else source.uri,
+                fileStartMs = clip.startMs,
+                speed = clip.effects.effectiveSpeed,
+                curved = clip.effects.curve != null,
+                reversed = clip.effects.reversed,
             )
         }
     }
@@ -1315,6 +1340,25 @@ fun ConfigScreen(
             SplitMode.BY_PARTS -> Split.ByParts(splitValue)
         },
     )
+    // Clips played backwards whose sound is not reversed yet are silent backwards: their
+    // sound is drawn faint on the timeline. The window shows while FFmpeg makes it.
+    val backwardsSilent = remember(playingClips, sources, wholeEffects.reversed, reversedSounds.files, useStreamCopy) {
+        if (useStreamCopy) {
+            emptySet()
+        } else {
+            val known = playingClips.filter { clip -> sources.any { it.id == clip.sourceId } }
+            known.zip(com.cuscus.ffmpeggui.preview.reversedSoundRequests(playingClips, sources, wholeEffects.reversed))
+                // The same part, whatever the preview asks of it (picture, sound).
+                .filter { (_, request) ->
+                    request != null && reversedSounds.files.keys.none {
+                        it.sourceUri == request.sourceUri && it.startMs == request.startMs && it.endMs == request.endMs
+                    }
+                }
+                .map { (clip, _) -> clip.id }
+                .toSet()
+        }
+    }
+    ReverseSoundWindow(progress = reversedSounds.progress, onStop = reversedSounds.onStop)
     val previewPane: @Composable (Modifier) -> Unit = { modifier ->
         Box(modifier = modifier) {
             PreviewContainer(
@@ -1325,6 +1369,7 @@ fun ConfigScreen(
                 format = format,
                 wholeEffects = wholeEffects,
                 canvas = projectRatio,
+                canvasFit = projectFit,
                 editClipId = scopeClipId,
                 showCropOverlay = selectedTool == EditorTool.TRANSFORM,
             // The video picked up with a tap (or the Canvas tool open): moved on its canvas by hand.
@@ -1343,6 +1388,8 @@ fun ConfigScreen(
                 subtitleCues = subtitles.fileCues,
                 spokenWords = subtitles.shownWords,
                 voiceStems = voice.stems,
+                reversedSounds = reversedSounds.files,
+                onReversedSoundsNeeded = reversedSounds.onNeeded,
                 subtitleStyle = subtitles.style,
                 subtitleFileStyled = subtitles.fileStyled,
                 subtitleFonts = subtitles.fonts,
@@ -1487,6 +1534,7 @@ fun ConfigScreen(
                     soundClips = audioMode,
                     // A GIF has no sound; an audio file's clips are drawn as their sound already.
                     clipWaveforms = !audioMode && !gifMode && LocalAppSettings.current.clipWaveforms,
+                    quietClips = backwardsSilent,
                     selectedItemId = selectedSound?.id ?: selectedText?.id ?: selectedImage?.id,
                     onSelectClip = selectClip,
                     onTrimClip = onTrimClip,
@@ -1587,6 +1635,9 @@ fun ConfigScreen(
                 EditorTool.CANVAS -> FormatSectionContent(
                     projectRatio = projectRatio,
                     onProjectRatioChange = onProjectRatioChange,
+                    projectFit = projectFit,
+                    onProjectFitChange = onProjectFitChange,
+                    videoRatio = wholeEffects.frameRatio(projectFrameRatio),
                     placement = wholeEffects.placement,
                     onPlacement = { placement -> onUpdateEffects(null) { it.copy(placement = placement?.takeUnless { p -> p.isNeutral }) } },
                 )
@@ -1753,6 +1804,12 @@ fun ConfigScreen(
                     curveAllowed = selectedClip != null,
                     onCurve = { curve -> updateScope { it.copy(speedCurve = curve) } },
                     footageMs = selectedClip?.lengthMs,
+                    clipScope = selectedClip != null,
+                    masterSpeed = wholeEffects.effectiveSpeed,
+                    masterReversed = wholeEffects.reversed,
+                    clipPaces = clipPaces,
+                    onClipBackwards = { id, reversed -> onUpdateEffects(id) { it.copy(reversed = reversed) } },
+                    onOpenClip = { openTool(EditorTool.SPEED, it) },
                     marker = {
                         val clip = selectedClip
                         val now = playback.snapshot.value

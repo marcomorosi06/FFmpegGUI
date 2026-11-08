@@ -11,7 +11,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -20,12 +19,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AspectRatio
-import androidx.compose.material.icons.rounded.FitScreen
-import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -38,8 +34,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.cuscus.ffmpeggui.core.model.CanvasFit
 import com.cuscus.ffmpeggui.core.model.OutputFormat
 import com.cuscus.ffmpeggui.core.model.PictureCanvas
 import com.cuscus.ffmpeggui.ui.expressive.AspectPreview
@@ -58,7 +54,7 @@ import kotlin.math.roundToInt
  * pinched, turned and stacked among the texts and stickers like them. The
  * canvas's shape as tiles drawn in that shape, its size as a connected group,
  * its fill as a colour or a checkerboard, and the picture put back in the
- * middle, whole or covering everything.
+ * middle, whole, covering everything or stretched to its shape.
  */
 
 /** Shapes offered for the canvas (width / height); null: the picture's own. */
@@ -101,8 +97,10 @@ internal fun ImageCanvasPanel(
     format: OutputFormat,
     enabled: Boolean,
     onCanvas: (PictureCanvas?) -> Unit,
-    onFit: (fill: Boolean) -> Unit,
+    onFit: (CanvasFit) -> Unit,
     onSelectPicture: () -> Unit,
+    /** How the picture lies on the canvas now, if one of the three ways (see photoFit). */
+    pictureFit: CanvasFit? = null,
 ) {
     val haptic = LocalHapticFeedback.current
     val motion = MaterialTheme.motionScheme
@@ -184,31 +182,19 @@ internal fun ImageCanvasPanel(
                 } else if (!format.holdsTransparency) {
                     PanelHint(stringResource(R.string.canvas_fill_none_white, stringResource(format.labelRes)))
                 }
-                // The picture: put back in the middle, whole or covering the canvas; or picked to move it.
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.fillMaxWidth()) {
-                    listOf(false, true).forEach { cover ->
-                        FilledTonalButton(
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                                onFit(cover)
-                            },
-                            enabled = enabled,
-                            shapes = ButtonDefaults.shapes(
-                                shape = if (cover) {
-                                    RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp, topEnd = 24.dp, bottomEnd = 24.dp)
-                                } else {
-                                    RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp, topEnd = 8.dp, bottomEnd = 8.dp)
-                                },
-                                pressedShape = RoundedCornerShape(12.dp),
-                            ),
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Icon(if (cover) Icons.Rounded.Fullscreen else Icons.Rounded.FitScreen, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(stringResource(if (cover) R.string.canvas_picture_fill else R.string.canvas_picture_fit), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
+                // The picture: put back in the middle, whole, covering the canvas or stretched to it;
+                // or picked to move it.
+                CanvasFitChooser(
+                    selected = pictureFit,
+                    frameRatio = ratio,
+                    pictureRatio = pictureRatio,
+                    onSelect = { fit ->
+                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onFit(fit)
+                    },
+                    picture = true,
+                    enabled = enabled,
+                )
                 OutlinedButton(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.ContextClick)

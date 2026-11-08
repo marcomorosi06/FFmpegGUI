@@ -29,8 +29,10 @@ data class ConversionRequest(
     val encoding: EncodingSettings = EncodingSettings(),
     /** Effects of the whole video, applied once the segments are joined. */
     val effects: Effects = Effects(),
-    /** Shape of the output frame; the picture is padded with black to reach it. */
+    /** Shape of the output frame; the picture meets it as [canvasFit] says. */
     val canvas: CanvasRatio = CanvasRatio.FIT,
+    /** How the picture meets a [canvas] of another shape: black around it, cut, or stretched. */
+    val canvasFit: CanvasFit = CanvasFit.FIT,
     /** Evens out the loudness of the final mix (loudnorm). */
     val normalizeAudio: Boolean = false,
     /** What is done to the final sound once everything is mixed (see [AudioEffects]). */
@@ -402,7 +404,22 @@ data class ImagePlacement(
      * that hide what is behind them, a 3D fist).
      */
     val stackedAlpha: Boolean = false,
+    /**
+     * How many times wider than its own shape it is laid ([widthFraction] wide,
+     * this much less high): 1 keeps its shape. Pulled to the frame's shape, a
+     * picture fills it with nothing cut (see ImageEditing's stretchedPhoto). Its
+     * look (corners, outline, shadow) is drawn on it once stretched.
+     */
+    val stretch: Float = 1f,
 ) {
+    /** [stretch] within reasonable bounds (1 when it hardly changes the shape). */
+    val saneStretch: Float
+        get() = saneStretch(stretch)
+
+    /** Width / height of the picture as it is laid ([aspect] times [stretch]), 0 when unknown. */
+    val laidPictureAspect: Float
+        get() = if (aspect > 0f) aspect * saneStretch else 0f
+
     /** True when the picture fades, which needs it as a stream of frames rather than one. */
     val fades: Boolean get() = clipId == null && (fadeInSeconds > 0f || (fadeOutSeconds > 0f && endMs != null))
 
@@ -421,6 +438,14 @@ data class ImagePlacement(
     companion object {
         /** Widest a picture is laid, a fraction of the frame: beyond 1 it fills the frame and is cut by it. */
         const val MAX_WIDTH = 4f
+
+        /** Furthest a picture is pulled out of its shape ([stretch]): a quarter, or four times, as wide. */
+        const val MIN_STRETCH = 0.25f
+        const val MAX_STRETCH = 4f
+
+        /** [stretch] within [MIN_STRETCH]..[MAX_STRETCH], 1 when it hardly changes the shape (or is not a number). */
+        fun saneStretch(stretch: Float): Float =
+            stretch.takeIf { it.isFinite() && kotlin.math.abs(it - 1f) > 1e-3f }?.coerceIn(MIN_STRETCH, MAX_STRETCH) ?: 1f
 
         /**
          * How far a caption or picture can be placed ([x], [y], as fractions of the

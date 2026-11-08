@@ -8,6 +8,8 @@ import com.cuscus.ffmpeggui.core.model.Effects
 import com.cuscus.ffmpeggui.core.model.Segment
 import com.cuscus.ffmpeggui.core.preview.OutputClock
 import com.cuscus.ffmpeggui.core.preview.PreviewTimeline
+import com.cuscus.ffmpeggui.core.preview.ReversedSound
+import com.cuscus.ffmpeggui.core.preview.ReversedSoundRequest
 import com.cuscus.ffmpeggui.core.preview.SubtitleCue
 import com.cuscus.ffmpeggui.core.preview.decibelsToVolume
 import com.cuscus.ffmpeggui.core.preview.normalizationGainDb
@@ -17,6 +19,39 @@ import com.cuscus.ffmpeggui.core.subtitles.SpokenWord
 import com.cuscus.ffmpeggui.core.subtitles.onTimeline as wordsOnTimeline
 import com.cuscus.ffmpeggui.core.subtitles.placedWords
 import com.cuscus.ffmpeggui.core.timeline.Clip
+
+/**
+ * The part of its file each clip of [previewClips] needs reversed, so that the
+ * preview shows and hears it going backwards (its own reversal and the whole
+ * video's cancel out): its picture when [withPicture] and it has one, its
+ * sound when [withSound] and it has one. Null for a clip that plays forwards,
+ * a picture, one with nothing to reverse or whose end is not known yet.
+ * Lines up with [previewClips].
+ */
+fun reversedSoundRequests(
+    clips: List<Clip>,
+    sources: List<EditorSource>,
+    wholeReversed: Boolean,
+    withPicture: Boolean = true,
+    withSound: Boolean = true,
+): List<ReversedSoundRequest?> =
+    // The same clips as previewClips (those of known files), one entry each, null or not.
+    clips.mapNotNull { clip -> sources.firstOrNull { it.id == clip.sourceId }?.let { clip to it } }.map { (clip, source) ->
+        val info = source.info
+        when {
+            clip.effects.reversed == wholeReversed -> null
+            info == null || info.isStill -> null
+            else -> ReversedSound.requestFor(
+                sourceUri = source.uri.toString(),
+                startMs = clip.startMs,
+                endMs = clip.endMs,
+                sourceDurationMs = source.durationMs,
+                video = withPicture && info.isVideo,
+                audio = withSound && info.hasAudio,
+                hdr = info.hdr,
+            )
+        }
+    }
 
 /** Timeline clips as something the preview player can load. Clips of unknown files are skipped. */
 fun previewClips(clips: List<Clip>, sources: List<EditorSource>): List<PreviewClip> =

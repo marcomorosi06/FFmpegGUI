@@ -114,6 +114,7 @@ import com.cuscus.ffmpeggui.preview.Waveform
 import com.cuscus.ffmpeggui.core.model.AudioEffects
 import com.cuscus.ffmpeggui.core.audio.stages
 import com.cuscus.ffmpeggui.core.audio.pitchFactor
+import com.cuscus.ffmpeggui.core.model.CanvasFit
 import com.cuscus.ffmpeggui.core.model.CanvasRatio
 import com.cuscus.ffmpeggui.core.model.StillMotion
 import com.cuscus.ffmpeggui.core.model.ColorSettings
@@ -130,6 +131,7 @@ import com.cuscus.ffmpeggui.core.model.VideoPlacement
 import com.cuscus.ffmpeggui.core.model.StackSlot
 import com.cuscus.ffmpeggui.core.model.stackOrder
 import com.cuscus.ffmpeggui.core.preview.SnapBox
+import com.cuscus.ffmpeggui.core.preview.ReversedSoundRequest
 import com.cuscus.ffmpeggui.core.preview.SubtitleCue
 import com.cuscus.ffmpeggui.core.subtitles.SpokenWord
 import com.cuscus.ffmpeggui.core.subtitles.SubtitleLayout
@@ -155,6 +157,7 @@ import com.cuscus.ffmpeggui.preview.PreviewSnapshot
 import com.cuscus.ffmpeggui.preview.followingClips
 import com.cuscus.ffmpeggui.preview.previewClipLevels
 import com.cuscus.ffmpeggui.preview.previewClips
+import com.cuscus.ffmpeggui.preview.reversedSoundRequests
 import com.cuscus.ffmpeggui.preview.ofSounds
 import com.cuscus.ffmpeggui.preview.previewSounds
 import com.cuscus.ffmpeggui.preview.previewStemSounds
@@ -225,8 +228,8 @@ data class PreviewSeek(
  */
 @Stable
 class PreviewPlayback {
-    /** Whether the preview plays; set it to start or pause. */
-    val isPlaying = mutableStateOf(true)
+    /** Whether the preview plays; set it to start or pause. A file opens paused, on its first frame. */
+    val isPlaying = mutableStateOf(false)
     val snapshot = mutableStateOf(PreviewSnapshot())
     /** Position inside the playing clips (see [PreviewSnapshot.mediaMs]). */
     val playheadMs = mutableLongStateOf(0L)
@@ -245,6 +248,8 @@ fun PreviewContainer(
     /** Effects of the whole video. */
     wholeEffects: Effects,
     canvas: CanvasRatio,
+    /** How the video meets a [canvas] of another shape: black around it, cut, or stretched. */
+    canvasFit: CanvasFit = CanvasFit.FIT,
     normalizeAudio: Boolean,
     normalizationGainDb: Float,
     /** Clip being edited (its crop, captions and pictures can be adjusted); null = the whole video. */
@@ -276,6 +281,10 @@ fun PreviewContainer(
     spokenWords: Map<String, List<SpokenWord>> = emptyMap(),
     /** The separated voice of the files that have one, by source id (see VoiceStem). */
     voiceStems: Map<String, Uri> = emptyMap(),
+    /** The reversed sounds made so far for clips played backwards (see ReversedSound), by part. */
+    reversedSounds: Map<ReversedSoundRequest, String> = emptyMap(),
+    /** Asked with the parts the clips played backwards need reversed, whenever they change. */
+    onReversedSoundsNeeded: (List<ReversedSoundRequest>) -> Unit = {},
     /** How spoken subtitles and SubRip files look. */
     subtitleStyle: SubtitleStyle = SubtitleStyle(),
     /** False for a SubStation Alpha file: it keeps its own look, drawn plainly here. */
@@ -394,6 +403,17 @@ fun PreviewContainer(
     }
 
     LaunchedEffect(playlist, clipLevels) { player.setSequence(playlist, clipLevels) }
+    // Clips played backwards are shown and heard from their part reversed by FFmpeg (the
+    // sound only when the output has some, the picture only when it has one): asked for
+    // here, played by the player in each clip's place.
+    val reverseRequests = remember(shownClips, sources, whole.reversed, sourceGain, format.isAudioOnly, gif) {
+        reversedSoundRequests(shownClips, sources, whole.reversed, withPicture = !format.isAudioOnly, withSound = gif == null && sourceGain > 0f)
+    }
+    val currentReversedNeeded by rememberUpdatedState(onReversedSoundsNeeded)
+    LaunchedEffect(reverseRequests) { currentReversedNeeded(reverseRequests.filterNotNull()) }
+    LaunchedEffect(reverseRequests, reversedSounds) {
+        player.setReversedSounds(reverseRequests.map { request -> request?.let { r -> reversedSounds[r]?.let { r to Uri.fromFile(java.io.File(it)) } } })
+    }
     LaunchedEffect(sounds) { player.setSounds(sounds) }
     LaunchedEffect(whole.speed, whole.reversed, whole.keepPitch) { player.setPlayback(whole.effectiveSpeed, whole.reversed, whole.keepPitch) }
     LaunchedEffect(sourceGain, soundGain, whole.fadeInSeconds, whole.fadeOutSeconds) {
@@ -520,6 +540,8 @@ fun PreviewContainer(
     val wholeRatio = croppedRatio(wholeTurned, wholeCrop)
     val clipShownRatio = croppedRatio(turnedRatio(clipRatio, clipEffects.rotation), clipCrop)
     val canvasRatio = if (cropOverlayShown) wholeRatio else shownCanvas.ratio ?: wholeRatio
+    // Whole with black around it while cropping, as the frame being cropped is shown whole.
+    val shownFit = if (cropOverlayShown || shownCanvas == CanvasRatio.FIT) CanvasFit.FIT else canvasFit
     val shownCrop = if (croppingClip) clipEffects.crop else whole.crop
     // The video where it lies on its canvas; whole while it is cropped.
     val shownPlacement = if (cropOverlayShown) null else whole.placement?.takeUnless { it.isNeutral }
@@ -531,6 +553,7 @@ fun PreviewContainer(
     val wholeScene = rememberSnapScene()
     val currentHaptic = LocalHapticFeedback.current
     val currentWholeRatioForMove by rememberUpdatedState(wholeRatio)
+    val currentFit by rememberUpdatedState(shownFit)
     val currentOnPlacement by rememberUpdatedState(onPlacementChange)
     val currentMovedPlacement by rememberUpdatedState(whole.placement ?: VideoPlacement())
 
@@ -641,7 +664,7 @@ fun PreviewContainer(
                                 val turn = if (kotlin.math.abs(rotation) > 0.5f) wholeScene.turn(raw, currentHaptic) else raw
                                 val cx = start.centerX * width + pan.x
                                 val cy = start.centerY * height + pan.y
-                                val box = videoBox(width, height, currentWholeRatioForMove, cx / width, cy / height, scale, turn)
+                                val box = videoBox(width, height, currentWholeRatioForMove, currentFit, cx / width, cy / height, scale, turn)
                                 val snap = wholeScene.snap(VIDEO_SNAP_ID, box, width, height, snapThreshold(this), currentHaptic)
                                 currentOnPlacement(
                                     VideoPlacement((cx + snap.dx) / width, (cy + snap.dy) / height, scale, turn).normalized(),
@@ -668,7 +691,7 @@ fun PreviewContainer(
                         if (frameWidth <= 0f || frameHeight <= 0f) {
                             null
                         } else {
-                            videoBox(frameWidth, frameHeight, currentWholeRatio, placed.centerX, placed.centerY, placed.scale, placed.turn)
+                            videoBox(frameWidth, frameHeight, currentWholeRatio, currentFit, placed.centerX, placed.centerY, placed.scale, placed.turn)
                         }
                     }
                     onDispose { wholeScene.unregister(VIDEO_SNAP_ID) }
@@ -682,10 +705,11 @@ fun PreviewContainer(
                         .pictureLooks(if (cropOverlayShown) emptyList() else wholeLooks, outputNow),
                     contentAlignment = Alignment.Center,
                 ) {
-                // The whole video's picture, as cropped, where it lies on its canvas.
+                // The whole video's picture, as cropped, where it lies on its canvas: whole, covering
+                // it or stretched to it (the canvas cuts what goes past it).
                 Box(
                     modifier = Modifier
-                        .aspectRatio(wholeRatio)
+                        .fittedOnCanvas(wholeRatio, shownFit)
                         .graphicsLayer {
                             val placed = placementNow ?: return@graphicsLayer
                             translationX = (placed.centerX - 0.5f) * frameWidth
@@ -735,6 +759,8 @@ fun PreviewContainer(
                                                 overlays = !croppingClip,
                                             ),
                                             player = player.videoPlayer,
+                                            reversedPlayer = player.reversePlayer,
+                                            reversedShown = { snapshot.value.reversedPicture },
                                             pictures = pictures,
                                             wholeColor = wholeColor,
                                             highDefinition = highDefinition,
@@ -916,6 +942,10 @@ private fun ClipPicture(
     onUpdateImage: (String, String?, (ImageOverlay) -> ImageOverlay) -> Unit,
     onSelectOverlay: (String) -> Unit,
     playing: () -> Boolean,
+    /** Plays the clip's part reversed by FFmpeg (see ReversedSound); null for none. */
+    reversedPlayer: ExoPlayer? = null,
+    /** Whether [reversedPlayer]'s picture is shown in the footage's place now. */
+    reversedShown: () -> Boolean = { false },
 ) {
     val effects = shown.effects
     val currentFileMs by rememberUpdatedState(fileMs)
@@ -963,6 +993,20 @@ private fun ClipPicture(
                             modifier = Modifier.fillMaxSize(),
                             keys = cpuKeys,
                         )
+                        // A clip going backwards: its part reversed by FFmpeg, playing forwards over
+                        // the clip's own picture, with the same look (see ReversedSound).
+                        if (reversedPlayer != null) {
+                            // Read through derivedStateOf: only a change recomposes, not every tick.
+                            val reversedOn by remember { derivedStateOf { reversedShown() } }
+                            MediaPreview(
+                                exoPlayer = reversedPlayer,
+                                colorMatrix = pictureColor,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer { alpha = if (reversedOn) 1f else 0f },
+                                keys = if (reversedOn) cpuKeys else emptyList(),
+                            )
+                        }
                         val still = shown.still
                         if (still != null) {
                             // A fresh state per picture: never a frame of the previous one.
@@ -1150,10 +1194,8 @@ private const val VIDEO_SNAP_ID = "video"
  * [ratio], as large as fits, then [scale] times that around its middle at
  * ([centerX], [centerY]) of the canvas, turned [turn] degrees (the box holds it turned).
  */
-private fun videoBox(width: Float, height: Float, ratio: Float, centerX: Float, centerY: Float, scale: Float, turn: Float): SnapBox {
-    val fitsWide = ratio > width / height
-    val baseWidth = if (fitsWide) width else height * ratio
-    val baseHeight = if (fitsWide) width / ratio else height
+private fun videoBox(width: Float, height: Float, ratio: Float, fit: CanvasFit, centerX: Float, centerY: Float, scale: Float, turn: Float): SnapBox {
+    val (baseWidth, baseHeight) = fittedSize(width, height, ratio, fit)
     val radians = Math.toRadians(turn.toDouble())
     val cos = kotlin.math.abs(kotlin.math.cos(radians)).toFloat()
     val sin = kotlin.math.abs(kotlin.math.sin(radians)).toFloat()
@@ -1164,6 +1206,33 @@ private fun videoBox(width: Float, height: Float, ratio: Float, centerX: Float, 
     val cx = centerX * width
     val cy = centerY * height
     return SnapBox(cx - boxWidth / 2f, cy - boxHeight / 2f, cx + boxWidth / 2f, cy + boxHeight / 2f)
+}
+
+/**
+ * Size of a picture of [ratio] (width / height) unmoved on a [width] x
+ * [height] canvas, as the export lays it ([fit]): whole inside it, covering it,
+ * or as large as it both ways.
+ */
+private fun fittedSize(width: Float, height: Float, ratio: Float, fit: CanvasFit): Pair<Float, Float> {
+    if (fit == CanvasFit.STRETCH) return width to height
+    // Wider than the canvas: as wide as it when whole, as high as it when covering.
+    val wider = ratio > width / height
+    return if (wider == (fit == CanvasFit.FIT)) width to width / ratio else height * ratio to height
+}
+
+/**
+ * Lays the picture out at its size on the canvas ([fittedSize]), centred; a
+ * covering one goes past the canvas, which cuts it. What follows is measured
+ * at that size (its border, its touches, the placement's scale and turn).
+ */
+private fun Modifier.fittedOnCanvas(ratio: Float, fit: CanvasFit): Modifier = layout { measurable, constraints ->
+    val (w, h) = fittedSize(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat(), ratio, fit)
+    val width = w.roundToInt().coerceIn(1, MAX_LAYOUT_PX.toInt())
+    val height = h.roundToInt().coerceIn(1, MAX_LAYOUT_PX.toInt())
+    val placeable = measurable.measure(Constraints.fixed(width, height))
+    val outerWidth = width.coerceAtMost(constraints.maxWidth)
+    val outerHeight = height.coerceAtMost(constraints.maxHeight)
+    layout(outerWidth, outerHeight) { placeable.place((outerWidth - width) / 2, (outerHeight - height) / 2) }
 }
 
 /** Largest side a cropped picture is laid out at before it is scaled instead. */
@@ -1867,9 +1936,10 @@ internal fun BoxScope.ImageOverlaysLayer(
                         (current.scaleW.coerceIn(0.01f, ImagePlacement.MAX_WIDTH) * currentCanvasWidth / LOOK_SIZE_STEP).roundToInt().coerceAtLeast(1) * LOOK_SIZE_STEP
                     }
                 }
-                val lookFor = listOf(bitmap, cut, ownColor, overlay.flipHorizontal, overlay.flipVertical, look)
+                val stretch = overlay.laidStretch
+                val lookFor = listOf(bitmap, cut, ownColor, overlay.flipHorizontal, overlay.flipVertical, look, stretch)
                 var lookPicture by remember(overlay.id) { mutableStateOf<MadeLook?>(null) }
-                LaunchedEffect(bitmap, decorated, cut, ownColor, overlay.flipHorizontal, overlay.flipVertical, look, shownWidthPx) {
+                LaunchedEffect(bitmap, decorated, cut, ownColor, overlay.flipHorizontal, overlay.flipVertical, look, shownWidthPx, stretch) {
                     if (!decorated || bitmap == null) {
                         lookPicture = null
                         return@LaunchedEffect
@@ -1877,7 +1947,7 @@ internal fun BoxScope.ImageOverlaysLayer(
                     // While a slider moves, only the last of its values is made (the live look meanwhile).
                     if (lookPicture != null) delay(LOOK_SETTLE_MS)
                     val made = withContext(Dispatchers.Default) {
-                        decoratedPicture(bitmap, cut, ownColor, overlay.flipHorizontal, overlay.flipVertical, look, shownWidthPx)
+                        decoratedPicture(bitmap, cut, ownColor, overlay.flipHorizontal, overlay.flipVertical, look, shownWidthPx, stretch)
                     }
                     lookPicture = MadeLook(made, lookFor)
                 }
@@ -1885,7 +1955,9 @@ internal fun BoxScope.ImageOverlaysLayer(
                 if (ratio != null) {
                     // The box laid on the video: the picture as it shows (cropped), with the room
                     // its outline and shadow take around it, as the export lays it.
-                    val laidRatio = look.laidAspect(ratio).takeIf { it > 0f } ?: ratio
+                    // Pulled out of its shape (see ImagePlacement.stretch), as wide and less high.
+                    val stretchedRatio = ratio * stretch
+                    val laidRatio = look.laidAspect(stretchedRatio).takeIf { it > 0f } ?: stretchedRatio
                     // Its size is worked out while laying out: a size keyframe resizes it without
                     // recomposing it.
                     val laidSize = Modifier.layout { measurable, _ ->

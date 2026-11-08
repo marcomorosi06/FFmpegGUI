@@ -13,6 +13,8 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import com.cuscus.ffmpeggui.core.audio.AudioStage
 import com.cuscus.ffmpeggui.core.audio.EffectsChain
 import com.cuscus.ffmpeggui.core.voice.VoiceStem
+import com.cuscus.ffmpeggui.debug.DebugBench
+import com.cuscus.ffmpeggui.debug.SoundTrial
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicInteger
@@ -55,6 +57,11 @@ internal class AudioEffectsProcessor(
 
     private var chain: EffectsChain? = null
     private var work = FloatArray(0)
+    private var shorts = ShortArray(0)
+    private var floats = FloatArray(0)
+
+    /** The stages the chain was last given: the same list is not compared again for every buffer. */
+    private var lastStages: List<AudioStage>? = null
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         val encoding = inputAudioFormat.encoding
@@ -67,11 +74,15 @@ internal class AudioEffectsProcessor(
 
     override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
         chain = EffectsChain(outputAudioFormat.sampleRate, outputAudioFormat.channelCount)
+        lastStages = null
     }
 
     override fun onReset() {
         chain = null
+        lastStages = null
         work = FloatArray(0)
+        shorts = ShortArray(0)
+        floats = FloatArray(0)
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
@@ -85,34 +96,74 @@ internal class AudioEffectsProcessor(
             input.position(input.limit())
             return
         }
-        if (work.size < frames * outChannels) work = FloatArray(frames * outChannels)
+        val running = chain ?: EffectsChain(outputAudioFormat.sampleRate, outChannels).also { chain = it }
+        val wanted = stages()
+        if (wanted !== lastStages) {
+            running.update(wanted)
+            lastStages = wanted
+        }
+        val inSamples = frames * inChannels
+        val outSamples = frames * outChannels
+        // Read in bulk: one sample at a time through the buffer cost the most of the sound's
+        // time, and sped up four times it is four times as much sound (issue #35).
+        if (float) {
+            if (floats.size < inSamples) floats = FloatArray(inSamples)
+            input.asFloatBuffer().get(floats, 0, inSamples)
+        } else {
+            if (shorts.size < inSamples) shorts = ShortArray(inSamples)
+            input.asShortBuffer().get(shorts, 0, inSamples)
+        }
+        input.position(input.limit())
+
+        // Nothing to do to the sound: it goes through as it came, measured on the way.
+        if (running.isEmpty && inChannels == outChannels) {
+            val output = replaceOutputBuffer(outSamples * bytesPerSample)
+            var peak = 0f
+            if (float) {
+                for (i in 0 until outSamples) peak = maxOf(peak, abs(floats[i]))
+                output.asFloatBuffer().put(floats, 0, outSamples)
+            } else {
+                var loudest = 0
+                for (i in 0 until outSamples) loudest = maxOf(loudest, abs(shorts[i].toInt()))
+                peak = loudest / 32768f
+                output.asShortBuffer().put(shorts, 0, outSamples)
+            }
+            output.position(outSamples * bytesPerSample)
+            output.flip()
+            meter?.report(peak)
+            return
+        }
+
+        if (work.size < outSamples) work = FloatArray(outSamples)
         val samples = work
-        // Read, as FFmpeg reads 16-bit samples (divided by 32768).
+        // As FFmpeg reads 16-bit samples (divided by 32768); mono goes on both channels.
         var at = 0
+        var from = 0
         for (n in 0 until frames) {
             for (c in 0 until inChannels) {
-                samples[at + c] = if (float) input.float else input.short / 32768f
+                samples[at + c] = if (float) floats[from + c] else shorts[from + c] / 32768f
             }
             if (inChannels == 1) samples[at + 1] = samples[at]
             at += outChannels
+            from += inChannels
         }
-        input.position(input.limit())
-        val running = chain ?: EffectsChain(outputAudioFormat.sampleRate, outChannels).also { chain = it }
-        running.update(stages())
         if (!running.isEmpty) running.process(samples, frames)
 
         var peak = 0f
-        val output = replaceOutputBuffer(frames * outChannels * bytesPerSample)
-        for (i in 0 until frames * outChannels) {
-            val value = samples[i]
-            val level = abs(value)
-            if (level > peak) peak = level
-            if (float) {
-                output.putFloat(value)
-            } else {
-                output.putShort((value * 32768f).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort())
+        val output = replaceOutputBuffer(outSamples * bytesPerSample)
+        if (float) {
+            for (i in 0 until outSamples) peak = maxOf(peak, abs(samples[i]))
+            output.asFloatBuffer().put(samples, 0, outSamples)
+        } else {
+            if (shorts.size < outSamples) shorts = ShortArray(outSamples)
+            for (i in 0 until outSamples) {
+                val value = samples[i]
+                peak = maxOf(peak, abs(value))
+                shorts[i] = (value * 32768f).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
             }
+            output.asShortBuffer().put(shorts, 0, outSamples)
         }
+        output.position(outSamples * bytesPerSample)
         output.flip()
         meter?.report(peak)
     }
@@ -172,6 +223,8 @@ internal class StemMixProcessor(private val levels: () -> Pair<Float, Float>) : 
  */
 @OptIn(UnstableApi::class)
 internal fun processingPlayer(context: Context, vararg processors: AudioProcessor, prewarm: Boolean = false): ExoPlayer {
+    // A debug build may take Media3's own speed change instead, to compare (see DebugBench).
+    val trial = DebugBench.trialFor(context)
     val renderers = object : DefaultRenderersFactory(context) {
         override fun buildAudioSink(
             context: Context,
@@ -180,13 +233,29 @@ internal fun processingPlayer(context: Context, vararg processors: AudioProcesso
         ): AudioSink = DefaultAudioSink.Builder(context)
             // Processors only run on 16-bit output; float output would skip them.
             .setEnableFloatOutput(false)
-            .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
+            // Speed and pitch are changed by Android (AudioTrack), not by Media3's Sonic on the
+            // player's thread: sped up, Sonic could not keep up (a 4x MP3 came out at 0.6x and
+            // crackled, issue #35), Android's runs in the audio server and keeps up.
+            // Media3 then makes the speaker's buffer long enough for its fastest speed (8x: two
+            // seconds at normal speed). Made shorter, a 4x preview still ran dry: a change of the
+            // sound effects is heard that much later instead.
+            .setEnableAudioOutputPlaybackParameters(trial != SoundTrial.SONIC)
             .setAudioProcessors(arrayOf(*processors))
             .build()
     }
     renderers.experimentalSetEnableMediaCodecVideoRendererPrewarming(prewarm)
     return ExoPlayer.Builder(context, renderers).build()
 }
+
+/**
+ * [pitch] within what Android shifts (AUDIO_TIMESTRETCH_PITCH_MIN and _MAX):
+ * asked for more, it would refuse the whole change and keep the old speed. A
+ * sound sped past 4x without its pitch kept is heard at 4x the pitch.
+ */
+internal fun androidPitch(pitch: Float): Float = pitch.coerceIn(MIN_ANDROID_PITCH, MAX_ANDROID_PITCH)
+
+private const val MIN_ANDROID_PITCH = 0.25f
+private const val MAX_ANDROID_PITCH = 4f
 
 /**
  * What the preview's players apply to the final sound: the steps of the
@@ -203,3 +272,8 @@ class LiveAudio {
 
     val meter = LevelMeter()
 }
+
+
+/** A player made as the preview makes its own, sound path and all (for the debug dashboard's test). */
+@OptIn(UnstableApi::class)
+fun testPlayer(context: Context): ExoPlayer = processingPlayer(context, AudioEffectsProcessor({ emptyList() }, null))

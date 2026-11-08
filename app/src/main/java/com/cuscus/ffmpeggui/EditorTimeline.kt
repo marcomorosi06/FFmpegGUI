@@ -257,6 +257,11 @@ fun EditorTimeline(
      */
     clipWaveforms: Boolean = false,
     /**
+     * Clips (ids) heard silent for now: played backwards, their sound not reversed
+     * yet (see ReversedSound). Their sound is drawn faint, as a muted clip's.
+     */
+    quietClips: Set<String> = emptySet(),
+    /**
      * The most it may grow to, to show more rows of lanes before they scroll (the
      * tools beside the player have the whole height); it is never lower than
      * [TIMELINE_HEIGHT], nor taller than its rows need.
@@ -1259,7 +1264,7 @@ fun EditorTimeline(
                 clipPath(clipShape) {
                     drawRect(surfaceColor, topLeft = Offset(stripLeft, rect.top), size = Size(stripRight - stripLeft, rect.height))
                     if (source != null && soundClips) {
-                        drawClipWaveform(bars, viewState.waveform(source.uri), clip, rect.left, rect.right, trackTop, trackHeight, pxPerMs, primary)
+                        drawClipWaveform(bars, viewState.waveform(source.uri), clip, rect.left, rect.right, trackTop, trackHeight, pxPerMs, primary, faint = clip.id in quietClips)
                     } else if (source != null) {
                         drawFilmstrip(cache, source.uri, source.isStill, clip, stripLeft, stripRight, trackTop, trackHeight, pxPerMs)
                         // Its own sound along the bottom (a picture, or a file without sound, has none).
@@ -1275,7 +1280,7 @@ fun EditorTimeline(
                                 height = trackHeight * SOUND_BAND_SHARE,
                                 pxPerMs = pxPerMs,
                                 color = clipWave,
-                                silent = clip.effects.muted || clip.effects.volume <= 0f,
+                                silent = clip.effects.muted || clip.effects.volume <= 0f || clip.id in quietClips,
                                 bright = clip.id == selectedClipId,
                             )
                         }
@@ -2392,6 +2397,7 @@ private fun DrawScope.drawClipWaveform(
     height: Float,
     pxPerMs: Float,
     color: Color,
+    faint: Boolean = false,
 ) {
     val step = 3.dp.toPx()
     val bar = 2.dp.toPx()
@@ -2408,7 +2414,7 @@ private fun DrawScope.drawClipWaveform(
         bars.add(x + bar / 2f, middle - half, middle + half)
         x += step
     }
-    bars.draw(this, color.copy(alpha = 0.85f), bar, rounded = true)
+    bars.draw(this, color.copy(alpha = if (faint) 0.3f else 0.85f), bar, rounded = true)
 }
 
 /**

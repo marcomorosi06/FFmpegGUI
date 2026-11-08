@@ -141,6 +141,18 @@ fun fittedPhoto(canvas: PictureCanvas, pictureWidth: Int, pictureHeight: Int): I
     return ImagePlacement(x = 0.5f, y = 0.5f, widthFraction = fraction, aspect = pictureRatio)
 }
 
+/**
+ * Where a picture of [pictureWidth] x [pictureHeight] lies on [canvas] pulled
+ * to the canvas's shape: centred, as wide and as high as it, nothing cut and
+ * nothing around it (see [ImagePlacement.stretch]).
+ */
+fun stretchedPhoto(canvas: PictureCanvas, pictureWidth: Int, pictureHeight: Int): ImagePlacement {
+    val c = canvas.sane()
+    val pictureRatio = pictureWidth.coerceAtLeast(1).toFloat() / pictureHeight.coerceAtLeast(1)
+    val canvasRatio = c.width.toFloat() / c.height
+    return ImagePlacement(x = 0.5f, y = 0.5f, widthFraction = 1f, aspect = pictureRatio, stretch = canvasRatio / pictureRatio)
+}
+
 /** Size of the picture once turned, straightened and cropped. */
 fun pictureSize(edit: ImageEdit, effects: Effects, width: Int, height: Int): Pair<Int, Int> {
     var w = width.coerceAtLeast(1)

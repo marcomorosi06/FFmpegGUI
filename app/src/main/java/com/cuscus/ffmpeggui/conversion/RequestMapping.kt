@@ -162,6 +162,7 @@ private fun ConversionSettings.toRequestOf(
     effects = wholeEffects.copy(speedCurve = null),
     audioEffects = audioEffects,
     canvas = projectRatio,
+    canvasFit = projectFit,
     normalizeAudio = normalizeAudio,
     sounds = audibleSounds().map { clip ->
         PlacedSound(
@@ -349,6 +350,7 @@ internal fun ImageOverlay.toPlacement(): ImagePlacement = ImagePlacement(
     // A punch's fist: colours over opacity in its file, as large as its transition asks.
     stackedAlpha = effect != null && EffectLibrary.info(effect)?.alpha == true,
     coverSize = if (effect != null && EffectLibrary.info(effect)?.alpha == true) scaleW.coerceIn(0.05f, 1f) else 1f,
+    stretch = stretch,
 )
 
 /**

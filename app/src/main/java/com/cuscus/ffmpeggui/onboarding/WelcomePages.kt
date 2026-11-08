@@ -50,6 +50,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Fingerprint
+import androidx.compose.material.icons.rounded.ImageSearch
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.EmojiEmotions
+import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.LibraryAdd
+import androidx.compose.material.icons.rounded.FastRewind
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoAwesomeMotion
 import androidx.compose.material.icons.rounded.AutoFixHigh
@@ -351,7 +358,7 @@ private fun categoryLabel(category: FormatCategory): Int = when (category) {
  * a tap on one morphs it into a circle and says, below, what it is good for.
  */
 @Composable
-internal fun FormatsPage(motion: PageMotion) {
+internal fun FormatsSection(motion: PageMotion) {
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
     var chosen by rememberSaveable { mutableStateOf(OutputFormat.MP4) }
@@ -362,12 +369,13 @@ internal fun FormatsPage(motion: PageMotion) {
     val labelWidth = remember(labels, measurer, density) {
         with(density) { labels.maxOf { measurer.measure(it, SettingsRowTitle, maxLines = 1).size.width }.toDp() + 10.dp }.coerceAtMost(160.dp)
     }
-    PageColumn {
-        PageHeading(
-            motion,
-            kicker = stringResource(R.string.welcome_formats_kicker),
-            title = stringResource(R.string.welcome_formats_title),
+    // A part of a page (see the pages that hold it): what it is about, then its pieces.
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Text(
             text = stringResource(R.string.welcome_formats_text),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.enter(motion, 4),
         )
         Column(verticalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.selectableGroup()) {
             CATEGORIES.forEachIndexed { index, category ->
@@ -469,6 +477,20 @@ private val FEATURES: List<Feature>
         Feature(Icons.Rounded.AutoAwesome, R.string.welcome_feature_effects, MaterialShapes.Sunny),
         Feature(Icons.Rounded.GraphicEq, R.string.welcome_feature_sound, MaterialShapes.Cookie6Sided),
         Feature(Icons.Rounded.ClosedCaption, R.string.welcome_feature_subtitles, MaterialShapes.Cookie12Sided),
+        Feature(Icons.Rounded.FastRewind, R.string.welcome_feature_reverse, MaterialShapes.Cookie7Sided),
+        Feature(Icons.Rounded.LibraryAdd, R.string.welcome_feature_share, MaterialShapes.Pill),
+        Feature(Icons.Rounded.Terminal, R.string.welcome_feature_commands, MaterialShapes.Gem),
+    )
+
+/** What the photo editor does. */
+private val PHOTO_FEATURES: List<Feature>
+    get() = listOf(
+        Feature(Icons.Rounded.TouchApp, R.string.welcome_photo_lift, MaterialShapes.Cookie9Sided),
+        Feature(Icons.Rounded.AutoFixHigh, R.string.welcome_photo_eraser, MaterialShapes.SoftBurst),
+        Feature(Icons.Rounded.EmojiEmotions, R.string.welcome_photo_stickers, MaterialShapes.Flower),
+        Feature(Icons.Rounded.TextFields, R.string.welcome_photo_texts, MaterialShapes.Clover4Leaf),
+        Feature(Icons.Rounded.Layers, R.string.welcome_photo_blend, MaterialShapes.Cookie6Sided),
+        Feature(Icons.Rounded.Palette, R.string.welcome_photo_looks, MaterialShapes.Sunny),
     )
 
 /** The other smart features, named under the two shown at work. */
@@ -478,17 +500,20 @@ private val SMART_MORE: List<Feature>
         Feature(Icons.Rounded.RecordVoiceOver, R.string.welcome_smart_dub, MaterialShapes.Clover4Leaf),
         Feature(Icons.Rounded.Mic, R.string.welcome_smart_stems, MaterialShapes.Flower),
         Feature(Icons.Rounded.AutoFixHigh, R.string.welcome_smart_eraser, MaterialShapes.SoftBurst),
+        Feature(Icons.Rounded.ImageSearch, R.string.welcome_smart_check, MaterialShapes.Cookie12Sided),
+        Feature(Icons.Rounded.Fingerprint, R.string.welcome_smart_seal, MaterialShapes.Gem),
     )
 
 @Composable
-internal fun EditorPage(motion: PageMotion) {
+internal fun EditorSection(motion: PageMotion) {
     val scheme = MaterialTheme.colorScheme
-    PageColumn {
-        PageHeading(
-            motion,
-            kicker = stringResource(R.string.welcome_editor_kicker),
-            title = stringResource(R.string.welcome_editor_title),
+    // A part of a page (see the pages that hold it): what it is about, then its pieces.
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Text(
             text = stringResource(R.string.welcome_editor_text),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.enter(motion, 4),
         )
         EditorMock(modifier = Modifier.enter(motion, 3))
         FlowRow(
@@ -530,6 +555,32 @@ private fun FeatureChip(feature: Feature, tone: ToneColors) {
         }
         Spacer(modifier = Modifier.width(8.dp))
         Text(stringResource(feature.label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+/** The photo editor: what it does, as the editor's own chips. */
+@Composable
+internal fun PhotosSection(motion: PageMotion) {
+    val scheme = MaterialTheme.colorScheme
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = stringResource(R.string.welcome_photos_text),
+            style = MaterialTheme.typography.bodyMedium,
+            color = scheme.onSurfaceVariant,
+            modifier = Modifier.enter(motion, 4),
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().enter(motion, 6),
+        ) {
+            val tones = listOf(
+                ToneColors(scheme.secondaryContainer, scheme.onSecondaryContainer),
+                ToneColors(scheme.primaryContainer, scheme.onPrimaryContainer),
+                ToneColors(scheme.tertiaryContainer, scheme.onTertiaryContainer),
+            )
+            PHOTO_FEATURES.forEachIndexed { index, feature -> FeatureChip(feature, tones[index % tones.size]) }
+        }
     }
 }
 
@@ -718,15 +769,16 @@ internal fun PrivatePage(motion: PageMotion) {
 // -- 6. Look --------------------------------------------------------------------------------------------
 
 @Composable
-internal fun LookPage(motion: PageMotion, settings: AppSettings, onChange: ((AppSettings) -> AppSettings) -> Unit) {
+internal fun LookSection(motion: PageMotion, settings: AppSettings, onChange: ((AppSettings) -> AppSettings) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
-    PageColumn {
-        PageHeading(
-            motion,
-            kicker = stringResource(R.string.welcome_look_kicker),
-            title = stringResource(R.string.welcome_look_title),
+    // A part of a page (see the pages that hold it): what it is about, then its pieces.
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Text(
             text = stringResource(R.string.welcome_look_text),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.enter(motion, 4),
         )
         PhonePreview(modifier = Modifier.align(Alignment.CenterHorizontally).enter(motion, 3))
         Row(
@@ -1011,16 +1063,17 @@ internal fun ThemeTile(
 // -- 7. Feel -----------------------------------------------------------------------------------------------
 
 @Composable
-internal fun FeelPage(motion: PageMotion, settings: AppSettings, onChange: ((AppSettings) -> AppSettings) -> Unit) {
+internal fun FeelSection(motion: PageMotion, settings: AppSettings, onChange: ((AppSettings) -> AppSettings) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
     val view = androidx.compose.ui.platform.LocalView.current
-    PageColumn {
-        PageHeading(
-            motion,
-            kicker = stringResource(R.string.welcome_feel_kicker),
-            title = stringResource(R.string.welcome_feel_title),
+    // A part of a page (see the pages that hold it): what it is about, then its pieces.
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Text(
             text = stringResource(R.string.welcome_feel_text),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.enter(motion, 4),
         )
         Box(modifier = Modifier.enter(motion, 3)) {
             SettingsGroup(
@@ -1161,7 +1214,7 @@ private fun PadButton(label: String, icon: ImageVector, shape: RoundedPolygon, t
 // -- 8. Exports -----------------------------------------------------------------------------------------------
 
 @Composable
-internal fun ExportsPage(
+internal fun ExportsSection(
     motion: PageMotion,
     settings: AppSettings,
     onChange: ((AppSettings) -> AppSettings) -> Unit,
@@ -1171,12 +1224,13 @@ internal fun ExportsPage(
     onStopCalibration: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    PageColumn {
-        PageHeading(
-            motion,
-            kicker = stringResource(R.string.welcome_exports_kicker),
-            title = stringResource(R.string.welcome_exports_title),
+    // A part of a page (see the pages that hold it): what it is about, then its pieces.
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Text(
             text = stringResource(R.string.welcome_exports_text),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.enter(motion, 4),
         )
         Box(modifier = Modifier.enter(motion, 3)) {
             SettingsGroup(
@@ -1264,7 +1318,7 @@ private fun speedLabel(speed: CpuEncoderSpeed): Int = when (speed) {
 // -- 9. Projects --------------------------------------------------------------------------------------------------
 
 @Composable
-internal fun ProjectsPage(
+internal fun ProjectsSection(
     motion: PageMotion,
     settings: AppSettings,
     onChange: ((AppSettings) -> AppSettings) -> Unit,
@@ -1278,12 +1332,13 @@ internal fun ProjectsPage(
     // Shown again from the settings, there may be projects already: nothing goes without asking.
     var confirmOff by remember { mutableStateOf(false) }
     var confirmLimit by remember { mutableStateOf<Int?>(null) }
-    PageColumn {
-        PageHeading(
-            motion,
-            kicker = stringResource(R.string.welcome_projects_kicker),
-            title = stringResource(R.string.welcome_projects_title),
+    // A part of a page (see the pages that hold it): what it is about, then its pieces.
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Text(
             text = stringResource(R.string.welcome_projects_text),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.enter(motion, 4),
         )
         ProjectsArt(active = motion.active, modifier = Modifier.enter(motion, 3))
         Box(modifier = Modifier.enter(motion, 4)) {
@@ -1388,19 +1443,20 @@ internal fun ProjectsPage(
 // -- 10. Notifications -------------------------------------------------------------------------------------------------
 
 @Composable
-internal fun NotifyPage(
+internal fun NotifySection(
     motion: PageMotion,
     settings: AppSettings,
     onChange: ((AppSettings) -> AppSettings) -> Unit,
     notifications: NotificationAccess,
 ) {
     val scheme = MaterialTheme.colorScheme
-    PageColumn {
-        PageHeading(
-            motion,
-            kicker = stringResource(R.string.welcome_notify_kicker),
-            title = stringResource(R.string.welcome_notify_title),
+    // A part of a page (see the pages that hold it): what it is about, then its pieces.
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Text(
             text = stringResource(R.string.welcome_notify_text),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.enter(motion, 4),
         )
         NotificationArt(modifier = Modifier.enter(motion, 3))
         PermissionCard(notifications, modifier = Modifier.enter(motion, 4))
@@ -1515,7 +1571,8 @@ private fun PermissionCard(access: NotificationAccess, modifier: Modifier = Modi
 // -- 11. All set ---------------------------------------------------------------------------------------------------------
 
 /** One choice made on the welcome, as a chip on the last page; a tap goes back to its page. */
-private class Summary(val icon: ImageVector, val text: String, val page: WelcomePage, val on: Boolean)
+/** A choice summed up: its icon and words, where it was made (a page, and the part of it), whether it is on. */
+private class Summary(val icon: ImageVector, val text: String, val page: WelcomePage, val on: Boolean, val part: Enum<*>? = null)
 
 @Composable
 internal fun ReadyPage(
@@ -1525,7 +1582,7 @@ internal fun ReadyPage(
     notificationsAllowed: Boolean,
     smartReady: Boolean,
     openSmart: Boolean,
-    onJump: (WelcomePage) -> Unit,
+    onJump: (WelcomePage, Enum<*>?) -> Unit,
 ) {
     val summary = listOf(
         Summary(
@@ -1541,8 +1598,9 @@ internal fun ReadyPage(
                     ThemeMode.DARK -> R.string.welcome_ready_theme_dark
                 },
             ),
-            WelcomePage.LOOK,
+            WelcomePage.YOURS,
             true,
+            YoursPart.LOOK,
         ),
         Summary(
             Icons.Rounded.Palette,
@@ -1553,44 +1611,51 @@ internal fun ReadyPage(
                     WelcomePalette.MONOCHROME -> R.string.welcome_ready_colors_monochrome
                 },
             ),
-            WelcomePage.LOOK,
+            WelcomePage.YOURS,
             true,
+            YoursPart.LOOK,
         ),
         Summary(
             Icons.Rounded.Vibration,
             stringResource(if (settings.haptics) R.string.welcome_ready_haptics_on else R.string.welcome_ready_haptics_off),
-            WelcomePage.FEEL,
+            WelcomePage.YOURS,
             settings.haptics,
+            YoursPart.FEEL,
         ),
         Summary(
             Icons.Rounded.Download,
             stringResource(if (settings.saveCopies && PublicCopies.available) R.string.welcome_ready_copies_on else R.string.welcome_ready_copies_off),
-            WelcomePage.EXPORTS,
+            WelcomePage.WORK,
             settings.saveCopies && PublicCopies.available,
+            WorkPart.EXPORTS,
         ),
         Summary(
             Icons.Rounded.Speed,
             stringResource(R.string.welcome_ready_speed, stringResource(speedLabel(settings.cpuSpeed))),
-            WelcomePage.EXPORTS,
+            WelcomePage.WORK,
             true,
+            WorkPart.EXPORTS,
         ),
         Summary(
             Icons.Rounded.Memory,
             stringResource(if (settings.hardwareVideo && hardwareWorks) R.string.welcome_ready_chip_on else R.string.welcome_ready_chip_off),
-            WelcomePage.EXPORTS,
+            WelcomePage.WORK,
             settings.hardwareVideo && hardwareWorks,
+            WorkPart.EXPORTS,
         ),
         Summary(
             Icons.Rounded.Schedule,
             if (settings.saveProjects) stringResource(R.string.welcome_ready_projects, settings.projectsLimit) else stringResource(R.string.welcome_ready_projects_off),
-            WelcomePage.PROJECTS,
+            WelcomePage.WORK,
             settings.saveProjects,
+            WorkPart.PROJECTS,
         ),
         Summary(
             Icons.Rounded.Notifications,
             stringResource(if (notificationsAllowed) R.string.welcome_ready_notify_on else R.string.welcome_ready_notify_off),
-            WelcomePage.NOTIFY,
+            WelcomePage.WORK,
             notificationsAllowed,
+            WorkPart.NOTIFY,
         ),
         Summary(
             Icons.Rounded.AutoAwesome,
@@ -1620,7 +1685,7 @@ internal fun ReadyPage(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth().enter(motion, 4),
         ) {
-            summary.forEach { item -> SummaryChip(item, onClick = { onJump(item.page) }) }
+            summary.forEach { item -> SummaryChip(item, onClick = { onJump(item.page, item.part) }) }
         }
         Text(
             stringResource(R.string.welcome_ready_tap),

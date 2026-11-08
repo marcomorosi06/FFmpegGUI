@@ -9,6 +9,7 @@ import com.cuscus.ffmpeggui.core.preview.EQ_CONTRAST_MIN
 import com.cuscus.ffmpeggui.core.model.VideoPlacement
 import android.net.Uri
 import androidx.annotation.StringRes
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -169,6 +170,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.cuscus.ffmpeggui.core.model.CanvasFit
 import com.cuscus.ffmpeggui.core.model.CanvasRatio
 import com.cuscus.ffmpeggui.core.model.FrameExtractionMode
 import com.cuscus.ffmpeggui.core.model.GifSettings
@@ -238,6 +240,27 @@ private val CAPTION_COLORS = listOf(
 // -- Audio ---------------------------------------------------------------------------
 
 /** One clip of the timeline whose footage has sound, as the audio mixer lists it. */
+/**
+ * One clip as the speed tool of the whole video lists it: how fast and in
+ * which direction it plays once the whole video's speed and direction are
+ * applied to its own (see SpeedSectionContent).
+ */
+internal data class ClipPace(
+    val id: String,
+    /** Its place on the timeline, from 1. */
+    val number: Int,
+    val fileName: String,
+    /** The clip's file, for its thumbnail; null where clips show no picture (an audio file). */
+    val pictureUri: Uri?,
+    val fileStartMs: Long,
+    /** Its own speed (a curve's average). */
+    val speed: Float,
+    /** Its speed changes along it (a curve). */
+    val curved: Boolean,
+    /** Its own direction. */
+    val reversed: Boolean,
+)
+
 internal data class ClipSound(
     val id: String,
     /** Its place on the timeline, from 1. */
@@ -665,10 +688,19 @@ private fun ClipSoundRow(
  */
 @Composable
 private fun ClipSoundThumbnail(clip: ClipSound, heard: Boolean) {
+    ClipThumbnail(clip.pictureUri, clip.fileStartMs, clip.still, clip.number, veiled = !heard, veilIcon = Icons.Rounded.VolumeOff)
+}
+
+/**
+ * A clip's first frame with its [number] on the timeline in a corner; [veiled]
+ * (silent, or going backwards), with [veilIcon] on it.
+ */
+@Composable
+private fun ClipThumbnail(pictureUri: Uri?, fileStartMs: Long, still: Boolean, number: Int, veiled: Boolean, veilIcon: ImageVector) {
     val motion = MaterialTheme.motionScheme
-    val thumbnail = clip.pictureUri?.let { rememberClipThumbnail(it, clip.fileStartMs, clip.still) }
+    val thumbnail = pictureUri?.let { rememberClipThumbnail(it, fileStartMs, still) }
     val veil by animateFloatAsState(
-        targetValue = if (heard) 0f else 0.55f,
+        targetValue = if (veiled) 0.55f else 0f,
         animationSpec = motion.defaultEffectsSpec(),
         label = "clipSoundVeil",
     )
@@ -687,7 +719,7 @@ private fun ClipSoundThumbnail(clip: ClipSound, heard: Boolean) {
             )
         } else {
             Icon(
-                if (clip.pictureUri == null) Icons.Rounded.MusicNote else Icons.Rounded.Movie,
+                if (pictureUri == null) Icons.Rounded.MusicNote else Icons.Rounded.Movie,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.Center).size(22.dp),
@@ -696,15 +728,15 @@ private fun ClipSoundThumbnail(clip: ClipSound, heard: Boolean) {
         // Silent: the frame is veiled and a muted speaker sits on it.
         Box(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = veil }.background(Color.Black))
         AnimatedVisibility(
-            visible = !heard,
+            visible = veiled,
             enter = fadeIn(motion.defaultEffectsSpec()) + scaleIn(motion.defaultSpatialSpec()),
             exit = fadeOut(motion.fastEffectsSpec()) + scaleOut(motion.fastSpatialSpec()),
             modifier = Modifier.align(Alignment.Center),
         ) {
-            Icon(Icons.Rounded.VolumeOff, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+            Icon(veilIcon, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
         }
         Text(
-            text = clip.number.toString(),
+            text = number.toString(),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier
@@ -1088,6 +1120,17 @@ internal fun SpeedSectionContent(
     onCurve: (SpeedCurve?) -> Unit = {},
     footageMs: Long? = null,
     marker: () -> Float? = { null },
+    /** The speed tool of one clip (true), or of the whole video. */
+    clipScope: Boolean = false,
+    /** In [clipScope]: the whole video's speed and direction, which this clip's are combined with. */
+    masterSpeed: Float = 1f,
+    masterReversed: Boolean = false,
+    /** Out of [clipScope]: every clip that plays (not pictures), each under the whole video. */
+    clipPaces: List<ClipPace> = emptyList(),
+    /** Turns one clip (id) backwards (true) or forwards in the end, whatever the whole video does. */
+    onClipBackwards: (String, Boolean) -> Unit = { _, _ -> },
+    /** Opens the speed of one clip (id). */
+    onOpenClip: (String) -> Unit = {},
 ) {
     val presets = listOf(0.25f, 0.5f, 1.0f, 1.5f, 2.0f, 4.0f)
     val mode = if (curve != null && curveAllowed) SpeedMode.CURVE else SpeedMode.CONSTANT
@@ -1162,6 +1205,142 @@ internal fun SpeedSectionContent(
             subtitle = stringResource(R.string.speed_reverse_hint),
             checked = isReversed,
             onCheckedChange = onIsReversed,
+        )
+        // How this clip plays in the end, when the whole video changes it.
+        if (clipScope && (masterSpeed != 1f || masterReversed)) {
+            if (masterSpeed != 1f) {
+                PanelHint(
+                    stringResource(
+                        R.string.speed_clip_effective,
+                        stringResource(R.string.value_multiplier, decimal(videoSpeed * masterSpeed, 2)),
+                        stringResource(R.string.value_multiplier, decimal(masterSpeed, 2)),
+                        stringResource(R.string.value_multiplier, decimal(videoSpeed, 2)),
+                    ),
+                )
+            }
+            if (masterReversed) {
+                PanelHint(stringResource(if (isReversed) R.string.speed_clip_whole_reversed_twice else R.string.speed_clip_whole_reversed))
+            }
+        }
+        // The clips, each under the whole video's speed and direction.
+        if (!clipScope && clipPaces.isNotEmpty()) {
+            ClipPaces(
+                clips = clipPaces,
+                wholeSpeed = videoSpeed,
+                wholeReversed = isReversed,
+                onClipBackwards = onClipBackwards,
+                onOpenClip = onOpenClip,
+            )
+        }
+    }
+}
+
+/**
+ * The clips under the whole video's speed, as the volume tool lists them
+ * under its track: each one's speed and direction in the end (its own times
+ * the whole video's; backwards when only one of the two is), and a switch to
+ * have it go backwards or not. A tap on a clip opens its own speed.
+ */
+@Composable
+private fun ClipPaces(
+    clips: List<ClipPace>,
+    wholeSpeed: Float,
+    wholeReversed: Boolean,
+    onClipBackwards: (String, Boolean) -> Unit,
+    onOpenClip: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+        Text(
+            stringResource(R.string.speed_clips_title),
+            style = MaterialTheme.typography.titleSmallEmphasized,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        PanelHint(stringResource(R.string.speed_clips_hint), modifier = Modifier.padding(horizontal = 4.dp))
+        clips.forEach { clip ->
+            key(clip.id) {
+                ClipPaceRow(
+                    clip = clip,
+                    wholeSpeed = wholeSpeed,
+                    backwards = clip.reversed != wholeReversed,
+                    // Asked to go backwards (or not) in the end: its own direction is the one that does it.
+                    onBackwards = { backwards -> onClipBackwards(clip.id, backwards != wholeReversed) },
+                    onOpen = { onOpenClip(clip.id) },
+                )
+            }
+        }
+    }
+}
+
+/** One clip under the whole video's speed: its frame, its file, how it plays in the end, and its direction. */
+@Composable
+private fun ClipPaceRow(clip: ClipPace, wholeSpeed: Float, backwards: Boolean, onBackwards: (Boolean) -> Unit, onOpen: () -> Unit) {
+    val haptic = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+    val speed = stringResource(R.string.value_multiplier, decimal(clip.speed * wholeSpeed, 2))
+    val subtitle = stringResource(
+        when {
+            clip.curved && backwards -> R.string.speed_clip_row_curve_backwards
+            clip.curved -> R.string.speed_clip_row_curve
+            backwards -> R.string.speed_clip_row_backwards
+            else -> R.string.speed_clip_row
+        },
+        speed,
+    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .springPress(interaction, pressedScale = 0.98f)
+            .clip(RoundedCornerShape(24.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier
+                .weight(1f)
+                .clickable(interactionSource = interaction, indication = LocalIndication.current, role = Role.Button) {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onOpen()
+                }
+                .padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+        ) {
+            ClipThumbnail(clip.pictureUri, clip.fileStartMs, still = false, number = clip.number, veiled = backwards, veilIcon = Icons.Rounded.FastRewind)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.scope_clip, clip.number),
+                    style = MaterialTheme.typography.titleSmallEmphasized,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                )
+                Text(
+                    text = clip.fileName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        val description = stringResource(R.string.speed_backwards)
+        Switch(
+            checked = backwards,
+            onCheckedChange = { on ->
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onBackwards(on)
+            },
+            thumbContent = {
+                Icon(Icons.Rounded.FastRewind, contentDescription = null, modifier = Modifier.size(SwitchDefaults.IconSize))
+            },
+            modifier = Modifier.padding(end = 14.dp).semantics { contentDescription = description },
         )
     }
 }
@@ -1711,10 +1890,16 @@ internal fun OverlayTimingContent(span: TimeSpan, outputDurationMs: Long, onSpan
 internal fun FormatSectionContent(
     projectRatio: CanvasRatio,
     onProjectRatioChange: (CanvasRatio) -> Unit,
+    /** How the video meets a [projectRatio] of another shape (see CanvasFit). */
+    projectFit: CanvasFit = CanvasFit.FIT,
+    onProjectFitChange: (CanvasFit) -> Unit = {},
+    /** Width / height of the video as it comes to the canvas, for the drawings of the fits. */
+    videoRatio: Float = 16f / 9f,
     /** Where the video lies on its canvas (null: in the middle, at its size). */
     placement: VideoPlacement? = null,
     onPlacement: (VideoPlacement?) -> Unit = {},
 ) {
+    val motion = MaterialTheme.motionScheme
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         OptionTileRow(
             options = CanvasRatio.entries.map { ratio ->
@@ -1729,6 +1914,23 @@ internal fun FormatSectionContent(
             onSelect = onProjectRatioChange,
         )
         PanelHint(stringResource(if (projectRatio == CanvasRatio.FIT) R.string.canvas_fit_hint else R.string.canvas_fixed_hint))
+        // A frame of another shape: the video whole in it, covering it or stretched to it.
+        val frameRatio = projectRatio.ratio
+        AnimatedVisibility(
+            visible = frameRatio != null,
+            enter = expandVertically(motion.defaultSpatialSpec()) + fadeIn(motion.defaultEffectsSpec()),
+            exit = shrinkVertically(motion.fastSpatialSpec()) + fadeOut(motion.fastEffectsSpec()),
+        ) {
+            // Kept while it closes, so that it does not change on its way out.
+            val shownRatio = remember { floatArrayOf(1f) }
+            if (frameRatio != null) shownRatio[0] = frameRatio
+            CanvasFitChooser(
+                selected = projectFit,
+                frameRatio = shownRatio[0],
+                pictureRatio = videoRatio,
+                onSelect = onProjectFitChange,
+            )
+        }
         VideoPlacementCard(placement = placement ?: VideoPlacement(), onPlacement = onPlacement)
     }
 }

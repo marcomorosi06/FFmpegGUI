@@ -86,6 +86,11 @@ class CacheJanitor(
             // Denoise comparisons of an editor that was closed while one was being read.
             File(appContext.cacheDir, FfmpegDenoiseSampler.DIRECTORY).listFiles()?.forEach { it.deleteRecursively() }
 
+            // Reversed parts of the preview not played for days, and the work of a run cut short.
+            File(appContext.cacheDir, FfmpegSoundReverser.DIRECTORY).listFiles()
+                ?.filter { now - it.lastModified() > FfmpegSoundReverser.KEPT_MS || it.name.endsWith(FfmpegSoundReverser.WORK_SUFFIX) }
+                ?.forEach { it.deleteRecursively() }
+
             // The About page's hidden game, left by a run cut short.
             File(appContext.cacheDir, FfmpegLife.DIRECTORY).listFiles()?.forEach { it.deleteRecursively() }
 

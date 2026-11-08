@@ -34,8 +34,8 @@ android {
         minSdk = 29
         // The latest Android's sandbox and behaviour, the one the app is built against.
         targetSdk = 37
-        versionCode = 2
-        versionName = "0.2-alpha"
+        versionCode = 3
+        versionName = "0.3-alpha"
 
         // The FFmpeg runtime ships 64-bit libraries only. Without this filter a 32-bit
         // device could install the app and then fail to load FFmpeg.

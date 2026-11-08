@@ -4,6 +4,7 @@ import android.net.Uri
 import com.cuscus.ffmpeggui.core.model.AudioEffects
 import com.cuscus.ffmpeggui.core.model.Compression
 import com.cuscus.ffmpeggui.core.model.AudioEncoding
+import com.cuscus.ffmpeggui.core.model.CanvasFit
 import com.cuscus.ffmpeggui.core.model.CanvasRatio
 import com.cuscus.ffmpeggui.core.model.Effects
 import com.cuscus.ffmpeggui.core.model.FrameExtractionMode
@@ -52,6 +53,8 @@ data class ConversionSettings(
 
     // Output frame and loudness: these only exist for the whole video
     val projectRatio: CanvasRatio = CanvasRatio.FIT,
+    /** How the video meets a [projectRatio] of another shape: black around it, cut, or stretched. */
+    val projectFit: CanvasFit = CanvasFit.FIT,
     val normalizeAudio: Boolean = false,
 
     // The final sound (after the mix) and how an audio file is encoded

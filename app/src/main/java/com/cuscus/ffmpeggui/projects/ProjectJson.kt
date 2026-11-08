@@ -91,6 +91,7 @@ object ProjectJson {
         put("keepHdr", s.keepHdr)
         put("wholeEffects", ModelJson.write(s.wholeEffects))
         put("projectRatio", s.projectRatio)
+        put("projectFit", s.projectFit)
         put("normalizeAudio", s.normalizeAudio)
         put("audioEffects", ModelJson.write(s.audioEffects))
         put("audioEncoding", ModelJson.write(s.audioEncoding))
@@ -138,6 +139,7 @@ object ProjectJson {
             keepHdr = o.bool("keepHdr", d.keepHdr),
             wholeEffects = o.obj("wholeEffects")?.let(ModelJson::effects) ?: d.wholeEffects,
             projectRatio = o.enum("projectRatio", d.projectRatio),
+            projectFit = o.enum("projectFit", d.projectFit),
             normalizeAudio = o.bool("normalizeAudio", d.normalizeAudio),
             audioEffects = o.obj("audioEffects")?.let(ModelJson::audioEffects) ?: d.audioEffects,
             audioEncoding = o.obj("audioEncoding")?.let(ModelJson::audioEncoding) ?: d.audioEncoding,
@@ -279,6 +281,7 @@ object ProjectJson {
         put("lookAmount", i.lookAmount)
         put("hidden", i.hidden)
         put("locked", i.locked)
+        put("stretch", i.stretch)
     }
 
     fun writeShape(s: ShapeLayer): Json.Obj = jsonObject {
@@ -332,6 +335,7 @@ object ProjectJson {
             saturation = o.float("saturation", d.saturation),
             video = o.objOrNull("video", d.video, ModelJson::soundSpan),
             aspect = o.float("aspect", d.aspect),
+            stretch = o.float("stretch", d.stretch),
             hasAudio = o.bool("hasAudio", d.hasAudio),
             volume = o.float("volume", d.volume),
             muted = o.bool("muted", d.muted),

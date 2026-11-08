@@ -214,7 +214,19 @@
     <!-- Editor: canvas -->
     <string name="canvas_fit">Fit</string>
     <string name="canvas_fit_hint">The canvas shrinks to match the crop exactly (no black borders).</string>
-    <string name="canvas_fixed_hint">The video gets this fixed aspect ratio. The crop is centered and padded with black bars to avoid distortion.</string>
+    <string name="canvas_fixed_hint">The video gets this fixed aspect ratio. Choose below how it fills the frame.</string>
+    <string name="canvas_fit_title">Video in the frame</string>
+    <string name="canvas_fit_picture_title">Picture on the canvas</string>
+    <string name="canvas_fit_whole">Whole</string>
+    <string name="canvas_fit_cover">Cover</string>
+    <string name="canvas_fit_stretch">Stretch</string>
+    <string name="canvas_fit_whole_hint">All of the video shows, with black bars where its shape differs from the frame.</string>
+    <string name="canvas_fit_cover_hint">The video fills the frame; what goes past its edges is cut.</string>
+    <string name="canvas_fit_stretch_hint">The video is pulled to the frame\'s shape: nothing is cut and there are no bars, but it looks squashed or stretched.</string>
+    <string name="canvas_fit_whole_picture_hint">The picture goes back to the middle, all of it on the canvas.</string>
+    <string name="canvas_fit_cover_picture_hint">The picture goes back to the middle and covers the whole canvas; what goes past its edges is cut.</string>
+    <string name="canvas_fit_stretch_picture_hint">The picture is pulled to the canvas\'s shape: it fills it with nothing cut, but looks squashed or stretched.</string>
+    <string name="canvas_fit_moved_hint">The picture was moved by hand. Tap one of these to put it back.</string>
     <string name="placement_hint">Tap the video on the preview to pick it up: drag it to move it, pinch to resize or turn it. Captions and pictures can go past the edges too.</string>
     <string name="placement_reset">Center the video</string>
 
@@ -409,6 +421,16 @@
     <string name="speed_title">Speed and direction</string>
     <string name="speed_reverse">Play in reverse</string>
     <string name="speed_reverse_hint">Reverses the video and the original audio</string>
+    <string name="speed_backwards">Backwards</string>
+    <string name="speed_clips_title">Clips</string>
+    <string name="speed_clips_hint">Each clip plays at its own speed times this one. Tap a clip to change its own speed.</string>
+    <string name="speed_clip_row">Plays at %1$s</string>
+    <string name="speed_clip_row_backwards">Plays at %1$s, backwards</string>
+    <string name="speed_clip_row_curve">Plays at %1$s on average</string>
+    <string name="speed_clip_row_curve_backwards">Plays at %1$s on average, backwards</string>
+    <string name="speed_clip_effective">Plays at %1$s: whole video %2$s times this clip %3$s.</string>
+    <string name="speed_clip_whole_reversed">The whole video is reversed, so this clip plays backwards.</string>
+    <string name="speed_clip_whole_reversed_twice">The whole video is reversed too, so this clip plays forwards in the end.</string>
     <string name="speed_mode_constant">Constant</string>
     <string name="speed_mode_curve">Curve</string>
     <string name="speed_curve_hint">Drag a point to change the speed there, tap to add one, tap a point twice to take it away.</string>
@@ -1219,8 +1241,6 @@
     <string name="canvas_fill_colour">Colour</string>
     <string name="canvas_fill_none">None</string>
     <string name="canvas_fill_none_white">%1$s has no transparency: the empty canvas becomes white. Pick PNG or WEBP when exporting to keep it transparent.</string>
-    <string name="canvas_picture_fit">Whole</string>
-    <string name="canvas_picture_fill">Cover</string>
     <string name="canvas_picture_select">Pick the picture to move it</string>
     <string name="canvas_picture_hint">Drag the picture, pinch it to size it, turn it with two fingers. In Layers it goes above or under texts and stickers; Corners rounds the whole canvas.</string>
     <string name="corners_square">Square</string>
@@ -1503,6 +1523,13 @@
     <string name="projects_delete_title">Delete this project?</string>
     <string name="projects_delete_text">Its edits, its preview picture and the files copied into it (%1$s) go for good. Your original files and your exports stay.</string>
     <string name="projects_open_failed">This project can no longer be read</string>
+
+    <!-- The sound of clips played backwards, reversed by FFmpeg for the preview (ReverseSoundWindow). -->
+    <string name="reverse_sound_title">Reversing the clip</string>
+    <string name="reverse_sound_body">So that the preview plays it backwards smoothly, picture and sound. The file you opened stays as it is.</string>
+    <string name="reverse_sound_count">Clip %1$d of %2$d</string>
+    <string name="reverse_sound_stop">Stop</string>
+    <string name="reverse_sound_stop_hint">Stopped, the preview steps the clip back in silence. The export is not affected.</string>
 
     <!-- A file shared from another app, added to a project already under way (IntakeProjects). -->
     <string name="intake_title">Add to a project</string>
@@ -2039,6 +2066,27 @@
     <string name="welcome_hello_title">Every file, made just right.</string>
     <string name="welcome_hello_text">The power of FFmpeg, made simple and fun: edit and convert video, sound, photos and SVG drawings, with smart tools that work right here on your phone.</string>
 
+    <string name="welcome_makes_kicker">What it does</string>
+    <string name="welcome_makes_title">Convert, edit, retouch</string>
+    <string name="welcome_makes_text">Every format in and out, a real video editor and a photo editor, all on your phone. Pick a part to see more.</string>
+    <string name="welcome_photos_kicker">Photos</string>
+    <string name="welcome_photos_text">Hold a subject to lift it out, cut it free or erase it, then add stickers and words that turn and blend.</string>
+    <string name="welcome_photo_lift">Lift a subject</string>
+    <string name="welcome_photo_eraser">Magic eraser</string>
+    <string name="welcome_photo_stickers">Stickers</string>
+    <string name="welcome_photo_texts">Words on photos</string>
+    <string name="welcome_photo_blend">Turn and blend</string>
+    <string name="welcome_photo_looks">Looks and colours</string>
+    <string name="welcome_feature_reverse">Backwards, picture and sound</string>
+    <string name="welcome_feature_share">Shared files into a project</string>
+    <string name="welcome_feature_commands">Your own FFmpeg commands</string>
+    <string name="welcome_smart_check">AI check</string>
+    <string name="welcome_smart_seal">Invisible AudioSeal mark</string>
+    <string name="welcome_yours_kicker">Yours</string>
+    <string name="welcome_yours_text">The theme, its colours and the feel of every touch, applied as you choose.</string>
+    <string name="welcome_work_kicker">Your work</string>
+    <string name="welcome_work_title">Your work, your way</string>
+    <string name="welcome_work_text">Where exports go and how they are made, the projects kept for later, and a word when a file is ready.</string>
     <string name="welcome_formats_kicker">Formats</string>
     <string name="welcome_formats_title">Any file in, the right one out</string>
     <string name="welcome_formats_text">Videos, sounds, pictures, GIFs, SVG, even text from what is said, or your very own FFmpeg command, written with help in the command studio. Tap a format to see what it is good for.</string>
@@ -2058,7 +2106,7 @@
 
     <string name="welcome_smart_kicker">Smart features</string>
     <string name="welcome_smart_title">Smart, and still offline</string>
-    <string name="welcome_smart_text">AI models that work right on the phone, never online. You download the ones you want with your browser and import them; the app checks every file before using it.</string>
+    <string name="welcome_smart_text">AI models that work right on the phone, never online: you download the ones you want and import them. The AI check tells whether a picture, a sound or a video was made or changed with AI.</string>
     <string name="welcome_smart_words">Every word you say, written right on time</string>
     <string name="welcome_smart_speech_title">Subtitles from speech</string>
     <string name="welcome_smart_speech_text">Captions word by word, styled as you like, or a transcript as .srt or .txt.</string>
@@ -2172,6 +2220,7 @@
     <string name="overlay_fit_title">Fit to the frame</string>
     <string name="overlay_fit">Fit</string>
     <string name="overlay_fill">Fill</string>
+    <string name="overlay_stretch">Stretch</string>
     <string name="overlay_full_width">Full width</string>
     <string name="overlay_center">Centre</string>
     <string name="overlay_layers">Layers</string>

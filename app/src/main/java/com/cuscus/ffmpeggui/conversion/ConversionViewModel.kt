@@ -40,6 +40,7 @@ import com.cuscus.ffmpeggui.core.engine.ConversionStage
 import com.cuscus.ffmpeggui.core.engine.CoverArtist
 import com.cuscus.ffmpeggui.export.ExportNotifier
 import com.cuscus.ffmpeggui.export.ExportResult
+import com.cuscus.ffmpeggui.core.preview.ReversedSoundRequest
 import com.cuscus.ffmpeggui.core.project.IntoProject
 import com.cuscus.ffmpeggui.projects.ProjectJson
 import com.cuscus.ffmpeggui.projects.ProjectStore
@@ -56,6 +57,7 @@ import com.cuscus.ffmpeggui.core.engine.TextSourceReader
 import com.cuscus.ffmpeggui.core.model.MetadataTags
 import com.cuscus.ffmpeggui.core.model.AudioEncoding
 import com.cuscus.ffmpeggui.core.model.AudioEffects
+import com.cuscus.ffmpeggui.core.model.CanvasFit
 import com.cuscus.ffmpeggui.core.model.CanvasRatio
 import com.cuscus.ffmpeggui.core.model.CpuEncoderSpeed
 import com.cuscus.ffmpeggui.core.model.HardwareEncoder
@@ -64,6 +66,7 @@ import com.cuscus.ffmpeggui.core.model.FrameExtractionMode
 import com.cuscus.ffmpeggui.core.model.GifSettings
 import com.cuscus.ffmpeggui.core.image.editedSize
 import com.cuscus.ffmpeggui.core.image.fittedPhoto
+import com.cuscus.ffmpeggui.core.image.stretchedPhoto
 import com.cuscus.ffmpeggui.core.image.pictureSize
 import com.cuscus.ffmpeggui.core.model.PictureCanvas
 import com.cuscus.ffmpeggui.core.model.ImagePlacement
@@ -184,8 +187,77 @@ class ConversionViewModel(
     /** Draws a shape layer into a picture (see ShapeRenderer), off the main thread; null draws none. */
     private val shapeRenderer: ((ShapeLayer) -> String?)? = null,
     private val subtitleParser: SubtitleParser = SubtitleParser(),
+    /** Writes the sound of clips played backwards reversed, for the preview; null leaves them silent. */
+    private val soundReverser: com.cuscus.ffmpeggui.core.engine.SoundReverser? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
+
+    // ---------------------------------------------------------------------
+    // The sound of clips played backwards, for the preview
+    // ---------------------------------------------------------------------
+
+    /** The reversed sounds made so far, by the part of a file they hold (see ReversedSound). */
+    private val _reversedSounds = MutableStateFlow<Map<ReversedSoundRequest, String>>(emptyMap())
+    val reversedSounds: StateFlow<Map<ReversedSoundRequest, String>> = _reversedSounds.asStateFlow()
+
+    /** The reversing under way, or null. */
+    private val _reversing = MutableStateFlow<ReversingProgress?>(null)
+    val reversing: StateFlow<ReversingProgress?> = _reversing.asStateFlow()
+
+    private var reverseJob: Job? = null
+
+    /** What the running job makes, in order. */
+    private var reverseQueue: List<ReversedSoundRequest> = emptyList()
+
+    /**
+     * Parts not made: stopped by the user or failed. They are not asked again
+     * until they stop being wanted (the clip played forwards again, or trimmed).
+     */
+    private val reverseDeclined = HashSet<ReversedSoundRequest>()
+
+    /**
+     * The preview plays [wanted] backwards (a clip each, see
+     * reversedSoundRequests): those not made yet are made, one after the
+     * other, the window showing it meanwhile.
+     */
+    fun wantReversedSounds(wanted: List<ReversedSoundRequest>) {
+        val reverser = soundReverser ?: return
+        val unique = wanted.distinct()
+        reverseDeclined.retainAll(unique.toSet())
+        val missing = unique.filter { it !in _reversedSounds.value && it !in reverseDeclined }
+        if (missing == reverseQueue && reverseJob?.isActive == true) return
+        reverseJob?.cancel()
+        reverseQueue = missing
+        if (missing.isEmpty()) {
+            _reversing.value = null
+            return
+        }
+        reverseJob = viewModelScope.launch {
+            missing.forEachIndexed { index, request ->
+                _reversing.value = ReversingProgress(done = index, total = missing.size)
+                val file = reverser.reverse(request) { part ->
+                    // The whole of the work done so far.
+                    _reversing.value = ReversingProgress(done = index, total = missing.size, fraction = (index + part) / missing.size)
+                }
+                if (file != null) {
+                    _reversedSounds.update { it + (request to file) }
+                } else {
+                    reverseDeclined += request
+                }
+            }
+            _reversing.value = null
+            reverseQueue = emptyList()
+        }
+    }
+
+    /** The window's stop: the parts still to make are not made, and those clips stay silent backwards. */
+    fun stopReversing() {
+        reverseJob?.cancel()
+        reverseJob = null
+        reverseDeclined += reverseQueue.filter { it !in _reversedSounds.value }
+        reverseQueue = emptyList()
+        _reversing.value = null
+    }
 
     // ---------------------------------------------------------------------
     // Input and media info
@@ -687,6 +759,7 @@ class ConversionViewModel(
     fun setQualityLevel(v: Float) = mutate(stepKey = "quality") { it.copy(qualityLevel = v) }
     fun setKeepHdr(v: Boolean) = mutate { it.copy(keepHdr = v) }
     fun setProjectRatio(v: CanvasRatio) = mutate { it.copy(projectRatio = v) }
+    fun setProjectFit(v: CanvasFit) = mutate { it.copy(projectFit = v) }
     fun setCustomCommand(v: String) = mutate(stepKey = "custom") { it.copy(customCommand = v) }
 
     /**
@@ -1408,22 +1481,31 @@ class ConversionViewModel(
      * as one undo step. With a canvas, the picture becomes a layer on it (see
      * [PHOTO_LAYER_ID]): new, it lies under every text and sticker, centred and
      * as large as the canvas holds it whole; a canvas that only changes keeps it
-     * where it is. Without one, the picture is the canvas again.
+     * where it is, or, stretched to fill it, stretches it to its new shape.
+     * Without one, the picture is the canvas again.
      */
     fun setPictureCanvas(canvas: PictureCanvas?) = mutate { settings ->
         val others = settings.imageOverlays.filter { !it.isPhoto }
         if (canvas == null) return@mutate settings.copy(imageEdit = settings.imageEdit.copy(canvas = null), imageOverlays = others)
         val sane = canvas.sane()
-        val existing = settings.imageOverlays.firstOrNull { it.isPhoto }
+        val clip = settings.playingClips.firstOrNull()
+        val source = clip?.let { settings.source(it.sourceId) }
+        val (w, h) = pictureSize(
+            settings.imageEdit,
+            settings.wholeEffects,
+            source?.info?.width?.takeIf { it > 0 } ?: DEFAULT_PICTURE_SIDE,
+            source?.info?.height?.takeIf { it > 0 } ?: DEFAULT_PICTURE_SIDE,
+        )
+        val before = settings.imageEdit.canvas?.sane()
+        val existing = settings.imageOverlays.firstOrNull { it.isPhoto }?.let { photo ->
+            // Stretched to fill the canvas it had: stretched to fill this one.
+            val filled = before != null && photo.laidStretch != 1f &&
+                kotlin.math.abs(photo.x - 0.5f) < 1e-3f && kotlin.math.abs(photo.y - 0.5f) < 1e-3f &&
+                kotlin.math.abs(photo.scaleW - 1f) < 1e-3f &&
+                kotlin.math.abs(photo.stretch - stretchedPhoto(before, w, h).stretch) < 1e-3f
+            if (filled) photo.copy(stretch = stretchedPhoto(sane, w, h).stretch) else photo
+        }
         val photo = existing ?: run {
-            val clip = settings.playingClips.firstOrNull()
-            val source = clip?.let { settings.source(it.sourceId) }
-            val (w, h) = pictureSize(
-                settings.imageEdit,
-                settings.wholeEffects,
-                source?.info?.width?.takeIf { it > 0 } ?: DEFAULT_PICTURE_SIDE,
-                source?.info?.height?.takeIf { it > 0 } ?: DEFAULT_PICTURE_SIDE,
-            )
             val fit = fittedPhoto(sane, w, h)
             // Under everything already laid on the picture.
             val bottom = ((settings.textOverlays.filter { it.clipId == null }.map { it.layer } + others.filter { it.clipId == null }.map { it.layer }).minOrNull() ?: 0) - 1
@@ -1444,9 +1526,10 @@ class ConversionViewModel(
 
     /**
      * The picture on its canvas, centred: as large as the canvas holds it whole
-     * ([fill] false), or covering the whole canvas ([fill] true, its edges cut).
+     * ([CanvasFit.FIT]), covering the whole canvas (its edges cut), or pulled to
+     * the canvas's shape, filling it with nothing cut ([CanvasFit.STRETCH]).
      */
-    fun fitPictureOnCanvas(fill: Boolean) = mutate { settings ->
+    fun fitPictureOnCanvas(fit: CanvasFit) = mutate { settings ->
         val canvas = settings.imageEdit.canvas?.sane() ?: return@mutate settings
         val photo = settings.imageOverlays.firstOrNull { it.isPhoto } ?: return@mutate settings
         val source = settings.playingClips.firstOrNull()?.let { settings.source(it.sourceId) }
@@ -1456,14 +1539,19 @@ class ConversionViewModel(
             source?.info?.width?.takeIf { it > 0 } ?: DEFAULT_PICTURE_SIDE,
             source?.info?.height?.takeIf { it > 0 } ?: DEFAULT_PICTURE_SIDE,
         )
-        val fit = fittedPhoto(canvas, w, h)
+        val whole = fittedPhoto(canvas, w, h)
         // Covering: as wide as needed for its height to fill the canvas too.
         val pictureRatio = w.toFloat() / h.coerceAtLeast(1)
         val canvasRatio = canvas.width.toFloat() / canvas.height
-        val width = if (fill) maxOf(1f, canvasRatio / pictureRatio).coerceAtMost(ImagePlacement.MAX_WIDTH) else fit.widthFraction
+        val width = when (fit) {
+            CanvasFit.FIT -> whole.widthFraction
+            CanvasFit.FILL -> maxOf(1f, canvasRatio / pictureRatio).coerceAtMost(ImagePlacement.MAX_WIDTH)
+            CanvasFit.STRETCH -> 1f
+        }
+        val stretch = if (fit == CanvasFit.STRETCH) stretchedPhoto(canvas, w, h).stretch else 1f
         settings.copy(
             imageOverlays = settings.imageOverlays.map {
-                if (it.isPhoto) it.copy(x = 0.5f, y = 0.5f, scaleW = width, rotationDegrees = 0f, aspect = pictureRatio) else it
+                if (it.isPhoto) it.copy(x = 0.5f, y = 0.5f, scaleW = width, rotationDegrees = 0f, aspect = pictureRatio, stretch = stretch) else it
             },
         )
     }
@@ -3262,6 +3350,7 @@ class ConversionViewModel(
                     outputDirectory = container.outputDirectory,
                     work = container.workReports,
                     shapeRenderer = container.shapeRenderer::render,
+                    soundReverser = container.soundReverser,
                 )
             }
         }
@@ -3309,3 +3398,9 @@ private const val EFFECT_LAYER_GAP = 1_000
 
 /** How long a new effect lasts. */
 private const val EFFECT_LENGTH_MS = 5_000L
+
+/**
+ * How far the reversing of clips for the preview has come: [done] of [total]
+ * parts, [fraction] (0..1) of the whole work.
+ */
+data class ReversingProgress(val done: Int, val total: Int, val fraction: Float = done.toFloat() / total.coerceAtLeast(1))

@@ -101,13 +101,14 @@ import kotlin.math.abs
 import kotlin.math.floor
 
 /*
- * The welcome: the first thing the app shows, once. Eleven pages, swiped or
- * stepped through with the big button: what the app is (its logo, large), every
- * format it makes, the editor, the smart
- * features, why nothing leaves the phone, then the settings that matter on day
- * one, set right there and applied at once (the colours flow into the new
- * theme on this very screen), and a last page that celebrates and sums up what
- * was chosen, each choice a chip that goes back to its page.
+ * The welcome: the first thing the app shows, once. Seven pages, swiped or
+ * stepped through with the big button: what the app is (its logo, large), what
+ * it does (formats, the video editor, the photo editor, a part each), the smart
+ * features and the AI check, why nothing leaves the phone, then the settings
+ * that matter on day one (the look and feel; exports, projects and
+ * notifications), set right there and applied at once (the colours flow into
+ * the new theme on this very screen), and a last page that celebrates and sums
+ * up what was chosen, each choice a chip that goes back to its page and part.
  *
  * Behind the pages two big MaterialShapes morph from one page's pair to the
  * next as the pages are swiped, turning slowly, in the page's colours; the
@@ -117,7 +118,7 @@ import kotlin.math.floor
  */
 
 /** The welcome's pages, in order. */
-internal enum class WelcomePage { HELLO, FORMATS, EDITOR, SMART, PRIVATE, LOOK, FEEL, EXPORTS, PROJECTS, NOTIFY, READY }
+internal enum class WelcomePage { HELLO, MAKES, SMART, PRIVATE, YOURS, WORK, READY }
 
 @Composable
 fun WelcomeScreen(
@@ -168,6 +169,10 @@ private fun WelcomeContent(
     val pager = rememberPagerState { pages.size }
     val pageSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
     var openSmart by rememberSaveable { mutableStateOf(false) }
+    // The part shown on each page that has several (see WelcomeTabs.kt).
+    var makesPart by rememberSaveable { mutableStateOf(MakesPart.FORMATS) }
+    var yoursPart by rememberSaveable { mutableStateOf(YoursPart.LOOK) }
+    var workPart by rememberSaveable { mutableStateOf(WorkPart.EXPORTS) }
     val smartReady = speechReady && cutoutReady
 
     val goTo: (Int) -> Unit = { page -> scope.launch { pager.animateScrollToPage(page, animationSpec = pageSpec) } }
@@ -245,15 +250,25 @@ private fun WelcomeContent(
                 val motion = PageMotion(pager, index, pager.currentPage == index)
                 when (pages[index]) {
                     WelcomePage.HELLO -> HelloPage(motion)
-                    WelcomePage.FORMATS -> FormatsPage(motion)
-                    WelcomePage.EDITOR -> EditorPage(motion)
+                    WelcomePage.MAKES -> MakesPage(motion, makesPart, onPart = { makesPart = it })
                     WelcomePage.SMART -> SmartPage(motion, speechReady, cutoutReady, openSmart, onOpenSmart = { openSmart = it })
                     WelcomePage.PRIVATE -> PrivatePage(motion)
-                    WelcomePage.LOOK -> LookPage(motion, settings, onChange)
-                    WelcomePage.FEEL -> FeelPage(motion, settings, onChange)
-                    WelcomePage.EXPORTS -> ExportsPage(motion, settings, onChange, calibration, canCalibrate, onCalibrate, onStopCalibration)
-                    WelcomePage.PROJECTS -> ProjectsPage(motion, settings, onChange, projects, onDeleteAllProjects, onKeepProjects)
-                    WelcomePage.NOTIFY -> NotifyPage(motion, settings, onChange, access)
+                    WelcomePage.YOURS -> YoursPage(motion, yoursPart, onPart = { yoursPart = it }, settings, onChange)
+                    WelcomePage.WORK -> WorkPage(
+                        motion = motion,
+                        part = workPart,
+                        onPart = { workPart = it },
+                        settings = settings,
+                        onChange = onChange,
+                        calibration = calibration,
+                        canCalibrate = canCalibrate,
+                        onCalibrate = onCalibrate,
+                        onStopCalibration = onStopCalibration,
+                        projects = projects,
+                        onDeleteAllProjects = onDeleteAllProjects,
+                        onKeepProjects = onKeepProjects,
+                        notifications = access,
+                    )
                     WelcomePage.READY -> ReadyPage(
                         motion = motion,
                         settings = settings,
@@ -261,7 +276,15 @@ private fun WelcomeContent(
                         notificationsAllowed = allowed,
                         smartReady = smartReady,
                         openSmart = openSmart,
-                        onJump = { page -> goTo(page.ordinal) },
+                        onJump = { page, part ->
+                            // Straight to the part the choice was made on.
+                            when (part) {
+                                is YoursPart -> yoursPart = part
+                                is WorkPart -> workPart = part
+                                is MakesPart -> makesPart = part
+                            }
+                            goTo(page.ordinal)
+                        },
                     )
                 }
             }
@@ -476,15 +499,11 @@ private val GAP = 6.dp
 /** The two big shapes behind each page. */
 private fun backdropShapes(page: WelcomePage): Pair<RoundedPolygon, RoundedPolygon> = when (page) {
     WelcomePage.HELLO -> MaterialShapes.Cookie12Sided to MaterialShapes.Sunny
-    WelcomePage.FORMATS -> MaterialShapes.Clover4Leaf to MaterialShapes.Cookie9Sided
-    WelcomePage.EDITOR -> MaterialShapes.Pill to MaterialShapes.Flower
+    WelcomePage.MAKES -> MaterialShapes.Clover4Leaf to MaterialShapes.Cookie9Sided
     WelcomePage.SMART -> MaterialShapes.SoftBurst to MaterialShapes.Clover8Leaf
     WelcomePage.PRIVATE -> MaterialShapes.Cookie4Sided to MaterialShapes.Gem
-    WelcomePage.LOOK -> MaterialShapes.Flower to MaterialShapes.Cookie6Sided
-    WelcomePage.FEEL -> MaterialShapes.Sunny to MaterialShapes.SoftBurst
-    WelcomePage.EXPORTS -> MaterialShapes.Cookie7Sided to MaterialShapes.Clover4Leaf
-    WelcomePage.PROJECTS -> MaterialShapes.Cookie9Sided to MaterialShapes.Pill
-    WelcomePage.NOTIFY -> MaterialShapes.Clover8Leaf to MaterialShapes.Cookie12Sided
+    WelcomePage.YOURS -> MaterialShapes.Flower to MaterialShapes.Cookie6Sided
+    WelcomePage.WORK -> MaterialShapes.Cookie7Sided to MaterialShapes.Clover4Leaf
     WelcomePage.READY -> MaterialShapes.Cookie12Sided to MaterialShapes.Flower
 }
 

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BlurOn
+import androidx.compose.material.icons.rounded.ZoomOutMap
 import androidx.compose.material.icons.rounded.BorderOuter
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.CropFree
@@ -394,26 +395,40 @@ internal fun OverlayBlurCard(look: OverlayLook, onLook: LookChange) {
 internal enum class FitMode(val labelRes: Int, val icon: ImageVector) {
     FIT(R.string.overlay_fit, Icons.Rounded.FitScreen),
     FILL(R.string.overlay_fill, Icons.Rounded.Fullscreen),
+    STRETCH(R.string.overlay_stretch, Icons.Rounded.ZoomOutMap),
     WIDTH(R.string.overlay_full_width, Icons.Rounded.ViewWeek),
     CENTER(R.string.overlay_center, Icons.Rounded.CenterFocusStrong),
 }
 
 /**
  * [overlay] fitted to a frame of [frameRatio] (width / height) by [mode], centred:
- * whole inside it, covering it (cut by it), as wide as it, or simply centred.
+ * whole inside it, covering it (cut by it), pulled to its shape (filling it with
+ * nothing cut), as wide as it, or simply centred. Fitting it whole or covering
+ * gives it its own shape back; the others keep its stretch.
  */
 internal fun ImageOverlay.fittedTo(mode: FitMode, frameRatio: Float): ImageOverlay {
     if (mode == FitMode.CENTER) return copy(x = 0.5f, y = 0.5f)
-    val laid = look.laidAspect(aspect).takeIf { it > 0f } ?: 1f
     val room = 1f + 2f * look.margin
+    if (mode == FitMode.STRETCH) {
+        // The picture's shape that makes its box (with its outline's room) the frame's
+        // (see OverlayLook.laidAspect); its own shape not known: covering instead.
+        val margins = 2f * look.margin
+        val inverse = (1f + margins) / frameRatio - margins
+        if (aspect <= 0f || inverse <= 0f) return fittedTo(FitMode.FILL, frameRatio)
+        // Its shown part (see OverlayLook.shownAspect) pulled to that shape.
+        val stretch = com.cuscus.ffmpeggui.core.model.ImagePlacement.saneStretch(1f / inverse / look.shownAspect(aspect).coerceAtLeast(1e-3f))
+        return copy(x = 0.5f, y = 0.5f, scaleW = (1f / room).coerceIn(0.02f, com.cuscus.ffmpeggui.core.model.ImagePlacement.MAX_WIDTH), stretch = stretch)
+    }
+    val own = if (mode == FitMode.WIDTH) this else copy(stretch = 1f)
+    val laid = look.laidAspect(own.aspect * own.laidStretch).takeIf { it > 0f } ?: 1f
     val boxWidth = when (mode) {
         FitMode.FIT -> min(1f, laid / frameRatio)
         FitMode.FILL -> maxOf(1f, laid / frameRatio)
         FitMode.WIDTH -> 1f
-        FitMode.CENTER -> error("Handled above")
+        FitMode.CENTER, FitMode.STRETCH -> error("Handled above")
     }
     val width = (boxWidth / room).coerceIn(0.02f, com.cuscus.ffmpeggui.core.model.ImagePlacement.MAX_WIDTH)
-    return copy(x = 0.5f, y = 0.5f, scaleW = width)
+    return own.copy(x = 0.5f, y = 0.5f, scaleW = width)
 }
 
 /** Fit, fill, full width, centre; then the layers: to the front, forward, backward, to the back. */

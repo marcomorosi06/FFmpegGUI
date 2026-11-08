@@ -128,7 +128,7 @@ enum class Rotation(val degrees: Int) {
     DEG_270(270),
 }
 
-/** Aspect ratio of the output canvas; anything but [FIT] letterboxes the picture. */
+/** Aspect ratio of the output canvas; anything but [FIT] puts the picture on it as [CanvasFit] says. */
 enum class CanvasRatio(val width: Int, val height: Int) {
     FIT(0, 0),
     SQUARE(1, 1),
@@ -140,6 +140,15 @@ enum class CanvasRatio(val width: Int, val height: Int) {
     val ratio: Float?
         get() = if (this == FIT) null else width.toFloat() / height
 }
+
+/**
+ * How the picture meets a canvas of another shape ([CanvasRatio] other than
+ * its FIT): whole with black around it ([FIT]), covering it with its edges
+ * cut ([FILL]), or pulled to its shape, nothing cut and nothing black around
+ * ([STRETCH]). The canvas is as large either way: the frame grown to the
+ * ratio (see VideoFilters).
+ */
+enum class CanvasFit { FIT, FILL, STRETCH }
 
 enum class FrameExtractionMode { DISABLED, SINGLE, SEQUENCE }
 

@@ -137,8 +137,16 @@ data class ImageOverlay(
     val hidden: Boolean = false,
     /** Not picked nor moved by hand on the picture (the layers list's lock). */
     val locked: Boolean = false,
+    /**
+     * How many times wider than its own shape it is laid, 1 keeping it (see
+     * ImagePlacement.stretch): pulled to the frame's shape, it fills it whole.
+     */
+    val stretch: Float = 1f,
 ) {
     val isVideo: Boolean get() = video != null
+
+    /** [stretch] as the export lays it (see ImagePlacement.saneStretch). */
+    val laidStretch: Float get() = com.cuscus.ffmpeggui.core.model.ImagePlacement.saneStretch(stretch)
 
     /** True for one of the app's own effects (see [effect]). */
     val isEffect: Boolean get() = effect != null

@@ -1010,8 +1010,10 @@ class CommandBuilder(fonts: FontProvider) {
         return "scale=w=$width:h=$height:force_original_aspect_ratio=increase,crop=w=$width:h=$height"
     }
 
-    private fun overlayScale(frameWidth: Int, fraction: Float): String {
+    private fun overlayScale(frameWidth: Int, fraction: Float, stretch: Float = 1f): String {
         val width = (Math.floor(frameWidth.coerceAtLeast(2) * fraction / 2.0) * 2).toInt().coerceAtLeast(2)
+        // Stretched: as wide, and that many times less high than its shape (square pixels after).
+        if (stretch != 1f) return "scale=w=$width:h='max(2,trunc(ow/dar/${fmt("%.4f", stretch)}/2)*2)',setsar=1"
         return "scale=w=$width:h='max(2,trunc(ow/dar/2)*2)'"
     }
 
@@ -1072,7 +1074,8 @@ class CommandBuilder(fonts: FontProvider) {
             else -> clipFrame(request, first) ?: (source.width to source.height)
         }
         var (w, h) = turnedAndCropped(request.effects, joined.first, joined.second)
-        // The canvas (see VideoFilters.padFilter): the frame grows to the ratio, even sides.
+        // The canvas (see VideoFilters.canvasFilter): the frame grows to the ratio, even sides,
+        // whether the picture is whole on it, covers it or is stretched to it.
         request.canvas.ratio?.let { ratio ->
             val paddedW = Math.ceil(maxOf(w.toDouble(), h * ratio.toDouble()) / 2.0) * 2
             val paddedH = Math.ceil(maxOf(h.toDouble(), w / ratio.toDouble()) / 2.0) * 2
@@ -1264,7 +1267,7 @@ class CommandBuilder(fonts: FontProvider) {
             val cover = placement.cover && timed
             // A smaller fist fades out towards its frame's edges, so that its arm is not cut there.
             val feathered = cover && placement.stackedAlpha && placement.coverSize < ImagePlacement.FULL_COVER
-            segments += "[$source]" + (if (cover) coverScale(frameWidth, frameHeight, placement.coverSize) else overlayScale(frameWidth, fraction)) +
+            segments += "[$source]" + (if (cover) coverScale(frameWidth, frameHeight, placement.coverSize) else overlayScale(frameWidth, fraction, placement.saneStretch)) +
                 (if (feathered) ",$FEATHER_EDGES" else "") + "[$scaled]"
             // Its look, at the size it shows: blur, shape, outline and shadow.
             val looked = if (decorated) "${prefix}ovl$index" else scaled
@@ -1464,7 +1467,7 @@ class CommandBuilder(fonts: FontProvider) {
         val segments = mutableListOf<String>()
         val largest = keys.range(KeyProperty.SIZE, placement.widthFraction).endInclusive.coerceIn(0.01f, ImagePlacement.MAX_WIDTH)
         val sized = "${label}s"
-        segments += "[$source]${overlayScale(frameWidth, largest)}[$sized]"
+        segments += "[$source]${overlayScale(frameWidth, largest, placement.saneStretch)}[$sized]"
 
         val chain = mutableListOf("format=rgba")
         var current = sized
@@ -1503,7 +1506,7 @@ class CommandBuilder(fonts: FontProvider) {
         val place = if (turns) {
             // The square's side is the picture's diagonal; the tight box of the turned picture
             // is worked out from the picture's shape (square when it is not known).
-            val aspect = placement.look.laidAspect(placement.aspect).takeIf { it > 0f } ?: 1f
+            val aspect = placement.look.laidAspect(placement.laidPictureAspect).takeIf { it > 0f } ?: 1f
             val diagonal = Math.hypot(aspect.toDouble(), 1.0)
             val c = fmt("%.6f", aspect / diagonal)
             val sn = fmt("%.6f", 1.0 / diagonal)

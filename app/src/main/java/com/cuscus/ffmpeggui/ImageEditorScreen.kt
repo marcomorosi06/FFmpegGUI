@@ -322,7 +322,7 @@ fun ImageEditorScreen(
     /** Gives the picture a canvas of its own, or takes it away (null): see ConversionViewModel.setPictureCanvas. */
     onPictureCanvas: (PictureCanvas?) -> Unit = {},
     /** Centres the picture on its canvas, whole (false) or covering it (true). */
-    onFitPictureOnCanvas: (Boolean) -> Unit = {},
+    onFitPictureOnCanvas: (com.cuscus.ffmpeggui.core.model.CanvasFit) -> Unit = {},
     /** Changes a shape layer; the key groups quick changes into one undo step. */
     onUpdateShape: (String, String?, (ShapeLayer) -> ShapeLayer) -> Unit = { _, _, _ -> },
     /** Keeps where the picture goes on a screen wider than it is tall (the top bar's switch). */
@@ -1207,6 +1207,7 @@ fun ImageEditorScreen(
                     onCanvas = onPictureCanvas,
                     onFit = onFitPictureOnCanvas,
                     onSelectPicture = { select(PHOTO_LAYER_ID) },
+                    pictureFit = photoFit(imageOverlays.firstOrNull { it.isPhoto }, imageEdit.canvas, pictureFull.first, pictureFull.second),
                 )
                 ImageTool.STRAIGHTEN -> ImageStraightenPanel(imageEdit, onImageEdit)
                 ImageTool.ADJUST -> ImageAdjustPanel(imageEdit.tone, onImageEdit)

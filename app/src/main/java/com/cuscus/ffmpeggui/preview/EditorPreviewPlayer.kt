@@ -16,9 +16,12 @@ import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.image.ImageOutput
 import com.cuscus.ffmpeggui.core.audio.AudioStage
 import com.cuscus.ffmpeggui.core.preview.PreviewTimeline
+import com.cuscus.ffmpeggui.core.preview.ReversedSound
+import com.cuscus.ffmpeggui.core.preview.ReversedSoundRequest
 import com.cuscus.ffmpeggui.core.preview.PreviewTimeline.MediaPoint
 import com.cuscus.ffmpeggui.core.preview.PreviewTimeline.SegmentTiming
 import com.cuscus.ffmpeggui.core.preview.fadeLevel
@@ -28,6 +31,7 @@ import com.cuscus.ffmpeggui.core.preview.volumeToDecibels
 import com.cuscus.ffmpeggui.core.model.SpeedCurve
 import com.cuscus.ffmpeggui.core.model.Transition
 import com.cuscus.ffmpeggui.core.model.TransitionKind
+import com.cuscus.ffmpeggui.debug.DebugBench
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.ln
@@ -111,6 +115,12 @@ data class PreviewSnapshot(
     val incomingPlayedMs: Long = 0L,
     /** The clip [EditorPreviewPlayer.incomingPlayer] holds (also just before its transition), -1 for none. */
     val incomingLoaded: Int = -1,
+    /**
+     * The clip on screen goes backwards and its part reversed by FFmpeg is
+     * playing: its picture (EditorPreviewPlayer.reversePlayer) is shown in the
+     * clip's place.
+     */
+    val reversedPicture: Boolean = false,
 )
 
 /**
@@ -159,6 +169,87 @@ class EditorPreviewPlayer(context: Context) {
     val incomingPlayer: ExoPlayer = processingPlayer(context, AudioEffectsProcessor({ liveAudio.stages }, liveAudio.meter))
 
     private val voices = SoundVoices(context, liveAudio)
+
+    /**
+     * Plays a clip going backwards: its part of the file reversed by FFmpeg,
+     * picture and sound (see ReversedSound, setReversedSounds), forwards, in the
+     * clip's place. Bind it to a surface over the clip's own (shown while
+     * [PreviewSnapshot.reversedPicture]). Still and silent when there is none.
+     */
+    val reversePlayer: ExoPlayer = processingPlayer(context, AudioEffectsProcessor({ liveAudio.stages }, liveAudio.meter)).apply {
+        repeatMode = Player.REPEAT_MODE_OFF
+    }
+    private val reverseBooster = GainBooster()
+    private var reverseLoaded: Uri? = null
+    private var reverseParameters: PlaybackParameters? = null
+    private var reverseSeekNanos = 0L
+
+    /**
+     * The reversed part plays where it should: the clock follows it, and its
+     * picture (when it has one) is shown instead of stepping the footage back.
+     */
+    private var reverseInStep = false
+    private var reverseShowsPicture = false
+
+    /** Each clip's reversed sound (lined up with the sequence), null for none. */
+    private var reversedSounds: List<Pair<ReversedSoundRequest, Uri>?> = emptyList()
+
+    /**
+     * The reversed sound of each clip of the sequence, lined up with it: the part
+     * of its file it holds and the file, or null (the clip plays forwards, or its
+     * sound is not made yet: it goes backwards in silence).
+     */
+    fun setReversedSounds(sounds: List<Pair<ReversedSoundRequest, Uri>?>) {
+        reversedSounds = sounds
+    }
+
+    /**
+     * A build that can be debugged reports what the main player goes through
+     * (Media3's EventLogger: decoders, audio underruns, dropped frames, states)
+     * and every seek the clock asks for, under the tag "PreviewPlayer", and
+     * counts them on the debug dashboard (DebugBench): what issue #35 (a
+     * sped-up preview that crackles and stutters) is looked into with.
+     */
+    private val diagnosing = DebugBench.isDebuggable(context)
+
+    init {
+        if (diagnosing) {
+            videoPlayer.addAnalyticsListener(androidx.media3.exoplayer.util.EventLogger(TAG))
+            videoPlayer.addAnalyticsListener(
+                object : AnalyticsListener {
+                    override fun onAudioUnderrun(
+                        eventTime: AnalyticsListener.EventTime,
+                        bufferSize: Int,
+                        bufferSizeMs: Long,
+                        elapsedSinceLastFeedMs: Long,
+                    ) {
+                        DebugBench.underruns.intValue++
+                    }
+
+                    override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
+                        DebugBench.droppedFrames.intValue += droppedFrames
+                    }
+
+                    override fun onAudioDecoderInitialized(
+                        eventTime: AnalyticsListener.EventTime,
+                        decoderName: String,
+                        initializedTimestampMs: Long,
+                        initializationDurationMs: Long,
+                    ) {
+                        DebugBench.audioDecoder = decoderName
+                    }
+
+                    override fun onAudioInputFormatChanged(
+                        eventTime: AnalyticsListener.EventTime,
+                        format: androidx.media3.common.Format,
+                        decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
+                    ) {
+                        Log.d(TAG, "audio input: ${format.sampleMimeType}, ${format.sampleRate} Hz, ${format.channelCount} ch, ${format.bitrate} b/s")
+                    }
+                },
+            )
+        }
+    }
 
     /** Invoked with the decoded frame size whenever it changes. */
     var onVideoSize: ((width: Int, height: Int) -> Unit)? = null
@@ -303,6 +394,7 @@ class EditorPreviewPlayer(context: Context) {
         startOutputMs = 0L
 
         clips = newClips
+        if (diagnosing) DebugBench.testUri = newClips.firstOrNull()?.uri
         lengths = newClips.map { it.expectedLengthMs }.toMutableList()
         levels = newLevels
         rebuildTimeline()
@@ -462,6 +554,7 @@ class EditorPreviewPlayer(context: Context) {
         val elapsedMs = if (lastTickNanos == 0L) 0.0 else ((now - lastTickNanos) / 1_000_000.0).coerceAtMost(MAX_TICK_MS.toDouble())
         lastTickNanos = now
         settleScrub(now)
+        if (diagnosing) DebugBench.aheadMs.longValue = videoPlayer.totalBufferedDuration
 
         adoptReportedLength()
 
@@ -486,7 +579,19 @@ class EditorPreviewPlayer(context: Context) {
         // Sound played backwards cannot be produced on the fly, so it is muted meanwhile.
         val backwards = timeline.playsBackwards(point.segment)
         val fileMs = (clips.getOrNull(point.segment)?.startMs ?: 0L) + point.offsetMs
-        sourceBooster.apply(videoPlayer, if (backwards) 0f else sourceGain * clipLevels.gainAt(fileMs) * fade * clipFade * outgoingShare)
+        val clipGain = sourceGain * clipLevels.gainAt(fileMs) * fade * clipFade * outgoingShare
+        sourceBooster.apply(videoPlayer, if (backwards) 0f else clipGain)
+        // Backwards, its sound reversed by FFmpeg instead, when it has been made.
+        driveReversed(
+            sound = if (backwards) reversedSounds.getOrNull(point.segment) else null,
+            segment = point.segment,
+            clipStartMs = clips.getOrNull(point.segment)?.startMs ?: 0L,
+            fileMs = fileMs,
+            gain = clipGain,
+            rate = timeline.rateAt(mediaMs),
+            pitch = liveAudio.pitch * timeline.pitchAt(mediaMs),
+            now = now,
+        )
         incomingBooster.apply(
             incomingPlayer,
             if (incoming == null || transition == null || timeline.playsBackwards(transition.incoming)) {
@@ -517,6 +622,7 @@ class EditorPreviewPlayer(context: Context) {
             incomingFileMs = incoming?.fileMs ?: 0L,
             incomingPlayedMs = transition?.incomingPlayedMs ?: 0L,
             incomingLoaded = incomingIndex,
+            reversedPicture = backwards && reverseInStep && reverseShowsPicture,
         )
     }
 
@@ -527,9 +633,75 @@ class EditorPreviewPlayer(context: Context) {
         videoPlayer.removeListener(videoListener)
         sourceBooster.release()
         incomingBooster.release()
+        reverseBooster.release()
         voices.release()
         videoPlayer.release()
         incomingPlayer.release()
+        reversePlayer.release()
+    }
+
+    /**
+     * Keeps the reversed [sound] of the clip going backwards ([segment], whose
+     * part starts at [clipStartMs] of its file) where its footage shows
+     * [fileMs], at the clip's [rate] and [pitch] and at [gain]; with none, or
+     * paused, it is still and silent.
+     *
+     * While it plays where it should, the output clock follows it, as it follows
+     * the footage's player going forwards: the stepped picture comes to the
+     * sound, and the sound is never sought again. Driven the other way, by
+     * seeks whenever the two drifted apart, the sound broke up at every seek.
+     */
+    private fun driveReversed(
+        sound: Pair<ReversedSoundRequest, Uri>?,
+        segment: Int,
+        clipStartMs: Long,
+        fileMs: Long,
+        gain: Float,
+        rate: Float,
+        pitch: Float,
+        now: Long,
+    ) {
+        if (sound == null || !playing) {
+            reversePlayer.playWhenReady = false
+            reverseBooster.apply(reversePlayer, 0f)
+            reverseInStep = false
+            return
+        }
+        val (request, uri) = sound
+        if (uri != reverseLoaded) {
+            reverseLoaded = uri
+            reversePlayer.setMediaItem(MediaItem.fromUri(uri))
+            reversePlayer.prepare()
+            reverseSeekNanos = 0L
+        }
+        val parameters = PlaybackParameters(rate.coerceIn(MIN_RATE, MAX_RATE), androidPitch(pitch))
+        if (parameters != reverseParameters) {
+            reverseParameters = parameters
+            reversePlayer.playbackParameters = parameters
+        }
+        val target = ReversedSound.reversedMs(request, fileMs)
+        val position = reversePlayer.currentPosition
+        // On the output clock, as the footage's own drift.
+        val drift = abs(position - target) / parameters.speed.toDouble()
+        val state = reversePlayer.playbackState
+        // A sound-only file when the reversed picture could not be made: the picture is then stepped.
+        reverseShowsPicture = request.video && (uri.lastPathSegment ?: uri.toString()).endsWith(".mp4")
+        reverseInStep = state == Player.STATE_READY && reversePlayer.isPlaying && drift <= DRIFT_MS
+        if (reverseInStep) {
+            // In step: the clock follows the sound (see above).
+            val soundFileMs = request.endMs - position.coerceIn(0L, request.lengthMs)
+            outputClockMs = timeline.outputMs(timeline.mediaMs(MediaPoint(segment, (soundFileMs - clipStartMs).coerceAtLeast(0L)))).toDouble()
+        } else if (state != Player.STATE_BUFFERING && drift > DRIFT_MS && now - reverseSeekNanos >= RESEEK_NANOS) {
+            // Elsewhere (a seek, a clip starting): brought there once.
+            if (diagnosing) {
+                Log.d(TAG, "reversed sound seek: drift=${drift.toLong()} ms, rate=${parameters.speed}")
+                DebugBench.seeks.intValue++
+            }
+            reverseSeekNanos = now
+            reversePlayer.seekTo(target)
+        }
+        reversePlayer.playWhenReady = true
+        reverseBooster.apply(reversePlayer, gain)
     }
 
     // ---------------------------------------------------------------------
@@ -559,6 +731,8 @@ class EditorPreviewPlayer(context: Context) {
         stepping = timeline.playsBackwards(target.segment) || rate < MIN_RATE || rate > MAX_RATE
         if (stepping) {
             videoPlayer.playWhenReady = false
+            // The reversed part shows the clip: the footage is not stepped meanwhile.
+            if (reverseInStep && reverseShowsPicture) return targetMs
             // Wait for the previous frame to land: a new exact seek cancels a pending one.
             val landed = videoPlayer.playbackState == Player.STATE_READY
             if ((landed && now - lastStepNanos >= REVERSE_STEP_NANOS) || now - lastStepNanos >= STEP_TIMEOUT_NANOS) {
@@ -573,7 +747,8 @@ class EditorPreviewPlayer(context: Context) {
             appliedRate = rate
             appliedPitch = pitch
             // Speed and pitch apart: the player keeps the pitch when only the speed changes.
-            videoPlayer.playbackParameters = PlaybackParameters(rate, pitch)
+            videoPlayer.playbackParameters = PlaybackParameters(rate, androidPitch(pitch))
+            if (diagnosing) DebugBench.rate.floatValue = rate
         }
         videoPlayer.playWhenReady = true
 
@@ -588,6 +763,10 @@ class EditorPreviewPlayer(context: Context) {
         val drift = playerOutputMs - outputClockMs
         val behind = drift < 0 && -drift <= MAX_LAG_MS && videoPlayer.playbackState == Player.STATE_READY
         if (wrapped && abs(drift) > DRIFT_MS) {
+            if (diagnosing) {
+                Log.d(TAG, "seek at the loop: drift=${drift.toLong()} ms, rate=$rate")
+                DebugBench.seeks.intValue++
+            }
             lastSeekNanos = now
             seekPlayer(target)
             return targetMs
@@ -603,6 +782,10 @@ class EditorPreviewPlayer(context: Context) {
         } else {
             // Give a seek time to land before asking for another one.
             if (now - lastSeekNanos >= RESEEK_NANOS) {
+                if (diagnosing) {
+                    Log.d(TAG, "seek: drift=${drift.toLong()} ms, rate=$rate, state=${videoPlayer.playbackState}")
+                    DebugBench.seeks.intValue++
+                }
                 lastSeekNanos = now
                 seekPlayer(target)
             }
@@ -656,7 +839,7 @@ class EditorPreviewPlayer(context: Context) {
             if (incomingRate != rate || incomingPitch != pitch) {
                 incomingRate = rate
                 incomingPitch = pitch
-                incomingPlayer.playbackParameters = PlaybackParameters(rate, pitch)
+                incomingPlayer.playbackParameters = PlaybackParameters(rate, androidPitch(pitch))
             }
             incomingPlayer.playWhenReady = true
             // Output time between where it is and where the clock wants it.
@@ -848,6 +1031,7 @@ class EditorPreviewPlayer(context: Context) {
         if (!playing) {
             videoPlayer.playWhenReady = false
             incomingPlayer.playWhenReady = false
+            reversePlayer.playWhenReady = false
             voices.pauseAll()
         }
     }
@@ -876,9 +1060,13 @@ class EditorPreviewPlayer(context: Context) {
         /** A step that has not landed after this long is replaced by the next one. */
         const val STEP_TIMEOUT_NANOS = 600_000_000L
 
-        /** Rates the player's audio path supports; outside them clips are stepped. */
+        /**
+         * Rates the player's audio path supports; outside them clips are stepped.
+         * Android changes the speed (see processingPlayer) up to 6x
+         * (AUDIO_TIMESTRETCH_SPEED_MAX).
+         */
         const val MIN_RATE = 0.1f
-        const val MAX_RATE = 8f
+        const val MAX_RATE = 6f
 
         /** How far (output time) the player may be from the clock before it is moved there. */
         const val DRIFT_MS = 300.0

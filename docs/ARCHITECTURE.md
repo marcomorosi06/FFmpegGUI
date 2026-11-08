@@ -924,10 +924,10 @@ the export lives in `:core`, package `preview`, and is unit tested:
 |-----------------------------|------------------------------------------------------------------------|
 | clips, cuts, whole-video trim | clipped playlist; one output clock across all clips (`PreviewTimeline`) |
 | stills (pictures, freeze frames) | timed image items keep the clock; the picture is drawn over the video surface with the clip's colour and geometry |
-| rotation, flip, crop, canvas| nested view transforms and layout, clip inside whole (`PreviewGeometry`) |
+| rotation, flip, crop, canvas| nested view transforms and layout, clip inside whole (`PreviewGeometry`); on a canvas of another shape the picture laid whole, covering it or stretched to it (`fittedOnCanvas`, the export's `CanvasFit`) |
 | brightness/contrast/saturation | colour matrix equal to FFmpeg `eq`; clip and whole matrices combined |
 | speed (clip and whole)      | player rate changes from clip to clip, pitch preserved like `atempo`   |
-| reverse (clip and whole)    | the paused player is stepped backwards; source audio is muted          |
+| reverse (clip and whole)    | the clip's part reversed by FFmpeg, picture and sound, played forwards in its place (see below); until it is made the paused player is stepped backwards, silent |
 | fades (clip and whole)      | black layers + audio volume, same ramps as `fade`/`afade` (`fadeLevel`) |
 | text, image overlays        | Compose layers using the export's position and size rules, shown during their windows of the output clock with the same opacity and fade ramps; an overlay's own colour matrix, turn (a layout that reports the turned box, as the export places it) and mirrors |
 | video overlays              | a silent player per video on a `TextureView`, driven to the output clock every 50 ms (loaded 1 s before it shows); its sound plays as a placed sound |
@@ -939,6 +939,99 @@ the export lives in `:core`, package `preview`, and is unit tested:
 | sound effects (final sound, each placed sound) | sample-exact ports of the FFmpeg filters in an `AudioProcessor` of every player; pitch as the players' pitch; the waveform view drawn from the output's outline |
 | stream copy, frame extraction | filters are ignored, exactly as the export ignores them              |
 | denoise (clip and whole)    | not live, as it works over time: a badge on the picture and a mark on the clip say it is there, and the Details panel shows it close up, made by FFmpeg with the export's own filter (see "Denoise") |
+
+**Video in a frame of another shape** (issue #34; `CanvasFit` in
+`ConversionRequest.canvasFit`, `ConversionSettings.projectFit`, saved with the
+project; `VideoFilters.canvasFilter`, tested in `CanvasFitTest`). A canvas
+ratio grows the frame to its shape (one side kept, the other made larger,
+even sides) and the picture meets it in one of three ways: whole, with black
+bars (`pad`, as before); covering it, enlarged and its edges cut (`scale` with
+`force_original_aspect_ratio=increase`, then a centred `crop`); or stretched
+to it, nothing cut and nothing around it (`scale` to both sides, `setsar=1`).
+The frame is the same size each way, so the pictures and captions on it land
+alike (`wholeFrameSize`). Placed by hand (`VideoPlacement`), the picture lies
+on the black canvas as the fit lays it, times its scale. The preview lays it
+out the same way (`fittedOnCanvas`, `fittedSize`; a covering one goes past
+the canvas, which clips it), and the snapping guides use that box. The Canvas
+tool offers the three as tiles drawn as they look (`CanvasFitChooser`).
+
+**Stretched pictures** (`ImagePlacement.stretch`, `ImageOverlay.stretch`).
+Any picture laid over (a sticker, a picture on the video, the photo on its own
+canvas) can be pulled out of its shape: laid `widthFraction` wide and
+`stretch` times less high than its shape (`overlayScale`: `ow/dar/stretch`,
+then `setsar=1`), still or moving; its look is drawn on it once stretched (the
+preview's made look too, `decoratedPicture(stretch)`), and a turned one is
+placed by its stretched box (`laidPictureAspect`). Fit in the picture's
+Arrange card stretches it to the frame (`FitMode.STRETCH`; Whole and Cover give
+it its own shape back), and the photo editor's canvas puts the photo back
+whole, covering or stretched (`fitPictureOnCanvas(CanvasFit)`,
+`stretchedPhoto`); a photo stretched to its canvas is stretched again to the
+canvas's new shape when it changes, and the panel shows which of the three
+the photo lies as (`photoFit`).
+
+**Backwards clips** (`core/preview/ReversedSound`, tested; `media/FfmpegSoundReverser`;
+`ReverseSoundWindow.kt`). A player only goes forwards: stepped back frame by
+frame the picture showed about ten frames a second, and sound cannot be
+stepped at all. So FFmpeg writes the clip's part of its file reversed into a
+file of the cache named after that part (the same part is found again
+without FFmpeg; files not played for three days go at start-up). reverse and
+areverse keep all they reverse in memory: the picture is made small (480 on
+its short side, 30 frames a second, tone mapped when HDR) and reversed in
+pieces of three seconds, the last first, joined as they are; the sound is
+reversed in one go (no seam) and laid under it. Every piece is cut before
+the input, so that only it is decoded. The preview asks for the parts its
+backwards clips need (`reversedSoundRequests`: a clip's own reversal and the
+whole video's cancel out), the view model makes them one after the other
+(`wantReversedSounds`), and the player plays each forwards in its clip's
+place (`EditorPreviewPlayer.reversePlayer`, `driveReversed`: at the clip's
+rate, gain and fades; its picture over the clip's own with the same look,
+`PreviewSnapshot.reversedPicture`; while it plays in step the output clock
+follows it and the footage is not stepped). Nothing is added to the project,
+the opened file is never touched and the export reverses the clip itself.
+Meanwhile a window shows the work done, with a stop (closing it stops too);
+a part stopped or failed is not asked again until its clip stops going
+backwards, is stepped back in silence meanwhile, and its sound is drawn faint
+on the timeline (`quietClips`). When only the picture fails (its steps
+are logged under `SoundReverser`), the reversed sound is still kept, as a
+sound-only file: the player hears it and steps the picture back itself
+(`reverseShowsPicture` holds only for an `.mp4`).
+
+**Clip and whole speed together** (`ClipPace`, `ClipPaces` in
+`EditorPanels.kt`). As the volume tool lists the clips under the original
+track, the speed tool of the whole video lists the clips that play: each at
+its own speed times the whole video's (a curve's average), backwards when
+only one of the two is reversed, with a switch that sets the clip's own
+direction so that it ends up the one asked; a tap opens the clip's own speed.
+There, a hint says how the clip plays in the end when the whole video changes
+it.
+
+**Sped-up sound** (issue #35). The preview's players have Android change the
+speed and pitch (`setEnableAudioOutputPlaybackParameters`, in
+`processingPlayer`: AudioTrack's playback parameters, done in the audio
+server) instead of Media3's Sonic, which works on the player's own thread: on
+a Pixel 9 Pro a 4x MP3 came out at 0.6x with Sonic, crackling, even on a bare
+Media3 player, and at full speed without underruns with Android's, the decoder
+alone managing 11.6x (measured on the debug dashboard). Android changes the
+speed up to 6x (faster clips are stepped, as backwards ones) and the pitch
+within 0.25 to 4 (`androidPitch`). Media3 makes the speaker's buffer long
+enough for 8x, two seconds at normal speed: a change of the sound effects is
+heard that much later while playing. Made for 3x instead, a 4x preview still
+ran dry. The editor's sound effects (`AudioEffectsProcessor`) read and
+write their samples in bulk, and let the sound through untouched when there
+is no effect: one sample at a time through the buffer, sped up four times,
+was too slow on the player's thread.
+
+**Debug dashboard** (`debug/DebugDashboard.kt`, `debug/DebugBench.kt`). Only a
+build that can be debugged has it: a bubble floating over every screen, dragged
+anywhere, that opens into a small card. It picks the preview's sound path for
+issue #35 (the usual one, or Media3's Sonic as before the fix), made again
+with the editor, and counts what the main player went through (speaker
+underruns, dropped frames, seeks asked by the output clock, its rate). The same
+build logs Media3's events under "PreviewPlayer". Release builds take the
+usual path and count nothing. Its tests play the editor's first file alone
+for ten seconds at 4x (on a bare Media3 player, with Android's speed, or as
+the preview builds its players) or decode its sound as fast as the decoder
+goes, and report the speed reached.
 
 Dragging the timeline asks the preview for a frame about 20 times a second.
 Plain exact seeks would each start over before the one before had shown

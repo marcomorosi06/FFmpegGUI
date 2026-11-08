@@ -85,6 +85,11 @@ class AppContainer(
         com.cuscus.ffmpeggui.media.FfmpegDenoiseSampler(appContext, ffmpegExecutor)
     }
 
+    /** The sound of clips played backwards in the preview, reversed by FFmpeg. */
+    val soundReverser: com.cuscus.ffmpeggui.core.engine.SoundReverser by lazy {
+        com.cuscus.ffmpeggui.media.FfmpegSoundReverser(appContext, ffmpegExecutor)
+    }
+
     val conversionMessages: ConversionMessages by lazy { ConversionMessages(appContext.resources) }
 
     private val cacheJanitor: CacheJanitor by lazy { CacheJanitor(appContext) }

@@ -1,5 +1,6 @@
 package com.cuscus.ffmpeggui.core.command
 
+import com.cuscus.ffmpeggui.core.model.CanvasFit
 import com.cuscus.ffmpeggui.core.model.CanvasRatio
 import com.cuscus.ffmpeggui.core.model.VideoPlacement
 import com.cuscus.ffmpeggui.core.model.ColorSettings
@@ -165,9 +166,9 @@ internal class VideoFilters(private val fonts: FontProvider) {
         filters += geometry(effects)
         val placement = effects.placement?.takeUnless { it.isNeutral }
         if (placement == null) {
-            padFilter(request.canvas)?.let { filters += it }
+            canvasFilter(request.canvas, request.canvasFit)?.let { filters += it }
         } else {
-            filters += placed(request.canvas, placement.normalized())
+            filters += placed(request.canvas, request.canvasFit, placement.normalized())
         }
 
         val isGif = request.format == OutputFormat.GIF
@@ -266,12 +267,26 @@ internal class VideoFilters(private val fonts: FontProvider) {
      * The picture placed freely on its canvas ([VideoPlacement]): the canvas as
      * [padFilter] makes it, black, and the picture laid on it enlarged, turned
      * (its corners see-through) and with its middle where [placement] puts it.
+     * Unmoved it lies as [canvasFilter] lays it ([fit]): whole, covering the
+     * canvas, or pulled to its shape; [VideoPlacement.scale] times that.
      * Even sides, so that every encoder takes it.
      */
-    private fun placed(canvas: CanvasRatio, placement: VideoPlacement): String {
+    private fun placed(canvas: CanvasRatio, fit: CanvasFit, placement: VideoPlacement): String {
         val base = listOfNotNull(padFilter(canvas), "drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill").joinToString(",")
         val scale = fmt("%.4f", placement.scale)
-        val picture = mutableListOf("scale=w='max(2,trunc(iw*$scale/2)*2)':h='max(2,trunc(ih*$scale/2)*2)'")
+        val ratio = canvasRatioExpression(canvas)
+        val sized = when {
+            canvas == CanvasRatio.FIT || fit == CanvasFit.FIT -> "scale=w='max(2,trunc(iw*$scale/2)*2)':h='max(2,trunc(ih*$scale/2)*2)'"
+            // As large as the canvas both ways (the canvas grows one side of the picture to the ratio).
+            fit == CanvasFit.STRETCH ->
+                "scale=w='max(2,trunc(max(iw,ih*$ratio)*$scale/2)*2)':h='max(2,trunc(max(ih,iw/$ratio)*$scale/2)*2)'"
+            // Enlarged by as much as it takes to cover the canvas: the side the canvas grows.
+            else -> {
+                val cover = "max(ih*$ratio/iw,iw/(ih*$ratio))"
+                "scale=w='max(2,trunc(iw*$cover*$scale/2)*2)':h='max(2,trunc(ih*$cover*$scale/2)*2)'"
+            }
+        }
+        val picture = mutableListOf(sized)
         val turn = placement.turn
         if (kotlin.math.abs(turn) >= 0.01f) {
             val radians = fmt("%.6f", Math.toRadians(turn.toDouble()))
@@ -280,6 +295,28 @@ internal class VideoFilters(private val fonts: FontProvider) {
         return "split[vpa][vpb];[vpa]$base[vpc];[vpb]${picture.joinToString(",")}[vpd];" +
             "[vpc][vpd]overlay=x='W*${fmt("%.4f", placement.centerX)}-w/2':y='H*${fmt("%.4f", placement.centerY)}-h/2',setsar=1"
     }
+
+    /**
+     * The picture on its canvas, as [fit] says: padded with black ([padFilter]),
+     * enlarged to cover it and its edges cut, or stretched to its shape. The
+     * frame comes out the same size each way (the cut one may lose two pixels to
+     * the rounding to even sides); none for a canvas of the picture's own shape.
+     */
+    private fun canvasFilter(canvas: CanvasRatio, fit: CanvasFit): String? {
+        if (canvas == CanvasRatio.FIT) return null
+        if (fit == CanvasFit.FIT) return padFilter(canvas)
+        val ratio = canvasRatioExpression(canvas)
+        val size = "w='ceil(max(iw,ih*$ratio)/2)*2':h='ceil(max(ih,iw/$ratio)/2)*2'"
+        return when (fit) {
+            CanvasFit.STRETCH -> "scale=$size,setsar=1"
+            else -> "scale=$size:force_original_aspect_ratio=increase," +
+                "crop=w='trunc(min(iw,ih*$ratio)/2)*2':h='trunc(min(ih,iw/$ratio)/2)*2',setsar=1"
+        }
+    }
+
+    /** Width / height of [canvas] as FFmpeg reads it ("1" when square). */
+    private fun canvasRatioExpression(canvas: CanvasRatio): String =
+        if (canvas.width == canvas.height) "1" else "(${canvas.width}/${canvas.height})"
 
     private fun padFilter(canvas: CanvasRatio): String? {
         if (canvas == CanvasRatio.FIT) return null

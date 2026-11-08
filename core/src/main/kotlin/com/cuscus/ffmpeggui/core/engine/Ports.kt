@@ -33,6 +33,16 @@ sealed interface ExecutionResult {
     data class Failed(val returnCode: Int) : ExecutionResult
 }
 
+/**
+ * Writes a clip's part reversed, picture and sound, for the preview (see
+ * com.cuscus.ffmpeggui.core.preview.ReversedSound), telling [onProgress] how
+ * far it is (0..1). Returns the file's path, or null when it cannot be made.
+ * Cancelling the calling coroutine stops FFmpeg.
+ */
+fun interface SoundReverser {
+    suspend fun reverse(request: com.cuscus.ffmpeggui.core.preview.ReversedSoundRequest, onProgress: (Float) -> Unit): String?
+}
+
 /** Makes sources readable by FFmpeg as plain files. */
 fun interface SourceStager {
     /** Opens a private working area. Closing the session deletes everything in it. */

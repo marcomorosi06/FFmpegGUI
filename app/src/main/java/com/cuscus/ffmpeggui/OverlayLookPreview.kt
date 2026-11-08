@@ -62,6 +62,8 @@ internal fun decoratedPicture(
     flipVertical: Boolean,
     look: OverlayLook,
     widthPx: Int,
+    /** Laid this many times wider than its shape (see ImagePlacement.stretch): decorated once stretched. */
+    stretch: Float = 1f,
 ): Bitmap {
     val source = if (key != null) keyedBitmap(bitmap, key, ownColor) else bitmap
     val w = source.width
@@ -73,9 +75,9 @@ internal fun decoratedPicture(
     look.crop?.takeIf { look.crops }?.let { raster = OverlayDecoration.crop(raster, it) }
     // At the size it shows, as the export decorates it at the size it is laid.
     val target = widthPx.coerceIn(1, raster.width)
-    if (target != raster.width) {
+    if (target != raster.width || stretch != 1f) {
         val shown = Bitmap.createBitmap(raster.pixels, raster.width, raster.height, Bitmap.Config.ARGB_8888)
-        val height = max(1, (raster.height.toFloat() * target / raster.width).roundToInt())
+        val height = max(1, (raster.height.toFloat() * target / raster.width / stretch).roundToInt())
         val scaled = Bitmap.createScaledBitmap(shown, target, height, true)
         val out = IntArray(target * height)
         scaled.getPixels(out, 0, target, 0, 0, target, height)
