@@ -229,13 +229,23 @@ def check_markers(lock):
 STEMS = (("bandit", "BANDIT", "BANDIT_RELEASE_TAG"), ("spleeter", "INSTRUMENTS_FILE", "INSTRUMENTS_RELEASE_TAG"))
 
 
-def check_stems(name, lock):
-    """A stem model of voice/StemModels.kt against its lock: name, SHA-256, size, release tag, download address."""
+def check_stems(name, lock, strict):
+    """
+    A stem model of voice/StemModels.kt against its lock: name, SHA-256, size,
+    release tag, download address. A lock still of zeros is a problem when
+    [strict] (the whole check, before a release, or a check of that model's
+    own build); a build of another model is only told it is waiting, so that
+    the run that is to learn its pins can get through.
+    """
     kotlin = dict((n, (v, t)) for n, v, t in STEMS)[name]
     source = read(os.path.join(APP, "voice", "StemModels.kt"))
     if unpinned(lock["file_sha256"]) or lock["file_bytes"] == "0":
-        problem("scripts/%s-onnx.lock is not pinned yet: run .github/workflows/models-onnx.yml (without publishing), "
-                "then scripts/pin-stems.py with what it built" % name)
+        message = ("scripts/%s-onnx.lock is not pinned yet: run .github/workflows/models-onnx.yml (without publishing), "
+                   "then scripts/pin-stems.py with what it built" % name)
+        if strict:
+            problem(message)
+        else:
+            print("wait  " + message)
     tag = const(source, kotlin[1])
     if tag != lock["release_tag"]:
         problem("StemModels.%s is %s, scripts/%s-onnx.lock says %s" % (kotlin[1], tag, name, lock["release_tag"]))
@@ -569,8 +579,10 @@ def main():
     check_edgetam(locks["edgetam"])
     check_birefnet(locks["birefnet"])
     check_markers(markers)
+    # Only the models whose builds are checked here, when some are: else every one.
+    checked = [item.partition("=")[0] for item in args.release_dir]
     for name, _, _ in STEMS:
-        check_stems(name, locks[name])
+        check_stems(name, locks[name], strict=not checked or name in checked)
     for name in locks:
         check_bundled(name, locks[name], notices[name])
     check_markers_bundled(markers, markers_text)
