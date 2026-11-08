@@ -5,7 +5,7 @@ bandit-v2-multi.onnx is made from "Model Weights for Remastering Divide and
 Remaster: A Cinematic Audio Source Separation Dataset with Multilingual
 Support" by Karn N. Watcharasupat, Chih-Wei Wu and Iroro Orife
 (https://doi.org/10.5281/zenodo.12701995, file checkpoint-multi.ckpt,
-MD5 fea2868787551b0cff36cfcf7c3622a3, SHA-256 0000000000000000000000000000000000000000000000000000000000000000), licensed under
+MD5 fea2868787551b0cff36cfcf7c3622a3, SHA-256 abcfccf65446752a057f4a302c941479a54b7560ebf8d7bca039d2ea98e64cfc), licensed under
 Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0,
 https://creativecommons.org/licenses/by-sa/4.0/legalcode): see LICENSE, next
 to it. This file is an adaptation of those weights and is licensed under the

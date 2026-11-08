@@ -57,8 +57,8 @@ object StemModels {
      */
     val BANDIT = SpeechModel.ModelFile(
         name = "bandit-v2-multi.onnx",
-        sha256 = "0000000000000000000000000000000000000000000000000000000000000000",
-        bytes = 0L,
+        sha256 = "1601a8dc45ddea3b0d3d16378c9e0d42ba7e2b6cef3bd832d5f8e93808a65fd4",
+        bytes = 150_610_260L,
         role = SpeechModel.Role.ENCODER,
     )
 

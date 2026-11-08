@@ -197,7 +197,7 @@ It replaced Spleeter's two stems (see "Retired models").
   https://github.com/kwatcharasupat/bandit-v2 at commit
   `d5563d9031e95fdaa3e5a73d5020b9a0df61adb6` and the multilingual
   checkpoint `checkpoint-multi.ckpt` (MD5 `fea2868787551b0cff36cfcf7c3622a3`, SHA-256
-  `0000000000000000000000000000000000000000000000000000000000000000`), the
+  `abcfccf65446752a057f4a302c941479a54b7560ebf8d7bca039d2ea98e64cfc`), the
   MD5 as Zenodo gives it, the SHA-256 learned by the first build
   (`scripts/pin-stems.py`).
 - **Why our own file.** The authors publish a PyTorch Lightning checkpoint
@@ -218,7 +218,7 @@ It replaced Spleeter's two stems (see "Retired models").
 
   | File | SHA-256 | Bytes |
   |---|---|---|
-  | `bandit-v2-multi.onnx` | `0000000000000000000000000000000000000000000000000000000000000000` | 0 |
+  | `bandit-v2-multi.onnx` | `1601a8dc45ddea3b0d3d16378c9e0d42ba7e2b6cef3bd832d5f8e93808a65fd4` | 150,610,260 |
 
   Zeros until its first build: `.github/workflows/models-onnx.yml` (without
   publishing) builds it twice, the two must be byte-identical, then

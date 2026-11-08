@@ -19,7 +19,7 @@ licence_sha256      cde7883b9050a1104f4ac19a1572aafd6e5d7323b68351aaf51fbf4beba5
 checkpoint          checkpoint-multi.ckpt
 checkpoint_url      https://zenodo.org/records/12701995/files/checkpoint-multi.ckpt?download=1
 checkpoint_md5      fea2868787551b0cff36cfcf7c3622a3
-checkpoint_sha256   0000000000000000000000000000000000000000000000000000000000000000
+checkpoint_sha256   abcfccf65446752a057f4a302c941479a54b7560ebf8d7bca039d2ea98e64cfc
 
 file                bandit-v2-multi.onnx
 opset               17
@@ -28,8 +28,8 @@ opset               17
 # (scripts/check-model-pins.py checks that the two agree), and the release of
 # this repository that serves it. Zeros until the first run of the workflow
 # (scripts/pin-stems.py writes them): until then the app cannot import it.
-file_sha256         0000000000000000000000000000000000000000000000000000000000000000
-file_bytes          0
+file_sha256         1601a8dc45ddea3b0d3d16378c9e0d42ba7e2b6cef3bd832d5f8e93808a65fd4
+file_bytes          150610260
 release_tag         bandit-onnx-1
 
 # The tools that write it: the same as the other models' (Python 3.13, CPU
