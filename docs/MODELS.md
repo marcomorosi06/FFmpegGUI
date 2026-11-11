@@ -50,6 +50,7 @@ drift apart.
 | Magic eraser, quick | MI-GAN | Picsart AI Research | MIT | its author | Hugging Face |
 | Magic eraser, precise | LaMa (big-lama) | Samsung AI Center | Apache 2.0 | Carve | Hugging Face |
 | Stems: dialogue, music, effects (the voice levels, the dub, the tracks) | Bandit v2 (multilingual) | Karn N. Watcharasupat, Chih-Wei Wu, Iroro Orife | CC BY-SA 4.0 (weights), Apache 2.0 (code) | **this project** | **this repository's releases** |
+| The same, quicker (the default) | Bandit v2 (multilingual), int8 | Karn N. Watcharasupat, Chih-Wei Wu, Iroro Orife | CC BY-SA 4.0 (weights), Apache 2.0 (code) | **this project** (int8, from its float file) | **this repository's releases** |
 | Stems: the music's instruments | Spleeter 5 stems | Deezer | MIT | **this project** | **this repository's releases** |
 | AI dubbing | Kokoro-82M v1.0 | hexgrad | Apache 2.0 | sherpa-onnx (Apache 2.0) | sherpa-onnx's GitHub releases |
 | AI dubbing, extra voices | Piper voices | their authors | each its own | Piper / sherpa-onnx | Hugging Face, GitHub |
@@ -253,6 +254,60 @@ It replaced Spleeter's two stems (see "Retired models").
   paper says it drew only from content that permits commercial use (for the
   music, the Free Music Archive's public-domain and CC BY, CC BY-SA, Open
   Audio and Free Art tracks). This project uses none of it, only the weights.
+
+### Bandit v2, int8: our ONNX file
+
+The same weights as `bandit-onnx-2`, with their matrix products in 8-bit
+integers: the build the app runs by default. On a phone, splitting four
+minutes of sound with the float file took some twenty minutes; the int8 one
+loads about three times quicker and runs quicker where the processor has
+int8 instructions (1.7 times on the desktop processor it was first measured
+on, a 2.1 GHz Xeon with VNNI; a phone's gain is measured on the phone).
+The float file stays offered, below it, for the two cases where it is worth
+it: an older phone without int8 instructions (from before about 2018, where
+the int8 build may be no quicker), or stems that must match the authors'
+model to the last bit.
+
+- **Licences.** As the float file: an adaptation of the CC BY-SA 4.0
+  weights, under CC BY-SA 4.0 too, with the same attribution and the legal
+  code next to it and inside it (`assets/licenses/bandit-int8/` in the app).
+- **Made from**, all pinned in `scripts/bandit-int8-onnx.lock`: the float
+  file of the release `bandit-onnx-2` (SHA-256
+  `7836f01622021adc2fe2570f263ec365ef7677d598b51d27b015b94d869f2ff2`, which
+  the script checks against both locks), the CC BY-SA 4.0 legal code, and
+  ONNX Runtime 1.31.1, whose quantisation writes the bytes (the script
+  refuses another version). Nothing comes from the checkpoint again.
+- **What the script does** (`scripts/export-bandit-int8.py`): it folds the
+  float file's constants, writes each of its 16 GRU layers (bidirectional,
+  256 units) out as what it computes (the input's matrix product for every
+  frame at once, then a scan over the frames whose step is the GRU cell),
+  which answers as the float file does to rounding (checked: at most 1e-4),
+  then quantises every matrix product's weights to signed 8-bit integers,
+  one scale per output channel, those inside the scans too (ONNX Runtime's
+  dynamic quantisation; the values in between are quantised as the model
+  runs). Layer norms, gates and the masks' sums stay in float. ONNX
+  Runtime's GRU kernel cannot be quantised: that is why the layers are
+  written out.
+- **How close it stays**, checked by every build (its `check.json`): the
+  masks of random spectrograms differ from the float file's by about 0.2% on
+  average (at most 2%), and each of the three stems of a test sound (tones,
+  noise, chirps, clicks) stays about 40 dB from the float one (at least 18).
+  On a mix of speech, music and effects whose parts are known, the float
+  file found the dialogue at 21.30 dB SDR and the int8 one at 21.29.
+- **The file**, pinned in `app/.../voice/StemModels.kt` (`BANDIT_INT8`):
+
+  | File | SHA-256 | Bytes |
+  |---|---|---|
+  | `bandit-v2-multi-int8.onnx` | `0000000000000000000000000000000000000000000000000000000000000000` | 0 |
+
+  Zeros until its first build: `.github/workflows/models-onnx.yml` (without
+  publishing) builds it twice, the two must be byte-identical, then
+  `scripts/pin-stems.py bandit-int8 <the build's folder>` writes the pins
+  here, in the lock, in the app and in the bundled NOTICE; the next run
+  publishes the pre-release
+  [`bandit-int8-onnx-1`](https://github.com/marcomorosi06/FFmpegGUI/releases/tag/bandit-int8-onnx-1).
+  Until then the app keeps to the float file and says the int8 one is on
+  its way.
 
 ### Spleeter 5 stems: our ONNX file
 

@@ -44,7 +44,8 @@ The models are not in the app and are never downloaded by it: the browser downlo
 | Cut-out | BiRefNet-lite (general use), ONNX by this project | Finest edges, about 170 MB; about 2.5 GB of memory while it works |
 | Cut-out correction, lift the subject | EdgeTAM, ONNX by this project | Optional, about 37 MB |
 | Translation | Opus-MT, one per language pair (ONNX by Xenova) | Any number of pairs, about 100 MB each |
-| Stems: dialogue, music, effects | Bandit v2, multilingual (ONNX by this project) | One file from this project's releases, about 150 MB |
+| Stems: dialogue, music, effects | Bandit v2, multilingual, int8 (by this project, the default) | One file from this project's releases, about 40 MB: lighter and quicker |
+| Stems: dialogue, music, effects | Bandit v2, multilingual (ONNX by this project) | One file from this project's releases, about 150 MB: the authors' numbers as they are, for older phones or exact results |
 | Stems: the music's instruments | Spleeter 5 stems (ONNX by this project) | One file from this project's releases, about 197 MB |
 | Dubbing | Kokoro-82M v1.0, float32, multi-language (sherpa-onnx) | One archive from GitHub, about 350 MB (400 MB unpacked) |
 | Dubbing, quick | Any Piper voice (VITS) | One archive or two files each, 20 to 120 MB |

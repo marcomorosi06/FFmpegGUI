@@ -9,7 +9,7 @@ Usage:
   scripts/model-release-notes.py MODEL --commit SHA --sums SHA256SUMS
       [--assets NAMES_FILE] [--run URL] [--repo OWNER/NAME] [--server URL]
 
-MODEL is edgetam, birefnet, bandit or spleeter. --assets lists the names the
+MODEL is edgetam, birefnet, bandit, bandit-int8 or spleeter. --assets lists the names the
 release holds, one a line: a file beside the model is linked by the name it
 has there (edgetam-onnx-1 keeps LICENSE, NOTICE, ... without ".txt"). The
 page goes to standard output. Nothing here is legal advice, and the page says so.
@@ -74,6 +74,33 @@ MODELS = {
                   "Sources: [kwatcharasupat/bandit-v2](https://github.com/kwatcharasupat/bandit-v2), "
                   "[the weights](https://zenodo.org/records/12701995).",
     },
+    "bandit-int8": {
+        "intro": "**Bandit v2** (multilingual) by Karn N. Watcharasupat, Chih-Wei Wu and Iroro Orife, in **int8**: "
+                 "the float file of [bandit-onnx-2]({repo}/releases/tag/bandit-onnx-2) with its matrix products quantised to "
+                 "8-bit integers. It splits any sound into its **dialogue**, its **music** and its **effects**, as the float file "
+                 "does, in a file about a quarter of its size that loads about three times quicker and runs quicker where the "
+                 "processor has int8 instructions (1.7 times on the desktop processor it was measured on): [FFmpeg GUI]({repo}) runs it by default, and keeps the float file as "
+                 "an option.\n\n"
+                 "> **Licence.** The weights are under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) "
+                 "([Zenodo record 12701995](https://zenodo.org/records/12701995)), the authors' code under the "
+                 "Apache License 2.0. This ONNX file is an adaptation of those weights, and is licensed under CC BY-SA 4.0 too. "
+                 "Attribution: \"Bandit v2, multilingual checkpoint\" by Karn N. Watcharasupat, Chih-Wei Wu and Iroro Orife, "
+                 "from the record above, licensed CC BY-SA 4.0. Changed: converted to ONNX (see bandit-onnx-2), then its GRU "
+                 "layers written out as their matrix products and those quantised to int8, with nothing trained: its stems "
+                 "differ a little from the float file's (see NOTICE.txt and check.json).",
+        "files": [
+            ("bandit-v2-multi-int8.onnx", "The network in int8: from a sound's spectrogram, the masks of dialogue, music and effects"),
+        ],
+        "licence": "The CC BY-SA 4.0 legal code (the weights' licence, and this file's)",
+        "notice": "The attribution and what the conversion and the quantisation change",
+        "check": "How the file compares with the float one (masks, and the stems of a test sound), as each build checked it",
+        "made": "the float file of bandit-onnx-2, the weights' licence and the version of ONNX Runtime that quantises, "
+                "every hash checked",
+        "papers": "Paper: [Remastering Divide and Remaster: A Cinematic Audio Source Separation Dataset with Multilingual Support]"
+                  "(https://arxiv.org/abs/2407.07275) (Karn N. Watcharasupat, Chih-Wei Wu, Iroro Orife, IEEE IS2 2024). "
+                  "Sources: [kwatcharasupat/bandit-v2](https://github.com/kwatcharasupat/bandit-v2), "
+                  "[the weights](https://zenodo.org/records/12701995).",
+    },
     "spleeter": {
         "intro": "**Spleeter 5 stems** by Deezer, under the [MIT License](https://opensource.org/license/mit), converted to ONNX here. "
                  "It splits music into **singing**, **piano**, **drums**, **bass** and **the rest**: "
@@ -128,7 +155,7 @@ def page(model, commit, sums, assets, run, repo_url):
         (link("LICENSE.txt"), spec["licence"]),
         (link("NOTICE.txt"), spec["notice"]),
         (link("PROVENANCE.txt") + ", " + link("PROVENANCE-second-build.txt", "second build"), "Everything the files were made from, by each build"),
-        (link("check.json"), "How the files compare with the authors' model, as each build checked them"),
+        (link("check.json"), spec.get("check", "How the files compare with the authors' model, as each build checked them")),
         (link("SHA256SUMS.txt"), "The files' SHA-256, also below"),
     ]
     out = [spec["intro"].format(repo=repo_url), ""]
@@ -143,11 +170,12 @@ def page(model, commit, sums, assets, run, repo_url):
         ]
     out += [
         "",
-        "Made from what [`%s`](%s/%s) pins (the upstream code, weights and licence, every hash checked) at "
+        "Made from what [`%s`](%s/%s) pins (%s) at "
         "[%s](%s/commit/%s), by [the workflow](%s/.github/workflows/models-onnx.yml)%s, twice "
         "(ubuntu-24.04, and ubuntu-26.04 on two cores), with byte-identical results. Nothing was trained: "
         "the NOTICE says what the conversion does. The licence and the notice are also inside each ONNX file (its metadata)."
-        % (lock_path, at, lock_path, commit[:7], repo_url, commit, at, " ([this run](%s))" % run if run else ""),
+        % (lock_path, at, lock_path, spec.get("made", "the upstream code, weights and licence, every hash checked"),
+           commit[:7], repo_url, commit, at, " ([this run](%s))" % run if run else ""),
         "",
         "```",
     ]

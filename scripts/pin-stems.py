@@ -14,6 +14,7 @@ SHA256SUMS and check.json) into the places that must agree on them
 
 Usage:
   scripts/pin-stems.py bandit path/to/bandit-ubuntu-24.04
+  scripts/pin-stems.py bandit-int8 path/to/bandit-int8-ubuntu-24.04
 
 Use the folder of a run whose two builds were byte-identical (the workflow's
 "Compare" step says so). Then read the diff, commit and push: the next run of
@@ -30,7 +31,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STEMS = os.path.join(ROOT, "app", "src", "main", "java", "com", "cuscus", "ffmpeggui", "voice", "StemModels.kt")
 RECORD = os.path.join(ROOT, "docs", "MODELS.md")
-KOTLIN = {"bandit": "BANDIT", "spleeter": "INSTRUMENTS"}
+KOTLIN = {"bandit": "BANDIT", "bandit-int8": "BANDIT_INT8", "spleeter": "INSTRUMENTS"}
 
 
 def read_lock(path):
@@ -115,7 +116,8 @@ def main():
     record, n = pattern.subn(lambda m: m.group(1) + digest + m.group(2) + "{:,}".format(size) + m.group(3), record)
     if n != 1:
         sys.exit("docs/MODELS.md: no row for %s" % lock["file"])
-    if "checkpoint_sha256" in learned:
+    if "checkpoint_sha256" in learned and "source_sha256" not in lock:
+        # The int8 build names the checkpoint in the same words as the float one, whose line it is.
         pattern = re.compile(r"(`%s`[^`]*MD5 `[0-9a-f]{32}`, SHA-256\s+`)[0-9a-f]{64}(`)" % re.escape(lock["checkpoint"]))
         record, n = pattern.subn(lambda m: m.group(1) + learned["checkpoint_sha256"] + m.group(2), record)
         if n != 1:

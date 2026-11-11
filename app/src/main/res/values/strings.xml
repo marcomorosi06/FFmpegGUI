@@ -2883,6 +2883,13 @@
     <string name="stems_instruments_model_title">Instruments\' model, %1$s</string>
     <string name="stems_step_download_bandit">One file, %1$s, from FFmpeg GUI\'s own releases on GitHub: the authors\' model, converted to ONNX by this project, with its licence (CC BY-SA 4.0) and the notice of the changes. It opens in your browser.</string>
     <string name="stems_step_download_spleeter">One file, %1$s, from FFmpeg GUI\'s own releases on GitHub: Deezer\'s model, converted to ONNX by this project, with its licence and the notice of the conversion. It opens in your browser.</string>
+    <string name="stems_build_int8">Light (int8)</string>
+    <string name="stems_build_default">Default</string>
+    <string name="stems_build_on_its_way">On its way</string>
+    <string name="stems_build_int8_text">The same model with its numbers in 8-bit integers, %1$s: it loads about three times quicker and splits quicker on most phones, and the parts it finds are the same to the ear.</string>
+    <string name="stems_build_full">Full precision (float)</string>
+    <string name="stems_build_full_text">The model with its numbers as the authors made them, %1$s. Only worth it in two cases: on an older phone without int8 instructions (from before about 2018), where the light build may be no quicker; or when the parts must match the authors\' model to the last bit, to compare or for research.</string>
+    <string name="stems_step_download_bandit_int8">One file, %1$s, from FFmpeg GUI\'s own releases on GitHub: the authors\' model, converted to ONNX and to int8 by this project, with its licence (CC BY-SA 4.0) and the notice of the changes. It opens in your browser.</string>
     <string name="stems_problem_not_bandit">That is not Bandit\'s file. Pick the downloaded file: %1$s.</string>
     <string name="stems_problem_not_spleeter">That is not the instruments\' model. Pick the downloaded file: %1$s.</string>
     <string name="stems_instruments_delete_title">Delete the instruments\' model?</string>
@@ -2892,6 +2899,7 @@
     <string name="stems_bandit_summary">By %1$s. Dialogue, music and effects of any sound. Licence of the weights: %2$s (the code: Apache 2.0).</string>
     <string name="stems_spleeter_summary">By %1$s. The singing, piano, drums, bass and the rest of a song. Licence: %2$s.</string>
     <string name="about_licence_bandit">Bandit v2, by Karn N. Watcharasupat, Chih-Wei Wu and Iroro Orife (the model that splits dialogue, music and effects, downloaded by you), converted to ONNX by FFmpeg GUI</string>
+    <string name="about_licence_bandit_int8">Bandit v2 in int8, the same weights made lighter by FFmpeg GUI from its float file (the one the app runs by default)</string>
     <string name="about_licence_bandit_legal">Bandit v2\'s weights: the licence</string>
     <string name="about_licence_ours_cc_by_sa">Creative Commons Attribution-ShareAlike 4.0, with the attribution and the changes</string>
     <string name="about_licence_cc_by_sa">Creative Commons Attribution-ShareAlike 4.0 International, the legal code</string>

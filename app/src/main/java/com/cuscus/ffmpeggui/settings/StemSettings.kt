@@ -42,7 +42,7 @@ import com.cuscus.ffmpeggui.voice.StemModels
  * not here yet, and a link to the page of the release it will come from.
  */
 @Composable
-internal fun StemModelOnItsWay() {
+internal fun StemModelOnItsWay(build: StemModels.BanditBuild = StemModels.BanditBuild.FULL) {
     val scheme = MaterialTheme.colorScheme
     val context = androidx.compose.ui.platform.LocalContext.current
     val turn = rememberInfiniteTransition(label = "stemsWait")
@@ -72,7 +72,7 @@ internal fun StemModelOnItsWay() {
             Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    stringResource(R.string.voice_model_title, StemModels.BANDIT_NAME),
+                    stringResource(R.string.voice_model_title, StemModels.scene(build).name),
                     style = MaterialTheme.typography.titleMediumEmphasized,
                     color = scheme.onSecondaryContainer,
                 )
@@ -85,7 +85,7 @@ internal fun StemModelOnItsWay() {
         }
         Spacer(modifier = Modifier.height(12.dp))
         androidx.compose.material3.Button(
-            onClick = { openLink(context, StemModels.BANDIT_FILES_URL) },
+            onClick = { openLink(context, StemModels.filesUrl(build)) },
             shapes = androidx.compose.material3.ButtonDefaults.shapes(),
             colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(),
             modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -93,7 +93,7 @@ internal fun StemModelOnItsWay() {
             Text(stringResource(R.string.stems_bandit_release), style = MaterialTheme.typography.titleSmallEmphasized)
         }
         com.cuscus.ffmpeggui.ui.expressive.LinkDestination(
-            StemModels.BANDIT_FILES_URL,
+            StemModels.filesUrl(build),
             color = scheme.onSecondaryContainer.copy(alpha = 0.8f),
             modifier = Modifier.padding(start = 8.dp, top = 4.dp),
         )

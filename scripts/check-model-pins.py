@@ -22,9 +22,10 @@ Offline (always):
      folder of a model in use: a slip there would delete a user's model.
 
   6. The stems (voice/StemModels.kt): Bandit v2 pins what scripts/bandit-onnx.lock
-     does, Spleeter 5 stems what scripts/spleeter-onnx.lock does, each from
-     this repository's release of its tag, with its licence and NOTICE bundled
-     (assets/licenses/bandit/, assets/licenses/spleeter/). A lock of zeros is
+     does, its int8 build what scripts/bandit-int8-onnx.lock does, Spleeter 5
+     stems what scripts/spleeter-onnx.lock does, each from this repository's
+     release of its tag, with its licence and NOTICE bundled
+     (assets/licenses/bandit/, bandit-int8/, spleeter/). A lock of zeros is
      still waiting for its first build (run .github/workflows/models-onnx.yml
      without publishing, then scripts/pin-stems.py).
 
@@ -38,7 +39,7 @@ Offline (always):
      from this repository's release of its tag, with the CC BY 4.0 legal code
      bundled as the lock pins it (assets/licenses/parakeet/).
 
-With --release-dir NAME=DIR (NAME edgetam, birefnet, bandit, spleeter or markers; the folder an export
+With --release-dir NAME=DIR (NAME edgetam, birefnet, bandit, bandit-int8, spleeter or markers; the folder an export
 script wrote, or a release downloaded): the files there are the pinned ones,
 and LICENSE, NOTICE, PROVENANCE and SHA256SUMS are there and agree; with the
 onnx package installed, each file carries the licence and notice inside it.
@@ -237,7 +238,8 @@ def check_markers(lock):
             ok("AI marks %s %s %s" % (role, got[0], got[1][:12]))
 
 
-STEMS = (("bandit", "BANDIT", "BANDIT_RELEASE_TAG"), ("spleeter", "INSTRUMENTS_FILE", "INSTRUMENTS_RELEASE_TAG"))
+STEMS = (("bandit", "BANDIT", "BANDIT_RELEASE_TAG"), ("bandit-int8", "BANDIT_INT8", "BANDIT_INT8_RELEASE_TAG"),
+         ("spleeter", "INSTRUMENTS_FILE", "INSTRUMENTS_RELEASE_TAG"))
 
 
 def check_stems(name, lock, strict):
@@ -700,10 +702,12 @@ def main():
         "edgetam": read_lock(os.path.join(ROOT, "scripts", "edgetam-onnx.lock")),
         "birefnet": read_lock(os.path.join(ROOT, "scripts", "birefnet-onnx.lock")),
         "bandit": read_lock(os.path.join(ROOT, "scripts", "bandit-onnx.lock")),
+        "bandit-int8": read_lock(os.path.join(ROOT, "scripts", "bandit-int8-onnx.lock")),
         "spleeter": read_lock(os.path.join(ROOT, "scripts", "spleeter-onnx.lock")),
     }
     notices = {"edgetam": edgetam_notice(locks["edgetam"]), "birefnet": birefnet_notice(locks["birefnet"]),
-               "bandit": stems_notice("bandit", locks["bandit"]), "spleeter": stems_notice("spleeter", locks["spleeter"])}
+               "bandit": stems_notice("bandit", locks["bandit"]), "bandit-int8": stems_notice("bandit-int8", locks["bandit-int8"]),
+               "spleeter": stems_notice("spleeter", locks["spleeter"])}
     markers = read_lock(os.path.join(ROOT, "scripts", "ai-markers.lock"))
     markers_text = markers_notice(markers)
     parakeet = read_lock(os.path.join(ROOT, "scripts", "parakeet-onnx.lock"))
@@ -732,7 +736,8 @@ def main():
             check_parakeet_release(folder, parakeet)
             continue
         if name not in locks or not folder:
-            problem("--release-dir takes edgetam=DIR, birefnet=DIR, bandit=DIR, spleeter=DIR, markers=DIR or parakeet=DIR, not %s" % item)
+            problem("--release-dir takes edgetam=DIR, birefnet=DIR, bandit=DIR, bandit-int8=DIR, spleeter=DIR, markers=DIR "
+                    "or parakeet=DIR, not %s" % item)
             continue
         check_release(name, folder, locks[name], notices[name])
     if args.online:

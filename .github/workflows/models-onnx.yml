@@ -4,8 +4,9 @@ name: AI model files (ONNX)
 # EdgeTAM (Meta, Apache 2.0) for the cut-out correction and the photo editor's
 # "lift the subject", BiRefNet-lite (Zheng Peng et al., MIT) for the finest
 # cut-out, Bandit v2 (Watcharasupat, Wu, Orife; weights CC BY-SA 4.0) for the
-# split into dialogue, music and effects, Spleeter 5 stems (Deezer, MIT) for
-# the music's instruments. For each:
+# split into dialogue, music and effects (and its int8 build, made from that
+# float file by scripts/export-bandit-int8.py, the one the app runs by
+# default), Spleeter 5 stems (Deezer, MIT) for the music's instruments. For each:
 #
 #   1. build: scripts/export-<model>.py, from exactly what
 #      scripts/<model>-onnx.lock pins (upstream commit,
@@ -58,6 +59,7 @@ jobs:
           - edgetam
           - birefnet
           - bandit
+          - bandit-int8
           - spleeter
         runner:
           - ubuntu-24.04
@@ -125,6 +127,15 @@ jobs:
             echo "$(value checkpoint_md5)  $RUNNER_TEMP/upstream/checkpoint.ckpt" | md5sum --check
             get "$RUNNER_TEMP/upstream/LICENSE-CC-BY-SA-4.0.txt" "$(value licence_url)"
             echo "$(value licence_sha256)  $RUNNER_TEMP/upstream/LICENSE-CC-BY-SA-4.0.txt" | sha256sum --check
+          elif [ "$MODEL" = bandit-int8 ]; then
+            # The float file it is made from, as this repository's release serves it (both locks pin it).
+            lock=scripts/bandit-int8-onnx.lock
+            value() { awk -v k="$1" '$1 == k { print $2 }' "$lock"; }
+            get "$RUNNER_TEMP/upstream/$(value source_file)" \
+              "https://github.com/$GITHUB_REPOSITORY/releases/download/$(value source_tag)/$(value source_file)"
+            echo "$(value source_sha256)  $RUNNER_TEMP/upstream/$(value source_file)" | sha256sum --check
+            get "$RUNNER_TEMP/upstream/LICENSE-CC-BY-SA-4.0.txt" "$(value licence_url)"
+            echo "$(value licence_sha256)  $RUNNER_TEMP/upstream/LICENSE-CC-BY-SA-4.0.txt" | sha256sum --check
           elif [ "$MODEL" = spleeter ]; then
             lock=scripts/spleeter-onnx.lock
             value() { awk -v k="$1" '$1 == k { print $2 }' "$lock"; }
@@ -161,6 +172,7 @@ jobs:
             edgetam) set -- scripts/export-edgetam.py --edgetam "$up/code" "${pictures[@]}" ;;
             birefnet) set -- scripts/export-birefnet.py --birefnet "$up/code" --weights "$up/weights.pth" "${pictures[@]}" ;;
             bandit) set -- scripts/export-bandit.py --bandit "$up/code" --checkpoint "$up/checkpoint.ckpt" --licence "$up/LICENSE-CC-BY-SA-4.0.txt" ;;
+            bandit-int8) set -- scripts/export-bandit-int8.py --source "$up/bandit-v2-multi.onnx" --licence "$up/LICENSE-CC-BY-SA-4.0.txt" ;;
             spleeter) set -- scripts/export-spleeter.py --checkpoint "$up/five" --two-stems "$up/two" --sherpa "$up/sherpa" --licence "$up/code/LICENSE" ;;
           esac
           run() { if [ -n "$CPUS" ]; then taskset -c "$CPUS" "$@"; else "$@"; fi; }
@@ -211,7 +223,7 @@ jobs:
       - name: Compare the two builds of each model
         run: |
           status=0
-          for model in edgetam birefnet bandit spleeter; do
+          for model in edgetam birefnet bandit bandit-int8 spleeter; do
             a="builds/${model}-ubuntu-24.04/SHA256SUMS"
             b="builds/${model}-ubuntu-26.04/SHA256SUMS"
             if cmp -s "$a" "$b"; then
@@ -263,7 +275,7 @@ jobs:
               *) echo "$1" ;;
             esac
           }
-          for model in edgetam birefnet bandit spleeter; do
+          for model in edgetam birefnet bandit bandit-int8 spleeter; do
             lock="scripts/${model}-onnx.lock"
             tag=$(awk '$1 == "release_tag" { print $2 }' "$lock")
             if grep -Eq '^file_sha256 +0{64}$' "$lock"; then

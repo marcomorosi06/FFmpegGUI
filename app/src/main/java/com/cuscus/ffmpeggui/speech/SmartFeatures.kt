@@ -204,11 +204,37 @@ class SmartFeatures(
     /** Translates subtitles with them. */
     val translator = TranslationEngine(context, translationStore)
 
-    /** Bandit v2, which splits a sound into dialogue, music and effects (see StemModels). */
-    val voiceStore = SpeechModelStore(context, StemModels.SCENE)
+    /** Bandit v2, which splits a sound into dialogue, music and effects: its two builds (see StemModels). */
+    val voiceStores: Map<StemModels.BanditBuild, SpeechModelStore> =
+        StemModels.BanditBuild.entries.associateWith { SpeechModelStore(context, StemModels.scene(it)) }
 
-    /** Where Bandit is. */
-    val voiceState: StateFlow<SpeechModelStore.State> get() = voiceStore.state
+    private val _banditBuild = MutableStateFlow(
+        // Only a build whose file is pinned can be used: the int8 one waits for its first build.
+        choices.getString(KEY_BANDIT, null)
+            ?.let { name -> StemModels.BanditBuild.entries.firstOrNull { it.name == name } }
+            ?.takeIf(StemModels::pinned)
+            ?: firstInstalled(StemModels.BanditBuild.entries.filter(StemModels::pinned)) { voiceStores.getValue(it).state.value }
+            ?: StemModels.BanditBuild.entries.first(StemModels::pinned),
+    )
+
+    /** The build of Bandit that sets voices apart. */
+    val banditBuild: StateFlow<StemModels.BanditBuild> = _banditBuild.asStateFlow()
+
+    /** The chosen build's store. */
+    val voiceStore: SpeechModelStore get() = voiceStores.getValue(_banditBuild.value)
+
+    /** Where the chosen build of Bandit is. */
+    val voiceState: StateFlow<SpeechModelStore.State> = _banditBuild
+        .flatMapLatest { voiceStores.getValue(it).state }
+        .stateIn(scope, SharingStarted.Eagerly, voiceStore.state.value)
+
+    /** Sets voices apart with [build] from now on (the other one is let go of from memory). */
+    fun chooseBandit(build: StemModels.BanditBuild) {
+        if (_banditBuild.value == build || !StemModels.pinned(build)) return
+        _banditBuild.value = build
+        choices.edit().putString(KEY_BANDIT, build.name).apply()
+        voiceSeparator.unload()
+    }
 
     /** Spleeter's five stems, which split the music into its instruments (see StemModels). */
     val instrumentsStore = SpeechModelStore(context, StemModels.INSTRUMENTS)
@@ -217,7 +243,7 @@ class SmartFeatures(
     val instrumentsState: StateFlow<SpeechModelStore.State> get() = instrumentsStore.state
 
     /** Splits sounds with them, and keeps what they found. */
-    val voiceSeparator = VoiceSeparator(context, voiceStore, instrumentsStore, extractor)
+    val voiceSeparator = VoiceSeparator(context, { voiceStore }, instrumentsStore, extractor)
 
     /** Kokoro, which dubs the video in the subtitles' language (see DubModel). */
     val dubStore = DubModelStore(context)
@@ -286,10 +312,10 @@ class SmartFeatures(
         dubStore.delete()
     }
 
-    /** Removes Bandit (the stems already made stay: projects use them). */
-    fun deleteVoiceModel() {
+    /** Removes [build] of Bandit (the stems already made stay: projects use them). */
+    fun deleteVoiceModel(build: StemModels.BanditBuild = _banditBuild.value) {
         voiceSeparator.unload()
-        voiceStore.delete()
+        voiceStores.getValue(build).delete()
     }
 
     /** Removes Spleeter's five stems (the instruments already split stay: projects use them). */
@@ -399,11 +425,26 @@ class SmartFeatures(
             eraseStores.forEach { (variant, store) ->
                 report(store.state, WorkNotifier.Kind.CUTOUT_MODEL, app.getString(R.string.work_model_erase_title, EraseModel.of(variant).name), store::stop)
             }
-            report(voiceStore.state, WorkNotifier.Kind.VOICE_MODEL, app.getString(R.string.work_model_voice_title, StemModels.BANDIT_NAME), voiceStore::stop)
+            voiceStores.forEach { (build, store) ->
+                report(store.state, WorkNotifier.Kind.VOICE_MODEL, app.getString(R.string.work_model_voice_title, StemModels.scene(build).name), store::stop)
+            }
             report(instrumentsStore.state, WorkNotifier.Kind.VOICE_MODEL, app.getString(R.string.work_model_voice_title, StemModels.SPLEETER_NAME), instrumentsStore::stop)
             report(dubStore.state, WorkNotifier.Kind.DUB_MODEL, app.getString(R.string.work_model_dub_title, DubModel.NAME), dubStore::stop)
         }
         // What was just imported is chosen when the chosen one is not there.
+        voiceStores.forEach { (build, store) ->
+            scope.launch {
+                var before = store.state.value
+                store.state.collect { now ->
+                    if (now is SpeechModelStore.State.Ready && before !is SpeechModelStore.State.Ready &&
+                        voiceStore.state.value !is SpeechModelStore.State.Ready
+                    ) {
+                        chooseBandit(build)
+                    }
+                    before = now
+                }
+            }
+        }
         cutoutStores.forEach { (variant, store) ->
             scope.launch {
                 var before = store.state.value
@@ -458,6 +499,7 @@ class SmartFeatures(
         const val KEY_CUTOUT = "cutout_variant"
         const val KEY_FAST_KERNELS = "ai_fast_kernels"
         const val KEY_ERASE = "erase_variant"
+        const val KEY_BANDIT = "bandit_build"
 
         /** The first of [variants] whose model is installed, if any. */
         fun <V> firstInstalled(variants: List<V>, state: (V) -> SpeechModelStore.State): V? =

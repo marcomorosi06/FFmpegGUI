@@ -2189,6 +2189,16 @@ dialogue, the music and the effects, and Spleeter's five stems (Deezer, MIT)
 for the music's singing, piano, drums, bass and the rest. They replace
 Spleeter's two stems, which `RetiredModels` deletes from the phone at the
 first start (`RetiredModelsDialog` says so, with a way to the Voice page).
+Bandit comes in two builds of the same weights (`StemModels.BanditBuild`),
+each in its own folder, the choice kept by `SmartFeatures` (`chooseBandit`):
+int8, the default (`scripts/export-bandit-int8.py` writes the float file's
+GRUs out as matrix products and scans, then quantises the products: a
+quarter of the size, about three times quicker to load, quicker where the
+processor has int8 instructions, its stems about 40 dB from the float
+one's), and the float file, kept below it for older phones and for stems
+that must match the authors' model to the last bit. A build whose file is
+not pinned yet cannot be chosen. `VoiceSeparator` asks for the chosen store
+each time it loads, and lets go of the other build's session.
 
 **Separation** (`core/stems/`, pure Kotlin, tested). `StemSeparation` is
 one engine for both: a short-time Fourier transform of both channels at

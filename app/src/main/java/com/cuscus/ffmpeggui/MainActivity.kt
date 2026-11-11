@@ -1293,6 +1293,9 @@ class MainActivity : ComponentActivity() {
                                 val translationImport by smart.translationStore.importing.collectAsState()
                                 val translatorLoaded by smart.translator.inMemory.collectAsState()
                                 val voiceLoaded by smart.voiceSeparator.inMemory.collectAsState()
+                                // Which build of Bandit is chosen, and where each one is.
+                                val banditBuild by smart.banditBuild.collectAsState()
+                                val banditBuilds = smart.voiceStores.mapValues { (_, store) -> store.state.collectAsState().value }
                                 val voiceKept by smart.voiceSeparator.kept.collectAsState()
                                 val instrumentsModelState by smart.instrumentsStore.state.collectAsState()
                                 val dubLoaded by smart.dubber.inMemory.collectAsState()
@@ -1354,15 +1357,19 @@ class MainActivity : ComponentActivity() {
                                         ),
                                         voice = VoiceFeatureUi(
                                             model = voiceModel,
+                                            build = banditBuild,
+                                            builds = banditBuilds,
+                                            onChooseBuild = smart::chooseBandit,
                                             loaded = voiceLoaded,
                                             // Not while the editor sets a voice apart with the model.
                                             idle = voiceStatus !is VoiceStatus.Working,
                                             keptFiles = voiceKept.files,
                                             keptBytes = voiceKept.bytes,
-                                            onImport = smart.voiceStore::import,
-                                            onStopImport = smart.voiceStore::stop,
-                                            onVerify = smart.voiceStore::verify,
-                                            onDelete = smart::deleteVoiceModel,
+                                            // The chosen build's store, whichever it is when tapped.
+                                            onImport = { uris -> smart.voiceStore.import(uris) },
+                                            onStopImport = { smart.voiceStore.stop() },
+                                            onVerify = { smart.voiceStore.verify() },
+                                            onDelete = { smart.deleteVoiceModel() },
                                             onUnload = smart.voiceSeparator::unload,
                                             onDeleteKept = smart.voiceSeparator::deleteAll,
                                             instruments = instrumentsModelState,

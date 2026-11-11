@@ -461,6 +461,13 @@ fun AboutScreen(versionName: String, onBack: () -> Unit, life: FfmpegLife? = nul
                         }
                     },
                     { shape ->
+                        // Its int8 build, made here from the float file: the same weights, the same licence.
+                        val name = stringResource(R.string.about_licence_bandit_int8)
+                        LicenceRow(shape, name, stringResource(R.string.about_licence_ours_cc_by_sa), local = true) {
+                            licenceFile = LicenceFile(name, "bandit-int8/NOTICE.txt")
+                        }
+                    },
+                    { shape ->
                         val name = stringResource(R.string.about_licence_spleeter)
                         LicenceRow(shape, name, stringResource(R.string.about_licence_ours_mit), local = true) {
                             licenceFile = LicenceFile(name, "spleeter/NOTICE.txt")

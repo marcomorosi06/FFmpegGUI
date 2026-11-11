@@ -66,7 +66,8 @@ import java.util.UUID
  */
 class VoiceSeparator(
     context: Context,
-    private val sceneStore: SpeechModelStore,
+    /** The chosen build of Bandit (its int8 or its float file, see StemModels.BanditBuild). */
+    private val sceneStore: () -> SpeechModelStore,
     private val instrumentsStore: SpeechModelStore,
     private val extractor: FfmpegAudioExtractor,
 ) {
@@ -93,7 +94,7 @@ class VoiceSeparator(
 
     private enum class Which { SCENE, INSTRUMENTS }
 
-    private class Loaded(val which: Which, val session: OrtSession, val options: OrtSession.SessionOptions) {
+    private class Loaded(val which: Which, val store: SpeechModelStore, val session: OrtSession, val options: OrtSession.SessionOptions) {
         fun close() {
             runCatching { session.close() }
             runCatching { options.close() }
@@ -122,7 +123,7 @@ class VoiceSeparator(
     val threads: Int = (Runtime.getRuntime().availableProcessors() - 2).coerceIn(2, 4)
 
     /** True when Bandit is installed and checked: the voice can be set apart. */
-    val ready: Boolean get() = sceneStore.state.value is SpeechModelStore.State.Ready
+    val ready: Boolean get() = sceneStore().state.value is SpeechModelStore.State.Ready
 
     /** True when Spleeter's five stems are installed and checked: the music can be split. */
     val instrumentsReady: Boolean get() = instrumentsStore.state.value is SpeechModelStore.State.Ready
@@ -367,22 +368,24 @@ class VoiceSeparator(
     }
 
     private fun load(which: Which): OrtSession {
-        loaded?.let { if (it.which == which) return it.session else release() }
-        val store = if (which == Which.SCENE) sceneStore else instrumentsStore
+        val store = if (which == Which.SCENE) sceneStore() else instrumentsStore
+        // Another build of Bandit chosen since: the one in memory goes.
+        loaded?.let { if (it.which == which && it.store === store) return it.session else release() }
         val file = store.file(SpeechModel.Role.ENCODER)
         if (store.state.value !is SpeechModelStore.State.Ready || file == null) throw ModelMissing(which == Which.INSTRUMENTS)
         val memory = ActivityManager.MemoryInfo()
         (appContext.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)?.getMemoryInfo(memory)
         if (memory.availMem in 1 until MIN_FREE_BYTES) throw NotEnoughMemory()
         val env = OrtEnvironment.getEnvironment()
-        // Bandit is mostly recurrent layers (GRU), which XNNPACK does not run: they stay on the
-        // plain kernels, whose threads must be left spinning between the many small steps of a
-        // GRU, or waking them costs more than the steps (what XNNPACK's setup turns off).
+        // Bandit is mostly recurrent layers, step after step: GRUs in the float build, scans of
+        // int8 products in the int8 one, which XNNPACK does not run either. They stay on the plain
+        // kernels, whose threads must be left spinning between the many small steps, or waking
+        // them costs more than the steps (what XNNPACK's setup turns off).
         val options = if (which == Which.SCENE) AiKernels.options(threads, xnnpack = false) else AiKernels.options(threads)
         try {
             val session = env.createSession(file.absolutePath, options)
             Log.i(TAG, "${store.model.name} loaded on $threads threads")
-            loaded = Loaded(which, session, options)
+            loaded = Loaded(which, store, session, options)
             _inMemory.value = true
             return session
         } catch (e: Exception) {

@@ -208,6 +208,12 @@ dub and of the magic eraser, which need them; the others do not):
                                                        CC-BY-SA-4.0 too)
                                                        bandit/LICENSE.txt,
                                                        bandit/NOTICE.txt
+  Bandit v2 in int8 (the same weights) ..... CC-BY-SA-4.0 (made by FFmpeg GUI
+                                                       from its float ONNX file,
+                                                       quantised to int8, under
+                                                       CC-BY-SA-4.0 too)
+                                                       bandit-int8/LICENSE.txt,
+                                                       bandit-int8/NOTICE.txt
   Spleeter 5 stems, by Deezer .............. MIT        (ONNX by FFmpeg GUI, from
                                                        Deezer's checkpoint)
                                                        spleeter/LICENSE.txt,
@@ -226,7 +232,8 @@ dub and of the magic eraser, which need them; the others do not):
                                                        piper/LICENSE.txt
 BiRefNet-lite, EdgeTAM, Bandit v2 and Spleeter 5 stems are converted to
 ONNX by this project (scripts/export-birefnet.py, scripts/export-edgetam.py,
-scripts/export-bandit.py, scripts/export-spleeter.py) and served from its
+scripts/export-bandit.py, scripts/export-spleeter.py; Bandit v2's int8
+build by scripts/export-bandit-int8.py, from the float file) and served from its
 own GitHub releases, with their licence, the notice of what the conversion
 changed and their provenance next to the files and inside them; their
 licences and notices are kept here too, as they are distributed by the same

@@ -1,0 +1,35 @@
+Bandit v2 (multilingual), int8 ONNX file of FFmpeg GUI
+https://github.com/marcomorosi06/FFmpegGUI
+
+bandit-v2-multi-int8.onnx is made from "Model Weights for Remastering Divide
+and Remaster: A Cinematic Audio Source Separation Dataset with Multilingual
+Support" by Karn N. Watcharasupat, Chih-Wei Wu and Iroro Orife
+(https://doi.org/10.5281/zenodo.12701995, file checkpoint-multi.ckpt,
+MD5 fea2868787551b0cff36cfcf7c3622a3, SHA-256 abcfccf65446752a057f4a302c941479a54b7560ebf8d7bca039d2ea98e64cfc), licensed under
+Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0,
+https://creativecommons.org/licenses/by-sa/4.0/legalcode): see LICENSE, next
+to it. This file is an adaptation of those weights and is licensed under the
+same licence, CC BY-SA 4.0. It must go together with that LICENSE (or its
+address) and this NOTICE wherever it is copied.
+
+The model's code is the authors' https://github.com/kwatcharasupat/bandit-v2
+(commit d5563d9031e95fdaa3e5a73d5020b9a0df61adb6), Apache License 2.0.
+
+It is made from FFmpeg GUI's float file of the same weights, bandit-v2-multi.onnx
+of the release bandit-onnx-2 (SHA-256 7836f01622021adc2fe2570f263ec365ef7677d598b51d27b015b94d869f2ff2), whose own NOTICE
+says how that was converted to ONNX. What was done to it here
+(scripts/export-bandit-int8.py of FFmpeg GUI):
+- Its constants were folded, and each of its GRU layers was written out as
+  the products and gates it computes (a matrix product for the input, then
+  a scan over the frames whose step is the GRU cell): the same results, to
+  rounding.
+- Every matrix product's weights were quantised to signed 8-bit integers,
+  one scale per output channel (dynamic quantisation, ONNX Runtime
+  1.31.1); the values in between are quantised as the model runs.
+  The masks therefore differ a little from the float file's: each stem of a
+  test sound stays within 18 dB of the float file's (see check.json).
+- No weight was trained or fine-tuned.
+
+The authors and the licensor have not reviewed or endorsed this file. It
+comes with no warranty (see LICENSE, section 5). The weights were trained on
+Divide and Remaster v3 (CC BY-SA 4.0); see docs/MODELS.md of FFmpeg GUI.

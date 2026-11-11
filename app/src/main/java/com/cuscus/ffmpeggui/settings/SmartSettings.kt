@@ -172,8 +172,12 @@ class DubFeatureUi(
 
 /** The stem models' state and actions (see StemModels), and the stems kept. */
 class VoiceFeatureUi(
-    /** Bandit v2: dialogue, music and effects. */
+    /** Bandit v2: dialogue, music and effects; where the chosen build is. */
     val model: SpeechModelStore.State,
+    /** The build of Bandit chosen, and where each build is. */
+    val build: StemModels.BanditBuild = StemModels.BanditBuild.FULL,
+    val builds: Map<StemModels.BanditBuild, SpeechModelStore.State> = emptyMap(),
+    val onChooseBuild: (StemModels.BanditBuild) -> Unit = {},
     /** The model is in memory now. */
     val loaded: Boolean,
     /** False while a voice is being set apart (the model is in use). */
@@ -597,28 +601,60 @@ internal fun AboutModelsSection() {
 
 /**
  * The stems' section (its film, above, shows one sound split into its
- * parts): Bandit v2's card (dialogue, music and effects: what
- * the voice levels, the dub and every split need), then Spleeter's five
- * stems' (the music's instruments) and, once files have been split, how many
- * are kept and the space they take, with a way to remove them all. While
- * Bandit's file waits for its first build to be pinned, its card says it is
- * on its way instead of offering an import that could only fail.
+ * parts): which build of Bandit v2, the int8 one first (the default) and the
+ * float one below with when it is worth it, then the chosen build's card
+ * (dialogue, music and effects: what the voice levels, the dub and every
+ * split need), then Spleeter's five stems' (the music's instruments) and,
+ * once files have been split, how many are kept and the space they take,
+ * with a way to remove them all. A build whose file waits for its first
+ * build to be pinned says it is on its way and cannot be chosen; if the
+ * chosen one does, its card says so instead of offering an import that could
+ * only fail.
  */
 @Composable
 internal fun VoiceSettingsSection(voice: VoiceFeatureUi) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     SectionTitle(stringResource(R.string.stems_scene_section), stringResource(R.string.stems_scene_intro))
-    if (StemModels.BANDIT_PINNED) {
-        val files = StemModels.SCENE.files.joinToString(", ") { it.name }
+    val int8 = StemModels.BanditBuild.INT8
+    val full = StemModels.BanditBuild.FULL
+    VariantChooser(
+        options = listOf(
+            VariantOption(
+                title = stringResource(R.string.stems_build_int8),
+                tag = stringResource(if (StemModels.BANDIT_INT8_PINNED) R.string.stems_build_default else R.string.stems_build_on_its_way),
+                text = stringResource(R.string.stems_build_int8_text, Formatter.formatShortFileSize(context, StemModels.SCENE_INT8.installedBytes)),
+                icon = Icons.Rounded.Speed,
+                state = voice.builds[int8],
+                selected = voice.build == int8,
+                onSelect = { voice.onChooseBuild(int8) },
+            ),
+            VariantOption(
+                title = stringResource(R.string.stems_build_full),
+                tag = null,
+                text = stringResource(R.string.stems_build_full_text, Formatter.formatShortFileSize(context, StemModels.SCENE.installedBytes)),
+                icon = Icons.Rounded.CenterFocusStrong,
+                state = voice.builds[full],
+                selected = voice.build == full,
+                onSelect = { voice.onChooseBuild(full) },
+            ),
+        ),
+        enabled = voice.idle,
+    )
+    val scene = StemModels.scene(voice.build)
+    if (StemModels.pinned(voice.build)) {
+        val files = scene.files.joinToString(", ") { it.name }
         ModelCard(
             spec = ModelSpec(
-                title = stringResource(R.string.voice_model_title, StemModels.BANDIT_NAME),
+                title = stringResource(R.string.voice_model_title, scene.name),
                 importing = stringResource(R.string.smart_model_importing),
-                downloadText = stringResource(R.string.stems_step_download_bandit, Formatter.formatShortFileSize(context, StemModels.SCENE.installedBytes)),
-                downloads = StemModels.SCENE.downloads.map { it.file to it.url },
+                downloadText = stringResource(
+                    if (voice.build == int8) R.string.stems_step_download_bandit_int8 else R.string.stems_step_download_bandit,
+                    Formatter.formatShortFileSize(context, scene.installedBytes),
+                ),
+                downloads = scene.downloads.map { it.file to it.url },
                 importText = stringResource(R.string.smart_step_import_files_text, files),
-                installedBytes = StemModels.SCENE.installedBytes,
+                installedBytes = scene.installedBytes,
                 notTheModel = stringResource(R.string.stems_problem_not_bandit, files),
                 busy = stringResource(R.string.voice_busy),
                 deleteTitle = stringResource(R.string.voice_delete_title),
@@ -635,7 +671,7 @@ internal fun VoiceSettingsSection(voice: VoiceFeatureUi) {
             onUnload = voice.onUnload,
         )
     } else {
-        StemModelOnItsWay()
+        StemModelOnItsWay(voice.build)
     }
     SectionTitle(stringResource(R.string.stems_instruments_section), stringResource(R.string.stems_instruments_intro))
     val instrumentFiles = StemModels.INSTRUMENTS.files.joinToString(", ") { it.name }

@@ -54,8 +54,8 @@ object MarkingSweep {
             Kind(R.string.erase_section, EraseVariant.entries.flatMap { of(EraseModel.of(it)) } + "erase",
                 EraseVariant.entries.map { EraseModel.of(it).prefs }, generative = true),
             // Bandit and Spleeter's five stems under "stems"; "voice" held Spleeter's two stems (retired).
-            Kind(R.string.voice_section, of(StemModels.SCENE, StemModels.INSTRUMENTS) + "stems" + "voice",
-                listOf(StemModels.SCENE.prefs, StemModels.INSTRUMENTS.prefs, "voice_model"), generative = false),
+            Kind(R.string.voice_section, of(StemModels.SCENE, StemModels.SCENE_INT8, StemModels.INSTRUMENTS) + "stems" + "voice",
+                listOf(StemModels.SCENE.prefs, StemModels.SCENE_INT8.prefs, StemModels.INSTRUMENTS.prefs, "voice_model"), generative = false),
             // DubModelStore and PiperVoiceStore: Kokoro, the Piper voices, eSpeak NG's data, under "dub"
             // (the dubs made are in "dubs": they stay). DubModelStore.PREFS.
             Kind(R.string.dub_section, listOf("dub"), listOf("dub_model"), generative = true),

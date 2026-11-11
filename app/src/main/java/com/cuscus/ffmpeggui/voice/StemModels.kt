@@ -5,17 +5,24 @@ import com.cuscus.ffmpeggui.speech.SpeechModel
 /**
  * The two models that split a sound into stems (see StemSeparator):
  *
- *  - [BANDIT]: Bandit v2 (Karn N. Watcharasupat, Chih-Wei Wu, Iroro Orife;
- *    code Apache 2.0, weights CC BY-SA 4.0), the sound of a video split into
+ *  - Bandit v2 (Karn N. Watcharasupat, Chih-Wei Wu, Iroro Orife; code
+ *    Apache 2.0, weights CC BY-SA 4.0), the sound of a video split into
  *    dialogue, music and effects. It is what sets the voice apart for the
- *    voice levels and the dub, and the first step of every split.
+ *    voice levels and the dub, and the first step of every split. Two builds
+ *    of the same weights ([BanditBuild]): [BANDIT_INT8], the default, its
+ *    matrix products in 8-bit integers (a quarter of the size, loaded about
+ *    three times quicker, run quicker where the processor has int8
+ *    instructions, its stems within about 40 dB of the other's); and
+ *    [BANDIT], in 32-bit floats, the authors' numbers as they are.
  *  - [INSTRUMENTS]: Spleeter's five stems (Deezer, MIT), the music Bandit
  *    found split in turn into singing, piano, drums, bass and the rest.
  *
  * Both are published for other frameworks only (PyTorch, TensorFlow): these
  * ONNX files are this project's conversions (scripts/export-bandit.py and
  * scripts/export-spleeter.py, from what scripts/bandit-onnx.lock and
- * scripts/spleeter-onnx.lock pin, nothing trained or changed), built twice by
+ * scripts/spleeter-onnx.lock pin, nothing trained or changed; the int8 build
+ * by scripts/export-bandit-int8.py from the float file, as
+ * scripts/bandit-int8-onnx.lock pins it), built twice by
  * .github/workflows/models-onnx.yml and published, with their LICENSE, the
  * NOTICE of the changes and their PROVENANCE, as releases of this
  * repository. docs/MODELS.md has the whole record.
@@ -29,6 +36,15 @@ import com.cuscus.ffmpeggui.speech.SpeechModel
  * told a voice from the rest: see RetiredModels.
  */
 object StemModels {
+
+    /** Which build of Bandit v2 sets voices apart. */
+    enum class BanditBuild {
+        /** In 8-bit integers: lighter and quicker, the default. */
+        INT8,
+
+        /** In 32-bit floats: the authors' numbers as they are. */
+        FULL,
+    }
 
     // -- Bandit v2 ---------------------------------------------------------------------
 
@@ -65,7 +81,7 @@ object StemModels {
     /** False while the file waits for its first build to be pinned: the settings say it is on its way. */
     val BANDIT_PINNED: Boolean get() = BANDIT.sha256.any { it != '0' }
 
-    /** Bandit's file, kept the way the speech model's are. */
+    /** Bandit's float file, kept the way the speech model's are. */
     val SCENE: SpeechModel = SpeechModel(
         name = BANDIT_NAME,
         downloads = listOf(SpeechModel.Download(BANDIT.name, "$BANDIT_DOWNLOAD_URL/${BANDIT.name}")),
@@ -76,6 +92,60 @@ object StemModels {
         files = listOf(BANDIT),
         installedBytes = BANDIT.bytes ?: 0L,
     )
+
+    // -- Bandit v2, int8 --------------------------------------------------------------
+
+    /** The release of this repository that serves the int8 file (see scripts/bandit-int8-onnx.lock). */
+    const val BANDIT_INT8_RELEASE_TAG = "bandit-int8-onnx-1"
+
+    /** Where the int8 file is, with its LICENSE, NOTICE and PROVENANCE. */
+    const val BANDIT_INT8_FILES_URL = "https://github.com/marcomorosi06/FFmpegGUI/releases/tag/$BANDIT_INT8_RELEASE_TAG"
+
+    private const val BANDIT_INT8_DOWNLOAD_URL = "https://github.com/marcomorosi06/FFmpegGUI/releases/download/$BANDIT_INT8_RELEASE_TAG"
+
+    /**
+     * The same network in int8: the same input and masks as [BANDIT]. Zeros
+     * until its first build is pinned (scripts/pin-stems.py bandit-int8):
+     * until then nothing can be imported, and the float build is used.
+     */
+    val BANDIT_INT8 = SpeechModel.ModelFile(
+        name = "bandit-v2-multi-int8.onnx",
+        sha256 = "0000000000000000000000000000000000000000000000000000000000000000",
+        bytes = 0L,
+        role = SpeechModel.Role.ENCODER,
+    )
+
+    /** False while the int8 file waits for its first build to be pinned. */
+    val BANDIT_INT8_PINNED: Boolean get() = BANDIT_INT8.sha256.any { it != '0' }
+
+    /** The int8 file, kept the way the speech model's are, apart from the float one. */
+    val SCENE_INT8: SpeechModel = SpeechModel(
+        name = "$BANDIT_NAME int8",
+        downloads = listOf(SpeechModel.Download(BANDIT_INT8.name, "$BANDIT_INT8_DOWNLOAD_URL/${BANDIT_INT8.name}")),
+        folder = "stems/bandit-v2-int8",
+        prefs = "stems_bandit_int8",
+        tempFolder = "importing-bandit-int8",
+        files = listOf(BANDIT_INT8),
+        installedBytes = BANDIT_INT8.bytes ?: 0L,
+    )
+
+    /** The files of [build]. */
+    fun scene(build: BanditBuild): SpeechModel = when (build) {
+        BanditBuild.INT8 -> SCENE_INT8
+        BanditBuild.FULL -> SCENE
+    }
+
+    /** Whether [build]'s file is pinned, so that it can be imported. */
+    fun pinned(build: BanditBuild): Boolean = when (build) {
+        BanditBuild.INT8 -> BANDIT_INT8_PINNED
+        BanditBuild.FULL -> BANDIT_PINNED
+    }
+
+    /** Where [build]'s file is published. */
+    fun filesUrl(build: BanditBuild): String = when (build) {
+        BanditBuild.INT8 -> BANDIT_INT8_FILES_URL
+        BanditBuild.FULL -> BANDIT_FILES_URL
+    }
 
     // -- Spleeter, five stems --------------------------------------------------------
 
