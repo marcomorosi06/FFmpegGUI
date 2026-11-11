@@ -298,7 +298,7 @@ model to the last bit.
 
   | File | SHA-256 | Bytes |
   |---|---|---|
-  | `bandit-v2-multi-int8.onnx` | `0000000000000000000000000000000000000000000000000000000000000000` | 0 |
+  | `bandit-v2-multi-int8.onnx` | `3a4a054b8e07c553d5f19f9f72ad52a1d5049c6355e0512f33b9e2f5ae7579a9` | 40,260,047 |
 
   Zeros until its first build: `.github/workflows/models-onnx.yml` (without
   publishing) builds it twice, the two must be byte-identical, then

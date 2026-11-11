@@ -32,8 +32,8 @@ onnxruntime         1.31.1
 # (scripts/pin-stems.py bandit-int8 writes them): until then the app cannot
 # import it.
 file                bandit-v2-multi-int8.onnx
-file_sha256         0000000000000000000000000000000000000000000000000000000000000000
-file_bytes          0
+file_sha256         3a4a054b8e07c553d5f19f9f72ad52a1d5049c6355e0512f33b9e2f5ae7579a9
+file_bytes          40260047
 release_tag         bandit-int8-onnx-1
 
 # The tools that write it: the same as the other models' (Python 3.13, CPU
