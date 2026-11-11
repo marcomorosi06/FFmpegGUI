@@ -1,0 +1,3 @@
+# Files the app checks byte for byte (the token list of the speech model is
+# pinned by SHA-256, the licence copies too): never converted on checkout.
+app/src/main/assets/** -text

@@ -470,7 +470,7 @@ private fun SpeechCard(subtitles: SubtitleEditing) {
 
 @Composable
 internal fun stepText(working: SpeechStatus.Working): String = when (val step = working.step) {
-    is SpeechTranscriber.Step.Extracting -> stringResource(R.string.speech_step_sound)
+    is SpeechTranscriber.Step.Extracting -> stringResource(if (step.voice) R.string.speech_step_voice else R.string.speech_step_sound)
     SpeechTranscriber.Step.Loading -> stringResource(R.string.speech_step_loading)
     is SpeechTranscriber.Step.Listening ->
         if (step.parts > 1) {

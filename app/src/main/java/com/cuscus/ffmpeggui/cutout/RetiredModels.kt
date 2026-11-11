@@ -33,7 +33,7 @@ object RetiredModels {
     )
 
     /** Where in Smart features the replacement is set up: what "Set up" in the dialog opens. */
-    enum class Area { CUTOUT, VOICE }
+    enum class Area { SPEECH, CUTOUT, VOICE }
 
     /** Why it was retired, for the words the dialog says. */
     enum class Reason {
@@ -45,6 +45,9 @@ object RetiredModels {
 
         /** The same model, in a file that loads and runs quicker. */
         QUICKER,
+
+        /** No longer offered: its files cannot be had from a place that keeps them as the app pinned them. */
+        WITHDRAWN,
     }
 
     /** What [sweep] deleted: which model, and how much space it gave back. */
@@ -87,6 +90,37 @@ object RetiredModels {
             area = Area.VOICE,
             leftovers = listOf("stems/importing-bandit"),
         ),
+        // Parakeet quantised with SmoothQuant (by pantinor, on Hugging Face): the speech model's
+        // second build until it was dropped, with the archive import, for sherpa-onnx's int8 files
+        // served by this repository's own release (parakeet-onnx-1), which cannot change under the
+        // app's pins. The subtitles already made stay: they are in the projects.
+        Retired(
+            id = "parakeet-smoothquant",
+            name = "Parakeet SmoothQuant",
+            folder = "speech/parakeet-tdt-0.6b-v3-smoothquant",
+            prefs = "speech_model_smoothquant",
+            replacement = "Parakeet int8",
+            reason = Reason.WITHDRAWN,
+            area = Area.SPEECH,
+            leftovers = listOf("speech/importing-smoothquant"),
+        ),
+    )
+
+    /**
+     * Files the app no longer reads inside models it still uses, deleted at
+     * every start without a word (they are small, and what they were for is
+     * gone): the speech model's test recordings, which came with the
+     * sherpa-onnx archive the app no longer imports, with the speed test.
+     */
+    private val UNUSED_FILES: List<String> = listOf("en.wav", "de.wav", "fr.wav", "es.wav")
+        .map { "speech/parakeet-tdt-0.6b-v3-int8/$it" }
+
+    /** Settings the app no longer reads: settings file, then its keys. */
+    private val UNUSED_SETTINGS: List<Pair<String, List<String>>> = listOf(
+        // The speech model's: the recordings' hashes and whether the archive matched.
+        "speech_model" to listOf("en.wav", "de.wav", "fr.wav", "es.wav", "archive_matches"),
+        // SmartFeatures': which build of the speech model was chosen.
+        "smart_features" to listOf("speech_variant"),
     )
 
     private const val PREFS = "retired_models"
@@ -96,6 +130,11 @@ object RetiredModels {
     fun sweep(context: Context): List<Removed> {
         val app = context.applicationContext
         val removed = ArrayList<Removed>()
+        UNUSED_FILES.forEach { File(app.filesDir, it).delete() }
+        for ((name, keys) in UNUSED_SETTINGS) {
+            val settings = app.getSharedPreferences(name, Context.MODE_PRIVATE)
+            if (keys.any(settings::contains)) settings.edit().apply { keys.forEach { remove(it) } }.apply()
+        }
         for (retired in ALL) {
             val folder = File(app.filesDir, retired.folder)
             // A half-finished import of it, next to it, goes without a word.

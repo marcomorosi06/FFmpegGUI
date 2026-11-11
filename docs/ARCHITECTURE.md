@@ -389,6 +389,16 @@ always claims them first (it sees every move before the stage). A stroke under w
 dropped (`DrawingLayer`). The zoom pill springs it back to fit. Zoom is a view
 of the canvas only: nothing of it reaches the project or the export.
 
+While a picture is cropped, in the photo editor and in the video editor alike
+(issue #33), the view frames the crop frame each time it is let go: zoomed in
+until the frame fills the stage but for a margin left for its handles, and
+centred on it (`core/image/CropFocus`, tested; `StageZoom.animateTo`, the
+theme's default spatial spring). Never while a finger holds the frame
+(`CropOverlay`'s `onHeldChange`): the picture does not move under the finger.
+A frame that nearly fills the picture leaves it as it fits; the crop tool
+closed, the picture fits again. In the video editor the same zoom is a layer
+of the frame (`EditorPreview`), which clips it.
+
 Texts, stickers, shapes and the drawing are clipped to the picture on screen,
 as the export clips them: a layer moved partly off the picture is cut at its
 edge and never covers the editor (the file name, the tools).
@@ -451,7 +461,10 @@ than the picture it makes. It opens from home (an SVG picked, or an empty
 drawing) and when SVG is picked as the format of a picture: an SVG opens as
 it is, any other picture is traced into it (`SvgEditorViewModel.trace`, the
 same `VectorTracer`, one path per colour named after it) with a card to
-change how until its shapes are edited. That card and the picture editor's
+change how until its shapes are edited. The photo editor's Trace tool opens
+its shapes there too, as they are traced at that moment ("Go on drawing it
+in the SVG editor", `SvgEditorViewModel.openTraced`: the same layers and
+names). That card and the picture editor's
 shapes tool share `TraceControls` (`TraceStudio.kt`): the kind of picture
 first (logo, drawing, text, illustration, photo, pixel art, each a ready
 `TraceSettings`; a photo's shapes are shaded with gradients), then what the
@@ -608,6 +621,19 @@ gradients, dashes, opacity, texts and embedded pictures are drawn there;
 `SvgOther` nodes and texts placed piece by piece are drawn by AndroidSVG
 within the same transforms. Clip paths, masks and filters are not drawn while
 editing (they stay in the file).
+
+A text's outline is drawn from its letters' outline (`Paint.getTextPath`)
+with the overlapping pieces of each letter merged first (Skia's path ops,
+`Path.op` UNION; kept for the lines drawn lately): the phone's sans and other
+fonts made of overlapping pieces would otherwise show their edges inside the
+letters (issue #23). Text made into letters is merged the same way.
+
+The editor's panels (`PeekThroughSheet`) fade, with their scrim, while a
+control that shows its change live is used, so the drawing under them shows
+it: the controls marked `Modifier.peeksSheet()` (`ui/expressive/SheetPeek`;
+the sliders, `ValueSlider` and `CompactSlider`, and a gradient's stops), held
+still or dragged sideways. A hold or a sideways swipe anywhere else (a tile,
+the layers being reordered) leaves the panel as it is (issue #25).
 
 ### ASCII and ANSI art
 
@@ -835,12 +861,75 @@ then a tile per feature (speech, translation, cut-out, eraser, voice apart,
 dubbing), two by two, each playing its own small film drawn by the app in
 the theme's colours (the welcome's art where there is one: the spoken words,
 the cut-out), with a line and a status pill (ready and its size, not set
-up, importing, needs a look); last, the models' licences. A tile opens the
+up, importing, needs a look, needs the AI marks); last, the models' licences.
+Above them a banner says whether the AI marks are here and leads to their
+page; while they are not, the dub's and the eraser's tiles are grey (see
+"Marked as made with AI"). A tile opens the
 feature's page: its film large, its badge blooming in, a line, its status,
 and only its own cards. Pages come in sliding and growing, and back goes to
 the hub (`BackHandler`). Screens that send the user to set something up name
 the page (`SmartPageRequest`), so "Get the eraser model" lands on the
 eraser's page.
+
+## Editors in a stack
+
+The editors open on top of one another (`core/stack/EditorStack.kt`,
+`ConversionViewModel` "Editors in a stack", `EditorStackUi.kt`): a part of
+what one edits opens in the editor made for it, edited as a project of its
+own; Apply renders it into the cache (`NestedRenderer`, implemented by
+`media/FfmpegNestedRenderer` with an engine of its own writing to
+`nested-work/`, the result moved into `nested/`, owned by `CacheJanitor`) and
+it takes the part's place below, keeping its nested project (`NestedEdit` on
+`EditorSource`, `ImageOverlay` and `AudioClip`, written recursively by
+`ProjectJson`; `Json.MAX_DEPTH` 1024). Nothing changed since it opened (no
+step in its history): nothing is rendered, the editor below simply comes
+back.
+
+The links (`NestedKind`, tested: its part, `NestedPart`, its editor,
+`NestedEditor`, and the format it is edited and rendered as):
+
+| From | Part | Opens in | Applied as |
+|---|---|---|---|
+| video, GIF editor | a clip | video editor (MP4) | the clip rendered, in place of the clip |
+| video, audio editor | a clip's sound | audio editor (FLAC) | under the clip's picture (`SoundSwap`); an audio file's clip, the clip itself |
+| any editor | a picture of the timeline (a photo, a freeze frame); the photo editor's own picture | photo editor (PNG) | the picture, in place of the still, as long as it was |
+| video, GIF, photo editor | a picture or sticker laid over | photo editor (PNG) | the picture laid there (its shape read again; a subject key dropped) |
+| video editor | a video laid over | video editor (MP4) | the whole video made, laid there |
+| video, GIF editor | a GIF laid over | GIF editor | the whole GIF made, laid there |
+| video editor | a video laid over: its sound | audio editor (FLAC) | under the video's picture (`SoundSwap`) |
+| video, audio editor | a sound of the timeline | audio editor (FLAC) | the whole sound made, played there (measured again when levelled) |
+
+A shape and an effect of the app's open in no editor: their own panels edit
+them. The text-art editor has no part to open, and no link opens it; the
+SVG editor is a tool of its own (its own view model), outside the stack.
+
+`SoundSwap` (tested): the picture copied, the sound delayed to where the part
+starts in its file and padded to the file's length, FLAC in Matroska. The
+view model keeps the editors below as frames (settings, history, facts learnt
+about files, project id) and brings them back exactly; background work is
+stopped when the stack moves. A nested editor is never saved apart: the
+project is saved with every editor open on top of it
+(`ConversionSettings.openAbove`, an `OpenEditor` holding the part, the
+editor's project and the one on top of it in turn, only in what is saved),
+and when the editors have to be left without being applied (another project
+opening, another window taking this one, the app going) they are kept so
+(`keptStack`); opened again, the project opens them again, edits and all
+(`reopenStack`; one whose part is gone stops there). The editors show a
+first, different tool on a selected part (`OpenInEditorButton`; in the photo
+editor the picture itself too, with nothing selected), which opens a panel
+like any tool (`EditorTool.OPEN_IN`, `ImageTool.OPEN_IN`, `OpenInPanel`);
+Apply in place of Export; the way through the stack as badges in the top bar
+under the file's name (`StackPath`, the close button then going back down),
+which opens the map of the editors, a tidy tree drawn top down, editors only,
+the part on each link with what it is, a clip, a layer or a sound
+(`StackGraphSheet` on `core/stack/TreeLayout`, built by
+`ConversionViewModel.stackGraph`, a node tapped leading to its editor by
+`navigateStack` and `StackGraph.route`); each editor a shape and a colour
+(the project a four-sided cookie, video nine-sided, audio a soft burst, photo
+a flower, GIF a sun); the render's progress (`NestedApplyOverlay`) and a
+question before changes are lost (`LeaveStackDialog`); each level keeps its
+own UI state (`SaveableStateHolder` keyed by level, in `MainActivity`'s
+editor route, around the video, audio, GIF and photo editors alike).
 
 ## Recent projects
 
@@ -961,13 +1050,29 @@ canvas) can be pulled out of its shape: laid `widthFraction` wide and
 `stretch` times less high than its shape (`overlayScale`: `ow/dar/stretch`,
 then `setsar=1`), still or moving; its look is drawn on it once stretched (the
 preview's made look too, `decoratedPicture(stretch)`), and a turned one is
-placed by its stretched box (`laidPictureAspect`). Fit in the picture's
-Arrange card stretches it to the frame (`FitMode.STRETCH`; Whole and Cover give
-it its own shape back), and the photo editor's canvas puts the photo back
-whole, covering or stretched (`fitPictureOnCanvas(CanvasFit)`,
-`stretchedPhoto`); a photo stretched to its canvas is stretched again to the
-canvas's new shape when it changes, and the panel shows which of the three
-the photo lies as (`photoFit`).
+placed by its stretched box (`laidPictureAspect`). The ways to fit it have the
+same names and drawings everywhere: Whole, Cover and Stretch, as tiles drawn by
+`CanvasFitPreview` (the video in its frame, the photo on its canvas, a sticker
+or picture in its Arrange card), the one it lies as lit (`photoFit`,
+`ImageOverlay.fitIn`); the Arrange card adds Full width and Centre, which only
+place it. Whole, Cover and Stretch put a picture back upright in the middle
+(`fittedTo`: `FitMode.STRETCH` pulls it to the frame's shape, Whole and Cover
+give it its own shape back; Full width and Centre keep its shape and turn).
+The photo editor's canvas puts the photo back the same three ways
+(`fitPictureOnCanvas(CanvasFit)`, `stretchedPhoto`); a photo stretched to its
+canvas is stretched again to the canvas's new shape when it changes. By hand,
+a selected picture (the photo too) has a bar in the middle of its right side
+and of its bottom (`StretchHandle`): the side one makes it wider or narrower
+and keeps its height (width and stretch grow by the same factor), the bottom
+one taller or shorter and keeps its width (only the stretch), both as the
+export lays them (its look's room counted, within `MIN_STRETCH`..`MAX_STRETCH`
+and the widths laid) and snapping to its own shape within 4%, with a tick
+(`core/model/PictureStretch`, tested). The finger is followed in the root's
+coordinates and projected on the turned box's axes (`PictureStretch.along`),
+since the bar moves with the edge it pulls; the corner grip and two fingers
+keep its shape. While it is out of its shape (`laidStretch != 1`), its Arrange
+card and the photo's canvas panel say so, with "Own shape" (`StretchedNotice`:
+the stretch back to 1, where it is and as wide).
 
 **Backwards clips** (`core/preview/ReversedSound`, tested; `media/FfmpegSoundReverser`;
 `ReverseSoundWindow.kt`). A player only goes forwards: stepped back frame by
@@ -1217,16 +1322,29 @@ is left out: FFmpeg's formula is not the spec's.
 `blendMode` (`composeMode()`, `BlendPanels.kt`), drawn over the photo or the
 video's `TextureView`.
 
-**Captions** blend too, and turn (`TextOverlay.blend`, `rotationDegrees`). A
-caption turned or blended (`TextOverlay.layered`) is drawn as a layer of its
-own (`VideoFilters.layeredText`): on a see-through canvas twice the frame's
-size, in the letters' colour (so the turn's smoothing brings in no other),
-its anchor in the middle (the point of the text at (x, y) of its size, which
-lies at (x, y) of the frame: `drawtext` places it so, whatever its width);
-`rotate` about that middle; laid back with the anchor at its place, plainly or
-by the same blend as a picture. The preview turns it about the same point
-(`transformOrigin`) and mixes it with its `blendMode` (offscreen). Upright and
-normal, a caption is drawn straight on the frame as before.
+**Captions** blend too, turn and stretch (`TextOverlay.blend`,
+`rotationDegrees`, `stretch`). A caption turned, blended or stretched
+(`TextOverlay.layered`) is drawn as a layer of its own
+(`VideoFilters.layeredText`): on a see-through canvas twice the frame's
+size, in the letters' colour (so the turn's and the stretch's smoothing bring
+in no other), its anchor in the middle (the point of the text at (x, y) of
+its size, which lies at (x, y) of the frame: `drawtext` places it so,
+whatever its width); stretched there (`laidStretch`, as a picture's, within
+0.25..4: wider, the canvas is made that many times narrower first, twice the
+frame's height, and widened back with the letters on it, so that it is never
+wider than twice the frame; narrower, it is narrowed after them; `setsar=1`
+each time), then `rotate` about that middle; laid back with the anchor at its
+place, plainly or by the same blend as a picture. The preview stretches and
+turns it about the same point (`scaleX`, `rotationZ`, `transformOrigin`: scale
+first, as the export) and mixes it with its `blendMode` (offscreen); its grips
+are drawn back round in the stretched layer (`squash`). Upright, normal and in
+its own shape, a caption is drawn straight on the frame as before. By hand a
+selected caption has the bars of a picture (`StretchHandle`): the side one
+makes it wider at its size (`PictureStretch.textSideways`), the bottom one
+taller at its width (`textUpDown`: the size grows, the stretch shrinks as
+much), snapping to its own shape within 4%; its Layout panel offers "Own
+shape" while it is stretched. Kept in the project only when not 1
+(`ModelJson`, "stretch").
 
 **Panel.** `ImageBlendPanel`: the chosen mode large, in a badge that morphs into
 the mode's own shape, and every mode on a tile that shows itself (a warm-to-cold
@@ -1234,13 +1352,33 @@ backdrop with a disc mixed onto it by that mode). In the picture editor it is a
 tool of a sticker, a shape or a caption, in the video editor of a picture, a
 video, a shape or a caption laid over it.
 
+**Magnetic guides** (`SnapGuides.kt`; the math is `core/preview/Snapping`,
+tested). On one frame (a clip's, or the whole video's canvas) everything that
+can be moved by hand registers its box in a `SnapScene`: captions (as drawn,
+stretched), pictures, stickers, shapes and videos laid over (turned, their
+look's room included), the video itself on its canvas, and the styled
+subtitles (their lines as drawn). Moved, a thing's edges and middle stick to
+the frame's and to the others' (`snapMove`, within 8 dp); resized or
+stretched (two fingers, the corner grip, the side bars, the subtitles'
+corner), its moving edges do (`snapResize`: the box is affine in the one
+number the gesture changes, a size, a scale or how far a bar was pulled, so
+the number that lays an edge on a line is solved for exactly; its middle does
+not count, a move snaps that). A pulled bar near the thing's own shape takes
+that first. The lines show while it sticks, a tick each time it catches, and
+go when the finger lifts. The subtitles once only held to the middle; with no
+scene they still do.
+
 **Turning by hand.** What is selected on the picture (a caption, a picture, a
 video) has a knob beyond its top (`RotateHandle`): dragged, it turns the thing
 to face the finger, about its middle (a caption: its anchor), caught by whole
 steps of 45 degrees with a tick (`SnapScene.turn`), the angle in a pill
 meanwhile; a double tap stands it upright. Where the knob would leave the
 frame it sits below. Two fingers turn a caption as they do a picture, and the
-Rotate tool has the angle on a slider (a caption has no flips).
+Rotate tool has the angle on a slider (a caption has no flips). A turned (or
+stretched) thing feels its touches in its own coordinates, turned with it: a
+drag moves it by the finger's move turned and stretched back onto the canvas
+(`detectTotalTransform`'s `toCanvas`, `turnedMove`), so it follows the finger
+whatever its turn, in the video and photo editors alike.
 
 ## Video effects
 
@@ -1418,6 +1556,75 @@ Since the preview does not show it, two signs say where it runs:
   in the picture's tone), in place of the dot of clips with effects; the dot
   moves beside it when the clip has other effects too. A clip narrower than
   40 dp keeps the dot alone.
+
+### Sharpness, blur, vignette and grain
+
+The Details tool holds five settings, each a round chip in a row
+(`VideoDetailsPanels.kt`, `ControlChip`: the chosen one a cookie, a dot on
+those in use): the denoise above, then the finishing touches of
+`ColorSettings`, which the export writes after the colours, in this order
+(`VideoFilters`): `sharpness` (-1..1, `unsharp=5:5:amount`, amount x1.5;
+below zero it softens), `gaussianBlur` (`gblur`, its sigma in the footage's
+pixels, up to `BLUR_MAX` 20), `vignette` (0..1, `vignette=angle=`, the
+strength times `VIGNETTE_MAX_ANGLE`, PI/2.5, as the photo editor's; 0.5 is
+FFmpeg's default, and a project of an older version that kept it as on or
+off reads on as 0.5, `ModelJson`) and `filmGrain` (`noise=alls=N:allf=t+u`,
+up to `GRAIN_MAX` 60). Each has levels in a connected button group, a slider
+for the values in between (each its own undo grouping, `effectsStepKey`),
+and a swatch: a small scene in the theme's colours (sky, sun, hills) with the
+setting laid on it, beside a badge whose shape says it too (puffy to spiky
+for the sharpness).
+
+The preview draws them live (`FinishingTouchesPreview.kt`), on a clip's
+picture before its key (`ClipPicture`) and on the whole video's frame over
+its clips (`EditorPreview`), from the same numbers (`core/preview/
+FinishingTouches`, tested): on Android 13 and later two AGSL shaders, one
+for unsharp's 5x5 luma kernel (one footage pixel a tap apart on screen),
+one after the blur for vignette's falloff (`cos(angle x d / dmax)^4`) and
+noise's uniform draw on each component, a new draw for each frame; the blur
+between them by the platform's (`RenderEffect.createBlurEffect`, a
+gaussian, the sigma scaled to the screen). On Android 12 only the blur is a
+render effect, and the vignette is a radial gradient drawn over the picture
+from the same falloff (`FinishingTouches.vignetteStops`); before, the
+vignette alone. The panel says when the preview cannot show a setting.
+
+### Stabilize
+
+`EditorTool.STABILIZE` (`StabilizePanels.kt`) steadies the whole video with
+vid.stab in two passes of the export (`ConversionSettings.stabilize`,
+`stabilizeShakiness` 1..10 for `vidstabdetect`, `stabilizeSmoothing` 0..100
+frames for `vidstabtransform`, 0 holding the camera still as on a tripod;
+`CommandBuilder.buildStabilizationAnalysis`, `needsStabilizationAnalysis`).
+The panel: a hero card whose badge shakes (random nudges) while the video is
+left shaky and settles on the slow spatial spring, swelling from a soft
+burst into a cookie, once it is on; a switch; levels (Gentle 3/8, Steady
+5/15, Firm 8/30, Tripod 10/0) and the two sliders; what to expect (the
+preview cannot show it, two passes take longer, the frame is zoomed a little
+to hide the borders). Not with stream copy or frame extraction. The preview
+has a badge for it among its status badges (`StabilizeBadge`, as the
+denoise's), which opens the tool.
+
+### The sound's denoise
+
+`Effects.audioDenoise` (0..1, FFmpeg's `anlmdn` at up to strength 10,
+`audioDenoiseFilter` in `AudioFilters.kt`) has a tool of its own, Noise
+(`EditorTool.AUDIO_DENOISE`, `AudioDenoisePanels.kt`), in both editors, for
+a clip or for the whole video: levels and a slider, and a listening card.
+The live sound cannot run `anlmdn` (it compares every short patch of the
+sound with those around it), so "Listen" makes a comparison where asked:
+eight seconds of the sound under the playhead (moved back to fit in the
+clip), decoded once with a quarter-second lead-in, split, one half as it is
+and the other through the export's filters (the clip's, then the whole
+video's), the lead-in cut away, both written as WAV (`core/preview/
+AudioDenoiseSample`, tested; `AudioDenoiseSampler`, implemented by
+`media/FfmpegAudioDenoiseSampler`, into the denoise comparisons' cache
+folder, emptied at start-up). Both halves play together in a loop in two
+players, only the chosen one heard, so a connected button group switches
+"Before" and "After" at the same instant; they are put back in step when
+they drift. The card's badge swells into a soft burst with the loading
+indicator while FFmpeg works; a change of strength makes the comparison
+again once the slider rests. The editor's own playback pauses while it
+plays.
 
 ## The TV break
 
@@ -1691,8 +1898,17 @@ user turned Live Updates off for the app; it is then a normal notification with
 the same bar. Before Android 16 it is an ongoing notification with a progress
 bar. Updates come at most every 400 ms or on a new percentage (the system drops
 faster ones). Once over, a short notification says it is ready or failed, only
-when the app is not on screen, and goes when the app comes back. Android 13 and
-later ask for the notification permission at the first export.
+when the app is not on screen, and goes when the app comes back. Before every
+export, while its notifications cannot show (the app's not allowed, or one of
+its two channels turned off), they are asked for first
+(`export/NotificationsFirst`, `rememberNotificationsFirst`, around
+`startExportOf` in `MainActivity`): Android 13 and later get Android's own
+question while it still asks (never asked by the app, or refused once:
+`shouldShowRequestPermissionRationale`); refused for good, turned off in
+Android's settings or a channel off, a dialog of the app's own leads to its
+notification settings (`ACTION_APP_NOTIFICATION_SETTINGS`) and the export
+starts on the way back (`ON_RESUME`), or at once with "Export without". The
+export never waits on the answer otherwise: it starts once it is given.
 
 ## Where things live
 
@@ -1743,7 +1959,7 @@ later ask for the notification permission at the first export.
 | what a project file holds, recent projects  | `app/.../projects/` (`ProjectJson.kt`, `ProjectStore.kt`), `core/project/` |
 | how clips become FFmpeg inputs              | `footage()` in `core/command/CommandBuilder.kt`      |
 | spoken subtitles: words, lines, the script  | `core/subtitles/` (`SpokenWords.kt`, `SubtitleLayout.kt`, `AssSubtitles.kt`, `FontFacts.kt`) |
-| the speech model, its import and test       | `app/.../speech/`, `app/.../settings/SmartSettings.kt`, `core/archive/` |
+| the speech model and its import             | `app/.../speech/`, `app/.../settings/SmartSettings.kt` |
 | the subtitles panel and their preview       | `app/.../SubtitlePanels.kt`, `app/.../StyledSubtitles.kt` |
 
 Adding a setting end to end: field in `ConversionSettings` -> setter in
@@ -2351,14 +2567,31 @@ noise reduction among what is not). `core.provenance`, pure and tested:
   `MarkGuard`, right before an export, reads its mark and, when it has none,
   marks a copy that the export uses (a dub line by line between its
   silences: `SpeechMarking.runs`); an export that cannot have them fails.
-- **First of all** (`MarkingGate`, `MarkingSweep`): the marks' four files
-  (`MarkerModel`, one import) come before any other model. Every store's
-  import asks the gate; the refusal says why (`MarkersFirstDialog`). At
-  every start, before any store reads its files, models without the marks,
-  or older than them, all go and the user is told once
-  (`ModelsClearedDialog`); removing the marks removes every model. The dub
-  and the eraser refuse to start without them, and the engines throw rather
-  than hand out something unmarked.
+- **Before the dub and the eraser** (`MarkingGate`, `MarkingSweep`): the
+  marks' four files (`MarkerModel`, one import) come before the models that
+  make voices and pictures: the dub's (`DubModelStore`: Kokoro;
+  `PiperVoiceStore`: the Piper voices, eSpeak NG's data) and the magic
+  eraser's (`EraseModel.MIGAN`, `EraseModel.LAMA`, the only `SpeechModel`s
+  with `generative = true`). Those stores' imports ask the gate; the refusal
+  says why (`MarkersFirstDialog`). The other models (speech, translation,
+  cut-out and EdgeTAM, the stems) make nothing that is marked (the
+  Commission's guidelines count transcription, translation and background
+  removal among what is not): their stores do not ask, and they are imported
+  and kept with or without the marks. At every start, before any store reads
+  its files, the dub's and the eraser's models without the marks, or older
+  than them, go and the user is told once (`ModelsClearedDialog`); the
+  others are left alone (`MarkingSweep.KINDS` keeps them, `generative =
+  false`, only so that what an older version deleted is still named).
+  Removing the marks removes the dub's and the eraser's models with them
+  (`SmartFeatures.deleteMarkersAndGenerativeModels`), not the others. In the
+  settings, while the marks are missing, the dub's and the eraser's tiles on
+  the hub are grey (`Modifier.greyedOut`: saturation 0, half faded) with a
+  "Needs the AI marks" pill, their badges in the hero fainter, and their
+  pages show the way to the marks (`MarksFirstNotice`) over their cards,
+  grey and out of reach (`LockedForMarks`: a cover over them takes the taps
+  and opens the marks' page, a drag still scrolls; screen readers hear one
+  button that says why). The dub and the eraser refuse to start without the
+  marks, and the engines throw rather than hand out something unmarked.
 - **Nothing that tells anyone apart.** Both payloads are constants (the
   speech's zeros, the pictures' fixed codeword), the same for every user: no identifier of the phone, the person, the file or the
   model, no date, nothing random (a random value per file would make its
@@ -2451,16 +2684,19 @@ app's own.
 **The model.** NVIDIA's Parakeet TDT 0.6B v3 (CC BY 4.0, 25 European
 languages, found by itself), as converted and quantised to int8 by sherpa-onnx
 (`speech/SpeechModel.kt`). It is not shipped: Settings > Smart features opens
-the sherpa-onnx release archive (487 MB, `.tar.bz2`) in the browser, and the
-user imports the downloaded file (or the model's four files).
-`speech/SpeechModelStore.kt` reads it once, as a stream: bzip2
-(`core/archive/Bzip2InputStream.kt`, a plain decoder that checks every block's
-CRC) and tar (`core/archive/TarReader.kt`) are undone on the fly, every file is
-hashed as it is written into a temporary folder, and the folder takes the
-model's place only when every file matches its pinned SHA-256 (the archive's
-own hash is checked too and shown). The hashes are kept; "Check again" hashes
-the files anew. Only files that passed are ever handed to the native runtime:
-a damaged model makes ONNX Runtime abort the whole process.
+its three ONNX files in the browser, from this repository's release
+`parakeet-onnx-1`, which serves sherpa-onnx's files unchanged
+(`scripts/parakeet-onnx.lock`; docs/MODELS.md says why), and the user imports
+them; the token list is in the app's assets (kept byte for byte by
+`.gitattributes`). `speech/SpeechModelStore.kt` reads each file once, as a
+stream, hashing it as it is written into a temporary folder, and the folder
+takes the model's place only when every file matches its pinned SHA-256. The
+hashes are kept; "Check again" hashes the files anew, and a file that does not
+match shows the hash found next to the one expected. Only files that passed
+are ever handed to the native runtime: a damaged model makes ONNX Runtime
+abort the whole process. (An earlier build, SmoothQuant, the import of the
+sherpa-onnx archive and a speed test on its recordings are gone:
+`cutout/RetiredModels.kt` deletes what they left on a phone.)
 
 **Running it.** sherpa-onnx 1.13.8 (Apache 2.0, with ONNX Runtime, MIT), the
 AAR of its GitHub release in `app/libs` (not on Maven Central), pinned by its
@@ -2470,13 +2706,20 @@ left out of the APK (the app uses JNI only), and R8 keeps its classes (the
 native code reads them by name). `speech/SpeechEngine.kt` loads the
 `OfflineRecognizer` (greedy search, cores - 2 threads, between 2 and 4) when
 it is needed and lets it go as soon as the file is heard (see Models in
-memory); the speed test listens
-to the four recordings of the archive and compares what it heard with what
-they say.
+memory).
 
 **Listening.** `speech/SpeechTranscriber.kt` takes the sound out of a file
-with FFmpeg (`media/.../FfmpegAudioExtractor.kt`: 16 kHz mono floats, padded
-so that sample 0 is the file's time 0) and feeds it to the model 30 seconds at
+with FFmpeg (`media/.../FfmpegAudioExtractor.kt`, the command from
+`core/subtitles/ListenedSound.kt`: 16 kHz mono floats, padded so that sample 0
+is the file's time 0). When the voice of the file was set apart before (its
+dialogue and singing stems both kept by the voice separation), the two stems
+are mixed and heard instead of the whole sound: under music, singing above
+all, the model takes a voice for music and writes nothing, for most of a
+minute at times, while the same voice alone is heard (measured with the
+pinned model: a sung voice over music lost 10 to 24 sentences of 36, alone
+one). Nothing is separated for this; shorter pieces, a second pass shifted by
+half a piece and a blank penalty were tried and did not help (the penalty
+writes words over instrumental parts). The sound is fed to the model 30 seconds at
 a time (the model's memory grows with the square of what it hears at once).
 Each chunk ends at the quietest 20 ms of its last two seconds, so that no word
 is cut in two. The model returns word pieces with their start and duration
@@ -2573,6 +2816,18 @@ comma once half full, 42 characters) and verses (3 s of silence), plain or
 synced the LRC way ("[mm:ss.xx]line", an empty timed line where a verse stops),
 which players that know LRC follow as the song plays. Read back from a file,
 FFmpeg's "lyrics-eng" (an USLT frame) counts as the lyrics.
+
+The lines are also timed by hand (issue #16, `LyricsSync.kt`): a page with
+two views, "Plain" (the words as text) and "Synced" (a line each: a stopwatch
+that stamps it with where the song plays now, held to take the time away; its
+words; a button that plays the song from it), over the song's own player
+(where it is, play, 5 s back and on). The song is the editor's preview
+(`LyricsPlayback`: the position and length on the exported file's clock, a
+seek through `OutputClock.timelineMs`), so the times hold for the file made.
+`LrcLines` (`core/subtitles`, tested) reads and writes the lines: an LRC
+header kept, a line timed twice kept once, words edited as text keeping the
+times of the lines that are still there (`retimed`), and the line sung now
+(`lineAt`). Done writes LRC when a line is timed, plain lines otherwise.
 
 **Preview.** `StyledSubtitles.kt` draws the same blocks on the whole output
 frame (canvas included) with the same font file, as libass measures it: a line
@@ -2809,11 +3064,15 @@ sticker deleted from the gallery stays in the projects that use it (they keep
 their own copy).
 
 **Retired models** (`cutout/RetiredModels`). A model the app no longer uses
-(SlimSAM, before EdgeTAM) is deleted at start when it is still on the phone,
-from its folder and its settings; what was deleted waits in `retired_models`
-until `RetiredModelsDialog` has said so once (which model, what replaced it,
-the space freed, a way to set up the new one). The list only grows; the pin
-check fails if a retired folder is ever one in use.
+(SlimSAM, before EdgeTAM; Parakeet's SmoothQuant build, no longer offered) is
+deleted at start when it is still on the phone, from its folder and its
+settings; what was deleted waits in `retired_models` until
+`RetiredModelsDialog` has said so once (which model, what replaced it or why
+it went, the space freed, a way to set up the new one). The list only grows;
+the pin check fails if a retired folder is ever one in use. Files and
+settings the app no longer reads inside models still in use (the speech
+model's test recordings, the speech build once chosen) go at the same time,
+without a word.
 
 ONNX Runtime comes twice, inside the sherpa-onnx AAR (1.28.2) and with its Java
 API (1.28.0): the build keeps one `libonnxruntime.so` (`pickFirsts`), which both
@@ -3131,9 +3390,10 @@ Android developer (`KeepAndroidOpen.kt`). Folded, it is one row as small as
 the home's other tiles (a little phone whose apps a padlock greys out, then
 springs open, three times, then still; the name; one line), so that the app stays the
 first thing on the screen. A tap unfolds what the registration means for an
-app like this one (its key words in bold), what it means for this one (it
+app like this one (its key words in bold: installing it gets harder, and
+one day may not be possible at all), what it means for this one (it
 will not register with Google: once the lockdown reaches a country it
-installs only through the extra steps Google allows, or on an Android
+installs only through the extra steps Google allows, while it allows them, or on an Android
 without Google such as GrapheneOS), and a button to the campaign's
 site, opened in the browser (nothing is fetched by the app). Its cross hides
 it for good (`AppSettings.keepAndroidOpenBanner`); Settings, Appearance,

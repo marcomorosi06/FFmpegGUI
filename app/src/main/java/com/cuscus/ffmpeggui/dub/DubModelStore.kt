@@ -68,7 +68,7 @@ class DubModelStore(context: Context) {
     @Synchronized
     fun import(uri: Uri) {
         if (job?.isActive == true) return
-        // The AI marks come first (MarkingGate): without them nothing is read.
+        // A voice comes after the AI marks (MarkingGate): without them nothing is read.
         if (!com.cuscus.ffmpeggui.marking.MarkingGate.allowsImport()) return
         job = scope.launch {
             val wasInstalled = filesPresent()

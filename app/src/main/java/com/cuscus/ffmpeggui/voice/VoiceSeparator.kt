@@ -17,6 +17,7 @@ import com.cuscus.ffmpeggui.core.stems.StemSeparation
 import com.cuscus.ffmpeggui.core.voice.PcmStereoFile
 import com.cuscus.ffmpeggui.core.voice.VoiceStem
 import com.cuscus.ffmpeggui.core.voice.WavWriter
+import com.cuscus.ffmpeggui.core.subtitles.ListenedSound
 import com.cuscus.ffmpeggui.media.FfmpegAudioExtractor
 import com.cuscus.ffmpeggui.speech.AiKernels
 import com.cuscus.ffmpeggui.speech.ModelSlot
@@ -138,6 +139,16 @@ class VoiceSeparator(
     fun isStemTrack(sound: Uri, kind: StemKind): Boolean {
         val file = sound.path?.let(::File) ?: return false
         return sound.scheme == "file" && file.parentFile == folder && file.name.endsWith("." + kind.id + EXTENSION)
+    }
+
+    /**
+     * The voice of the file at [uri] as the speech model hears it best: its
+     * kept stems that make up the voice (core's ListenedSound.voiceOf), or
+     * none when they are not all kept. Nothing is separated here.
+     */
+    fun voiceTracks(uri: Uri): List<File> {
+        val kept = tracks(uri)
+        return ListenedSound.voiceOf(kept.keys).mapNotNull(kept::get)
     }
 
     /** True when the dialogue, the music and the effects of [uri] are kept as tracks. */

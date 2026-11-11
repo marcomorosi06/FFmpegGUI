@@ -237,8 +237,8 @@ internal class VideoFilters(private val fonts: FontProvider) {
         if (color.sharpness != 0f) {
             filters += fmt("unsharp=5:5:%.2f:5:5:0.00", color.sharpness.coerceIn(-1f, 1f) * UNSHARP_MAX_AMOUNT)
         }
-        if (color.gaussianBlur > 0f) filters += fmt("gblur=sigma=%.1f", color.gaussianBlur)
-        if (color.vignette) filters += "vignette"
+        if (color.gaussianBlur > 0f) filters += fmt("gblur=sigma=%.1f", color.gaussianBlur.coerceAtMost(ColorSettings.BLUR_MAX))
+        if (color.vignette > 0f) filters += vignetteFilter(color.vignette)
         if (color.filmGrain > 0f) filters += "noise=alls=${color.filmGrain.toInt().coerceIn(1, 100)}:allf=t+u"
         return filters
     }
@@ -339,12 +339,15 @@ internal class VideoFilters(private val fonts: FontProvider) {
         if (overlay.layered) layeredText(overlay, timed, time, frameHeight) else letters(overlay, timed, time, frameHeight, canvas = false)
 
     /**
-     * A caption turned or blended: drawn on a see-through canvas twice the
-     * frame's size with its anchor (see TextOverlay) in the middle, turned
-     * there about it, and laid on the frame with the anchor at its place:
-     * plainly, or mixed as a picture with a blend mode is (see CommandBuilder's
-     * layOver). The canvas is in the letters' colour, so that the turn's
-     * smoothing brings in no other at their edges.
+     * A caption turned, blended or stretched: drawn on a see-through canvas
+     * twice the frame's size with its anchor (see TextOverlay) in the middle,
+     * pulled out of its shape there (stretched: the canvas made as much
+     * narrower first, then widened with the letters on it, so that it is
+     * never more than twice the frame's width), turned there about it, and
+     * laid on the frame with the anchor at its place: plainly, or mixed as a
+     * picture with a blend mode is (see CommandBuilder's layOver). The canvas
+     * is in the letters' colour, so that the turn's and the stretch's
+     * smoothing bring in no other at their edges.
      */
     private fun layeredText(overlay: TextOverlay, timed: Boolean, time: String, frameHeight: Int): String {
         val label = "tl" + (labelCount++)
@@ -359,8 +362,17 @@ internal class VideoFilters(private val fonts: FontProvider) {
         val paper = String.format(Locale.US, "0x%06X@0", overlay.color and 0xFFFFFF)
         val turn = ((overlay.rotationDegrees % 360f) + 360f) % 360f
         val turned = if (turn > 0.01f && turn < 359.99f) ",rotate=a=${fmt("%.6f", Math.toRadians(turn.toDouble()))}:c=none" else ""
-        val canvas = "format=rgba,lutrgb=r=$r:g=$g:b=$b:a=0,pad=w=iw*2:h=ih*2:x=iw/2:y=ih/2:color=$paper," +
-            letters(overlay, timed, time, frameHeight, canvas = true) + turned
+        val stretch = overlay.laidStretch
+        // Stretched wider: a canvas that many times narrower (twice the frame's height, the
+        // letters as high), widened back to twice the frame's width with the letters on it.
+        val sheet = when {
+            stretch == 1f -> "pad=w=iw*2:h=ih*2:x=iw/2:y=ih/2:color=$paper"
+            stretch > 1f -> fmt("scale=w=trunc(iw*2/%.4f/2)*2:h=ih*2,setsar=1", stretch)
+            else -> "scale=w=iw*2:h=ih*2,setsar=1"
+        }
+        val pulled = if (stretch == 1f) "" else fmt(",scale=w=trunc(iw*%.4f/2)*2:h=ih,setsar=1", stretch)
+        val canvas = "format=rgba,lutrgb=r=$r:g=$g:b=$b:a=0,$sheet," +
+            letters(overlay, timed, time, frameHeight, canvas = true) + pulled + turned
         val at = "x='main_w*$x-overlay_w/2':y='main_h*$y-overlay_h/2'"
         val mode = overlay.blend.ffmpegMode
             ?: return "split[${label}m][${label}s];[${label}s]$canvas[${label}t];[${label}m][${label}t]overlay=$at:format=auto"
@@ -574,3 +586,7 @@ internal fun fmt(pattern: String, vararg args: Any): String =
  */
 internal fun denoiseFilter(strength: Float): String? =
     if (strength > 0f) fmt("hqdn3d=%.1f", strength.coerceAtMost(ColorSettings.DENOISE_MAX)) else null
+
+/** FFmpeg's vignette at [strength] (0..1; see ColorSettings.vignette). */
+internal fun vignetteFilter(strength: Float): String =
+    fmt("vignette=angle=%.4f", strength.coerceIn(0f, 1f) * ColorSettings.VIGNETTE_MAX_ANGLE)

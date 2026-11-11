@@ -564,13 +564,13 @@ class CommandBuilderTest {
             request {
                 copy(
                     effects = Effects(
-                        color = ColorSettings(sharpness = 1f, gaussianBlur = 2.5f, vignette = true, filmGrain = 12f, denoise = 4f),
+                        color = ColorSettings(sharpness = 1f, gaussianBlur = 2.5f, vignette = 0.5f, filmGrain = 12f, denoise = 4f),
                         audioDenoise = 0.5f,
                     ),
                 )
             },
         )
-        assertEquals("hqdn3d=4.0,unsharp=5:5:1.50:5:5:0.00,gblur=sigma=2.5,vignette,noise=alls=12:allf=t+u", result.valueOf("-vf"))
+        assertEquals("hqdn3d=4.0,unsharp=5:5:1.50:5:5:0.00,gblur=sigma=2.5,vignette=angle=0.6283,noise=alls=12:allf=t+u", result.valueOf("-vf"))
         assertEquals("anlmdn=s=5.00", result.valueOf("-af"))
     }
 

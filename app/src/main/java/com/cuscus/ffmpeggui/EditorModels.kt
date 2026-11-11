@@ -41,6 +41,12 @@ data class EditorSource(
      * (the magic eraser's): what "compare" shows as the original.
      */
     val originalUri: Uri? = null,
+    /**
+     * How [uri] was made in an editor opened on top of this one (see
+     * core.stack, [NestedEdit]): opened there again, it is edited from what
+     * it was made of, the edits still there. Null for a file as it came.
+     */
+    val nested: NestedEdit? = null,
 ) {
     /** Full length of the file, 0 while unknown. */
     val durationMs: Long get() = info?.durationMs ?: 0L
@@ -57,6 +63,42 @@ data class EditorSource(
         const val MAIN_ID = "main"
     }
 }
+
+/**
+ * A part of a project edited in an editor of its own, on top of the
+ * project's (see core.stack.NestedKind): [kind] says which editor and what
+ * of the part; [settings] is that editor's project, made from [fromUri]
+ * (named [fromName]), its own sources possibly nested in turn (the stack has
+ * no depth limit). Applied, it was rendered into the file of the source that
+ * holds it. [offsetMs] is where in [fromUri] the part began (a clip's start
+ * in its file), for a sound laid back under its picture.
+ */
+data class NestedEdit(
+    val kind: com.cuscus.ffmpeggui.core.stack.NestedKind,
+    val fromUri: Uri,
+    val fromName: String,
+    val settings: ConversionSettings,
+    val offsetMs: Long = 0L,
+)
+
+/**
+ * An editor of the stack left open on top of the project when it was saved
+ * (see core.stack): [kind] of part [partId] of the editor below, its file's
+ * name [title], made from [fromUri] (named [fromName], begun at [offsetMs]
+ * of it), its project [settings] as they were, edited as [format]; the
+ * editor open on top of it in turn, if any, in its settings' own openAbove.
+ * Opened again, the project opens these editors again, edits and all.
+ */
+data class OpenEditor(
+    val partId: String,
+    val kind: com.cuscus.ffmpeggui.core.stack.NestedKind,
+    val title: String,
+    val fromUri: Uri,
+    val fromName: String,
+    val offsetMs: Long,
+    val format: com.cuscus.ffmpeggui.core.model.OutputFormat,
+    val settings: ConversionSettings,
+)
 
 /**
  * A picture (sticker, logo, watermark) or a video (picture in picture) drawn
@@ -142,6 +184,11 @@ data class ImageOverlay(
      * ImagePlacement.stretch): pulled to the frame's shape, it fills it whole.
      */
     val stretch: Float = 1f,
+    /**
+     * How [uri] was made in an editor opened on top of this one (see
+     * core.stack, [NestedEdit]); null for a file as it came.
+     */
+    val nested: NestedEdit? = null,
 ) {
     val isVideo: Boolean get() = video != null
 
@@ -214,6 +261,8 @@ data class AudioClip(
     /** How its volume changes while it plays (times from its start on the video). */
     val keyframes: Keyframes = Keyframes.NONE,
     val aiVoice: String? = null,
+    /** How [uri] was made in the audio editor opened on top of this one (see core.stack, [NestedEdit]); null for a file as it came. */
+    val nested: NestedEdit? = null,
 )
 
 /**
@@ -240,4 +289,11 @@ typealias LayerMove = com.cuscus.ffmpeggui.core.model.LayerMove
 const val PHOTO_LAYER_ID = "picture-on-canvas"
 
 /** True for the picture itself on its canvas (see [PHOTO_LAYER_ID]). */
+/**
+ * True for a GIF laid over: a video the GIF editor opens (see core.stack),
+ * known by its name, or by having been made there.
+ */
+val ImageOverlay.isGif: Boolean
+    get() = video != null && (fileName.endsWith(".gif", ignoreCase = true) || nested?.kind == com.cuscus.ffmpeggui.core.stack.NestedKind.OVERLAY_GIF)
+
 val ImageOverlay.isPhoto: Boolean get() = id == PHOTO_LAYER_ID

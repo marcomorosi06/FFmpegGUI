@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import com.cuscus.ffmpeggui.core.model.ImagePlacement
+import com.cuscus.ffmpeggui.core.model.PictureStretch
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -97,6 +98,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -320,6 +322,10 @@ fun PreviewContainer(
     nowPlaying: NowPlaying? = null,
     /** A tap on the denoise badge: opens the Details tool for that clip (null: the whole video); null when it cannot. */
     onOpenDenoise: ((String?) -> Unit)? = null,
+    /** The export steadies the video (see StabilizeBadge), which the preview cannot show. */
+    stabilizing: Boolean = false,
+    /** A tap on the steadying's badge: opens the Stabilize tool; null when it cannot. */
+    onOpenStabilize: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -523,6 +529,8 @@ fun PreviewContainer(
     // A still on screen is drawn here, over the video surface (see StillPicture).
     val onScreenSource = onScreen?.let { clip -> sources.firstOrNull { it.id == clip.sourceId } }
     val stillOnScreen = onScreenSource?.takeIf { it.isStill }
+    // The whole video's touches are sized by the pixels of the footage on screen, as joined.
+    val wholePixelsAcross = pixelsAcross(onScreenSource, onScreen?.effects ?: Effects.NONE, onScreen?.effects?.effectiveCrop)
     // The decoder knows the clip on screen best; the probe is used for the others, and
     // while cropping (the crop tool computes its shapes from the probe too). A still is
     // not decoded by the player, which keeps the size of the last video it showed.
@@ -593,6 +601,7 @@ fun PreviewContainer(
             texts = if (filtersApply) shownTexts.filter { it.clipId == clip.id } else emptyList(),
             images = if (filtersApply) shownImages.filter { it.clipId == clip.id } else emptyList(),
             overlays = true,
+            pixelsAcross = pixelsAcross(source, effects, crop),
         )
     }
     val wholeImages = if (filtersApply) shownImages.filter { it.clipId == null } + cutEffects else emptyList()
@@ -629,6 +638,33 @@ fun PreviewContainer(
             // The output frame: the canvas, black around the picture.
             var frameWidth by remember { mutableFloatStateOf(0f) }
             var frameHeight by remember { mutableFloatStateOf(0f) }
+            // Cropping: the frame, let go, is zoomed in on and centred, away from the thumb
+            // (issue #33); never while it is held. The crop tool closed, the picture fits again.
+            val cropZoom = rememberStageZoom()
+            var cropHeld by remember { mutableStateOf(false) }
+            val focusMotion = MaterialTheme.motionScheme
+            val focusMargin = with(LocalDensity.current) { CROP_FOCUS_MARGIN.toPx() }
+            LaunchedEffect(cropOverlayShown, cropHeld, shownCrop, frameWidth, frameHeight) {
+                if (!cropOverlayShown) {
+                    if (cropZoom.scale != 1f || cropZoom.x != 0f || cropZoom.y != 0f) cropZoom.reset(focusMotion)
+                    return@LaunchedEffect
+                }
+                if (cropHeld) return@LaunchedEffect
+                val view = com.cuscus.ffmpeggui.core.image.CropFocus.frame(
+                    crop = shownCrop ?: CropRect(),
+                    pictureLeft = 0f,
+                    pictureTop = 0f,
+                    pictureWidth = frameWidth,
+                    pictureHeight = frameHeight,
+                    contentWidth = frameWidth,
+                    contentHeight = frameHeight,
+                    stageWidth = frameWidth,
+                    stageHeight = frameHeight,
+                    margin = focusMargin,
+                    maxScale = CROP_FOCUS_MAX_SCALE,
+                )
+                cropZoom.animateTo(view, focusMotion)
+            }
             Box(
                 modifier = frameModifier
                     // The spring may overshoot below zero on its way to square corners.
@@ -659,16 +695,26 @@ fun PreviewContainer(
                                 val width = frameWidth
                                 val height = frameHeight
                                 if (width <= 0f || height <= 0f) return@detectTotalTransform
-                                val scale = (start.scale * zoom).coerceIn(VideoPlacement.MIN_SCALE, VideoPlacement.MAX_SCALE)
+                                val zoomed = (start.scale * zoom).coerceIn(VideoPlacement.MIN_SCALE, VideoPlacement.MAX_SCALE)
                                 val raw = start.rotationDegrees + rotation
                                 val turn = if (kotlin.math.abs(rotation) > 0.5f) wholeScene.turn(raw, currentHaptic) else raw
                                 val cx = start.centerX * width + pan.x
                                 val cy = start.centerY * height + pan.y
-                                val box = videoBox(width, height, currentWholeRatioForMove, currentFit, cx / width, cy / height, scale, turn)
+                                val box = videoBox(width, height, currentWholeRatioForMove, currentFit, cx / width, cy / height, zoomed, turn)
                                 val snap = wholeScene.snap(VIDEO_SNAP_ID, box, width, height, snapThreshold(this), currentHaptic)
-                                currentOnPlacement(
-                                    VideoPlacement((cx + snap.dx) / width, (cy + snap.dy) / height, scale, turn).normalized(),
-                                )
+                                val atX = (cx + snap.dx) / width
+                                val atY = (cy + snap.dy) / height
+                                // Two fingers resize it: its edges stick to the guides as it grows.
+                                val scale = if (zoom != 1f) {
+                                    wholeScene.resize(
+                                        VIDEO_SNAP_ID,
+                                        { k -> videoBox(width, height, currentWholeRatioForMove, currentFit, atX, atY, k, turn) },
+                                        zoomed, width, height, snapThreshold(this), currentHaptic,
+                                    ).coerceIn(VideoPlacement.MIN_SCALE, VideoPlacement.MAX_SCALE)
+                                } else {
+                                    zoomed
+                                }
+                                currentOnPlacement(VideoPlacement(atX, atY, scale, turn).normalized())
                             },
                             onEnd = {
                                 wholeScene.clear()
@@ -710,6 +756,8 @@ fun PreviewContainer(
                 Box(
                     modifier = Modifier
                         .fittedOnCanvas(wholeRatio, shownFit)
+                        // While cropping, framed on the crop frame (see cropZoom); the frame clips it.
+                        .zoomedBy(cropZoom)
                         .graphicsLayer {
                             val placed = placementNow ?: return@graphicsLayer
                             translationX = (placed.centerX - 0.5f) * frameWidth
@@ -730,7 +778,27 @@ fun PreviewContainer(
                             }
                         },
                 ) {
-                    Cropped(crop = wholeCrop, modifier = Modifier.fillMaxSize()) {
+                    // Stretched to the canvas, the picture itself is pulled out of its shape (as the
+                    // export does), not only the box around it: laid out at its own shape, then scaled.
+                    Cropped(
+                        crop = wholeCrop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pulledToBox(wholeRatio, shownFit == CanvasFit.STRETCH)
+                            // The whole video's sharpness, blur, vignette and grain (the Details tool),
+                            // over its clips with what lies on them, as the export runs them.
+                            .then(
+                                if (whole.color.hasFinishingTouches) {
+                                    Modifier.finishingTouches(
+                                        color = { whole.color },
+                                        screenPerPixel = { wholePixelsAcross.takeIf { it > 0f }?.let { frameWidth / it } ?: 1f },
+                                        frame = { snapshot.value.outputMs / GRAIN_FRAME_MS },
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                    ) {
                         Turned(effects = wholeGeometry, modifier = Modifier.fillMaxSize()) {
                             // The joined video: every clip fitted into the project frame.
                             Box(
@@ -757,6 +825,7 @@ fun PreviewContainer(
                                                 texts = clipTexts,
                                                 images = clipImages,
                                                 overlays = !croppingClip,
+                                                pixelsAcross = pixelsAcross(onScreenSource, clipEffects, clipCrop),
                                             ),
                                             player = player.videoPlayer,
                                             reversedPlayer = player.reversePlayer,
@@ -818,6 +887,7 @@ fun PreviewContainer(
                                 onCropChange(CropRect(changed.left, changed.top, changed.width, changed.height))
                             },
                             modifier = Modifier.fillMaxSize(),
+                            onHeldChange = { cropHeld = it },
                         )
                     }
                 }
@@ -871,6 +941,8 @@ fun PreviewContainer(
                         editable = subtitlesEditable,
                         sampleText = stringResource(R.string.subtitle_sample),
                         onStyle = onSubtitleStyle,
+                        // They line up with the captions, the pictures and the video, and those with them.
+                        scene = wholeScene,
                     )
                 }
             }
@@ -889,6 +961,8 @@ fun PreviewContainer(
                 denoise = denoiseShown,
                 playing = isPlaying,
                 onOpenDenoise = onOpenDenoise,
+                stabilizing = stabilizing && filtersApply,
+                onOpenStabilize = onOpenStabilize,
             )
         }
     }
@@ -915,7 +989,23 @@ private class ShownClip(
     val images: List<ImageOverlay>,
     /** Its captions and pictures are drawn (not while it is cropped). */
     val overlays: Boolean,
+    /**
+     * How many pixels of its footage lie across it as shown (turned and
+     * cropped); 0 while unknown. The Details tool's touches are sized by them.
+     */
+    val pixelsAcross: Float = 0f,
 )
+
+/**
+ * How many pixels of [source]'s footage lie across it once turned by
+ * [effects] and cut to [crop]; 0 while its size is not known.
+ */
+private fun pixelsAcross(source: EditorSource?, effects: Effects, crop: CropRect?): Float {
+    val info = source?.info ?: return 0f
+    val turned = effects.rotation == Rotation.DEG_90 || effects.rotation == Rotation.DEG_270
+    val across = (if (turned) info.height else info.width).toFloat()
+    return across * (crop?.width ?: 1f).coerceIn(0f, 1f)
+}
 
 /**
  * One clip of the joined video, in the order of the export's graph: its
@@ -986,7 +1076,24 @@ private fun ClipPicture(
         ) {
             Cropped(crop = shown.crop, modifier = Modifier.fillMaxSize()) {
                 Turned(effects = effects, modifier = Modifier.fillMaxSize()) {
-                    Box(modifier = Modifier.fillMaxSize().colorKey(if (keysOnGpu) shown.key else null)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .colorKey(if (keysOnGpu) shown.key else null)
+                            // The clip's sharpness, blur, vignette and grain (the Details tool), as the
+                            // export runs them with its colours: before its key.
+                            .then(
+                                if (effects.color.hasFinishingTouches) {
+                                    Modifier.finishingTouches(
+                                        color = { effects.color },
+                                        screenPerPixel = { if (shown.pixelsAcross > 0f) clipWidth / shown.pixelsAcross else 1f },
+                                        frame = { currentFileMs() / GRAIN_FRAME_MS },
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                    ) {
                         MediaPreview(
                             exoPlayer = player,
                             colorMatrix = pictureColor,
@@ -1237,6 +1344,37 @@ private fun Modifier.fittedOnCanvas(ratio: Float, fit: CanvasFit): Modifier = la
 
 /** Largest side a cropped picture is laid out at before it is scaled instead. */
 private const val MAX_LAYOUT_PX = 8192f
+
+/**
+ * With [pulled], lays its content out at its own shape ([ratio], width over
+ * height), whole within the box, then scales it, wider or taller, to fill the
+ * box exactly: the video stretched to its canvas ([CanvasFit.STRETCH]) is
+ * itself stretched, what lies on its clips too, as the export stretches it.
+ * Touches still land where they are seen (the scale is a layer). Without, as
+ * it is.
+ */
+private fun Modifier.pulledToBox(ratio: Float, pulled: Boolean): Modifier = if (!pulled || ratio <= 0f) {
+    this
+} else {
+    layout { measurable, constraints ->
+        val boxWidth = constraints.maxWidth
+        val boxHeight = constraints.maxHeight
+        if (boxWidth <= 0 || boxHeight <= 0 || !constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
+            val placeable = measurable.measure(constraints)
+            return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+        }
+        val (w, h) = fittedSize(boxWidth.toFloat(), boxHeight.toFloat(), ratio, CanvasFit.FIT)
+        val width = w.roundToInt().coerceIn(1, boxWidth)
+        val height = h.roundToInt().coerceIn(1, boxHeight)
+        val placeable = measurable.measure(Constraints.fixed(width, height))
+        layout(boxWidth, boxHeight) {
+            placeable.placeWithLayer((boxWidth - width) / 2, (boxHeight - height) / 2) {
+                scaleX = boxWidth.toFloat() / width
+                scaleY = boxHeight.toFloat() / height
+            }
+        }
+    }
+}
 
 /**
  * Lays [content] out turned and flipped as [effects] says, so that once turned
@@ -1548,15 +1686,28 @@ internal fun BoxScope.TextOverlaysLayer(
                 var textWidth by remember { mutableFloatStateOf(0f) }
                 var textHeight by remember { mutableFloatStateOf(0f) }
                 val sizeAtDragStart = remember { floatArrayOf(0f) }
-                // Where it lies, for what else is moved on this frame to line up with.
+                // At the start of a pull by a side bar: its stretch, whether it was at its own shape
+                // (1), and how wide and high it was drawn.
+                val pullAtStart = remember { floatArrayOf(1f, 1f, 0f, 0f) }
+                // Its box on the frame, drawn at [size] and [stretch] with its anchor at ([x], [y]):
+                // [width] x [height] is how it is drawn at [fromSize] and [fromStretch] (as measured).
+                fun boxOf(size: Float, stretch: Float, x: Float, y: Float, width: Float, height: Float, fromSize: Float, fromStretch: Float): SnapBox {
+                    val k = if (fromSize > 0f) size / fromSize else 1f
+                    val w = width * k * stretch / fromStretch.coerceAtLeast(1e-3f)
+                    val h = height * k
+                    val left = (currentCanvasWidth - w) * x
+                    val top = (currentCanvasHeight - h) * y
+                    return SnapBox(left, top, left + w, top + h)
+                }
+                // Where it lies, as drawn (stretched about its anchor), for what else is moved on this
+                // frame to line up with.
                 DisposableEffect(scene, overlay.id) {
                     scene?.register(overlay.id) {
                         if (textWidth <= 0f) {
                             null
                         } else {
-                            val left = (currentCanvasWidth - textWidth) * current.x
-                            val top = (currentCanvasHeight - textHeight) * current.y
-                            SnapBox(left, top, left + textWidth, top + textHeight)
+                            val c = current
+                            boxOf(c.size, c.laidStretch, c.x, c.y, textWidth * c.laidStretch, textHeight, c.size, c.laidStretch)
                         }
                     }
                     onDispose { scene?.unregister(overlay.id) }
@@ -1574,7 +1725,9 @@ internal fun BoxScope.TextOverlaysLayer(
                             blendMode = current.blend.composeMode()
                             alpha = current.opacity.coerceIn(0f, 1f) *
                                 (if (outputMs != null) overlayFade(current.startMs, current.endMs, current.fadeInSeconds, current.fadeOutSeconds, outputMs()) else 1f)
-                            // Turned about its anchor, the point of it at (x, y) of its size (see TextOverlay).
+                            // Stretched, then turned, about its anchor, the point of it at (x, y) of its
+                            // size (see TextOverlay), as the export draws it.
+                            scaleX = current.laidStretch
                             rotationZ = current.rotationDegrees
                             transformOrigin = TransformOrigin(current.x.coerceIn(0f, 1f), current.y.coerceIn(0f, 1f))
                         }
@@ -1611,15 +1764,26 @@ internal fun BoxScope.TextOverlaysLayer(
                                 onMove = { pan, zoom, rotation ->
                                     val width = currentCanvasWidth
                                     val height = currentCanvasHeight
-                                    val freeWidth = width - textWidth
+                                    // As drawn: stretched about its anchor.
+                                    val stretch = current.laidStretch
+                                    val shownWidth = textWidth * stretch
+                                    val freeWidth = width - shownWidth
                                     val freeHeight = height - textHeight
                                     val left = startX * freeWidth + pan.x
                                     val top = startY * freeHeight + pan.y
-                                    val snap = currentScene?.snap(current.id, SnapBox(left, top, left + textWidth, top + textHeight), width, height, threshold, haptic)
+                                    val snap = currentScene?.snap(current.id, SnapBox(left, top, left + shownWidth, top + textHeight), width, height, threshold, haptic)
                                     // It may go past the edges, where the frame cuts it.
                                     val x = if (freeWidth > 0f) ((left + (snap?.dx ?: 0f)) / freeWidth).coerceIn(ImagePlacement.POSITION_MIN, ImagePlacement.POSITION_MAX) else current.x
                                     val y = if (freeHeight > 0f) ((top + (snap?.dy ?: 0f)) / freeHeight).coerceIn(ImagePlacement.POSITION_MIN, ImagePlacement.POSITION_MAX) else current.y
-                                    val size = if (zoom != 1f) (startSize * zoom).coerceIn(0.02f, 0.5f) else null
+                                    // Two fingers resize it: its edges stick to the guides as it grows.
+                                    val size = if (zoom != 1f) {
+                                        val raw = (startSize * zoom).coerceIn(0.02f, 0.5f)
+                                        val from = current.size
+                                        val stuck = currentScene?.resize(current.id, { s -> boxOf(s, stretch, x, y, shownWidth, textHeight, from, stretch) }, raw, width, height, threshold, haptic)
+                                        (stuck ?: raw).coerceIn(0.02f, 0.5f)
+                                    } else {
+                                        null
+                                    }
                                     val turn = if (kotlin.math.abs(rotation) > 0.5f) (currentScene?.turn(startTurn + rotation, haptic) ?: (startTurn + rotation)) else null
                                     currentOnUpdate(current.id, "move") {
                                         var moved = it.copy(x = x, y = y)
@@ -1632,6 +1796,8 @@ internal fun BoxScope.TextOverlaysLayer(
                                     currentScene?.clear()
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 },
+                                // Its touches come stretched and turned as it is drawn: moved as the finger moves.
+                                toCanvas = { step -> turnedMove(step, current.rotationDegrees, current.laidStretch) },
                             )
                         },
                 ) {
@@ -1736,15 +1902,74 @@ internal fun BoxScope.TextOverlaysLayer(
                             dragKey = overlay.id,
                             onDragStart = {
                                 sizeAtDragStart[0] = current.size
+                                pullAtStart[2] = textWidth * current.laidStretch
+                                pullAtStart[3] = textHeight
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             },
                             onDrag = { totalX, totalY ->
                                 if (currentCanvasHeight > 0f) {
-                                    val newSize = (sizeAtDragStart[0] + (totalX + totalY) / (currentCanvasHeight * 1.5f)).coerceIn(0.02f, 0.5f)
+                                    val raw = (sizeAtDragStart[0] + (totalX + totalY) / (currentCanvasHeight * 1.5f)).coerceIn(0.02f, 0.5f)
+                                    // Its edges stick to the guides as it grows (its shape kept).
+                                    val c = current
+                                    val stuck = currentScene?.resize(
+                                        c.id,
+                                        { s -> boxOf(s, c.laidStretch, c.x, c.y, pullAtStart[2], pullAtStart[3], sizeAtDragStart[0], c.laidStretch) },
+                                        raw, currentCanvasWidth, currentCanvasHeight, threshold, haptic,
+                                    ) ?: raw
+                                    val newSize = stuck.coerceIn(0.02f, 0.5f)
                                     currentOnUpdate(current.id, "size") { it.copy(size = newSize) }
                                 }
                             },
+                            squash = { current.laidStretch },
+                            onDragEnd = { currentScene?.clear() },
                         )
+                        // On its sides: pulled out of its shape (PictureStretch), wider or narrower by the
+                        // right one (its size kept), taller or shorter by the bottom one (its width kept).
+                        // Its edges stick to the guides; near its own shape it snaps back to it, with a tick.
+                        for (sideways in listOf(true, false)) {
+                            StretchHandle(
+                                dragKey = overlay.id,
+                                sideways = sideways,
+                                squash = { current.laidStretch },
+                                onDragStart = {
+                                    sizeAtDragStart[0] = current.size
+                                    pullAtStart[0] = current.laidStretch
+                                    pullAtStart[1] = if (current.laidStretch == 1f) 1f else 0f
+                                    pullAtStart[2] = textWidth * current.laidStretch
+                                    pullAtStart[3] = textHeight
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                },
+                                onDrag = { dx, dy ->
+                                    val c = current
+                                    val drag = PictureStretch.along(dx, dy, c.rotationDegrees, sideways)
+                                    fun pulled(d: Float) = if (sideways) {
+                                        PictureStretch.textSideways(sizeAtDragStart[0], pullAtStart[0], pullAtStart[2], d)
+                                    } else {
+                                        PictureStretch.textUpDown(sizeAtDragStart[0], pullAtStart[0], pullAtStart[3], d, 0.02f, 0.5f)
+                                    }
+                                    val raw = pulled(drag)
+                                    val done = if (raw.ownShape) {
+                                        currentScene?.clear()
+                                        raw
+                                    } else {
+                                        val stuck = currentScene?.resize(
+                                            c.id,
+                                            { d -> pulled(d).let { p -> boxOf(p.size, p.stretch, c.x, c.y, pullAtStart[2], pullAtStart[3], sizeAtDragStart[0], pullAtStart[0]) } },
+                                            drag, currentCanvasWidth, currentCanvasHeight, threshold, haptic,
+                                        ) ?: drag
+                                        pulled(stuck)
+                                    }
+                                    // A tick each time it comes to its own shape.
+                                    val own = if (done.ownShape) 1f else 0f
+                                    if (own != pullAtStart[1]) {
+                                        pullAtStart[1] = own
+                                        if (done.ownShape) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                    }
+                                    currentOnUpdate(c.id, "stretch") { it.copy(size = done.size, stretch = done.stretch) }
+                                },
+                                onDragEnd = { currentScene?.clear() },
+                            )
+                        }
                     }
                 }
                 // The knob that turns it, beyond its top, about its anchor (see TextOverlay).
@@ -1861,6 +2086,8 @@ internal fun BoxScope.ImageOverlaysLayer(
                 val editable = overlay.id == editableId
                 val currentEditable by rememberUpdatedState(editable)
                 val scaleAtDragStart = remember { floatArrayOf(0f) }
+                // The stretch when a side handle was taken, and whether it is at its own shape now (1).
+                val stretchAtDragStart = remember { floatArrayOf(1f, 1f) }
                 var boxWidth by remember { mutableFloatStateOf(0f) }
                 var boxHeight by remember { mutableFloatStateOf(0f) }
                 // Where it lies (the box holding it turned), for what else is moved here to line up with.
@@ -1960,6 +2187,21 @@ internal fun BoxScope.ImageOverlaysLayer(
                     val laidRatio = look.laidAspect(stretchedRatio).takeIf { it > 0f } ?: stretchedRatio
                     // Its size is worked out while laying out: a size keyframe resizes it without
                     // recomposing it.
+                    // Its box on the frame (that of it turned) at width [scaleW] and [stretch], placed at
+                    // ([x], [y]) of the free space, as it is laid out: what a resize or a stretch sticks by.
+                    fun boxOf(scaleW: Float, stretch: Float, x: Float, y: Float): SnapBox {
+                        val shape = (ratio * stretch).let { look.laidAspect(it).takeIf { a -> a > 0f } ?: it }
+                        val w = scaleW.coerceIn(0.01f, ImagePlacement.MAX_WIDTH) * currentCanvasWidth * (1f + 2f * look.margin)
+                        val h = w / shape
+                        val radians = Math.toRadians(current.rotationDegrees.toDouble())
+                        val cos = kotlin.math.abs(kotlin.math.cos(radians)).toFloat()
+                        val sin = kotlin.math.abs(kotlin.math.sin(radians)).toFloat()
+                        val turnedWidth = w * cos + h * sin
+                        val turnedHeight = w * sin + h * cos
+                        val left = (currentCanvasWidth - turnedWidth) * x
+                        val top = (currentCanvasHeight - turnedHeight) * y
+                        return SnapBox(left, top, left + turnedWidth, top + turnedHeight)
+                    }
                     val laidSize = Modifier.layout { measurable, _ ->
                         val widthPx = current.scaleW.coerceIn(0.01f, ImagePlacement.MAX_WIDTH) * currentCanvasWidth * (1f + 2f * look.margin)
                         val width = widthPx.roundToInt().coerceAtLeast(1)
@@ -2026,7 +2268,15 @@ internal fun BoxScope.ImageOverlaysLayer(
                                         // It may go past the edges, where the frame cuts it.
                                         val x = ((left + (snap?.dx ?: 0f)) / freeWidth).coerceIn(ImagePlacement.POSITION_MIN, ImagePlacement.POSITION_MAX)
                                         val y = ((top + (snap?.dy ?: 0f)) / freeHeight).coerceIn(ImagePlacement.POSITION_MIN, ImagePlacement.POSITION_MAX)
-                                        val scale = if (zoom != 1f) (startScale * zoom).coerceIn(0.02f, ImagePlacement.MAX_WIDTH) else null
+                                        // Two fingers resize it: its edges stick to the guides as it grows.
+                                        val scale = if (zoom != 1f) {
+                                            val raw = (startScale * zoom).coerceIn(0.02f, ImagePlacement.MAX_WIDTH)
+                                            val stretch = current.laidStretch
+                                            val stuck = currentScene?.resize(current.id, { w -> boxOf(w, stretch, x, y) }, raw, width, height, threshold, haptic)
+                                            (stuck ?: raw).coerceIn(0.02f, ImagePlacement.MAX_WIDTH)
+                                        } else {
+                                            null
+                                        }
                                         val turn = if (kotlin.math.abs(rotation) > 0.5f) (currentScene?.turn(startTurn + rotation, haptic) ?: (startTurn + rotation)) else null
                                         currentOnUpdate(current.id, "move") {
                                             var moved = it.copy(x = x, y = y)
@@ -2039,6 +2289,8 @@ internal fun BoxScope.ImageOverlaysLayer(
                                         currentScene?.clear()
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     },
+                                    // Its touches come turned as it is drawn (see turned): moved as the finger moves.
+                                    toCanvas = { step -> turnedMove(step, current.rotationDegrees) },
                                 )
                             },
                     ) {
@@ -2137,11 +2389,65 @@ internal fun BoxScope.ImageOverlaysLayer(
                                 },
                                 onDrag = { totalX, totalY ->
                                     if (currentCanvasWidth > 0f) {
-                                        val newScale = (scaleAtDragStart[0] + (totalX + totalY) / (currentCanvasWidth * 2f)).coerceIn(0.02f, ImagePlacement.MAX_WIDTH)
+                                        val raw = (scaleAtDragStart[0] + (totalX + totalY) / (currentCanvasWidth * 2f)).coerceIn(0.02f, ImagePlacement.MAX_WIDTH)
+                                        // Its edges stick to the guides as it grows (its shape kept).
+                                        val c = current
+                                        val stuck = currentScene?.resize(
+                                            c.id, { w -> boxOf(w, c.laidStretch, c.x, c.y) }, raw,
+                                            currentCanvasWidth, currentCanvasHeight, threshold, haptic,
+                                        ) ?: raw
+                                        val newScale = stuck.coerceIn(0.02f, ImagePlacement.MAX_WIDTH)
                                         currentOnUpdate(current.id, "size") { it.copy(scaleW = newScale) }
                                     }
                                 },
+                                onDragEnd = { currentScene?.clear() },
                             )
+                            // On its sides: pulled out of its shape by hand (PictureStretch), wider
+                            // or narrower by the right one, taller or shorter by the bottom one.
+                            // Near its own shape it snaps back to it, with a tick.
+                            for (sideways in listOf(true, false)) {
+                                StretchHandle(
+                                    dragKey = overlay.id,
+                                    sideways = sideways,
+                                    onDragStart = {
+                                        scaleAtDragStart[0] = current.scaleW
+                                        stretchAtDragStart[0] = current.laidStretch
+                                        stretchAtDragStart[1] = if (current.laidStretch == 1f) 1f else 0f
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    },
+                                    onDrag = { dx, dy ->
+                                        val c = current
+                                        val drag = PictureStretch.along(dx, dy, c.rotationDegrees, sideways)
+                                        val room = 2f * look.margin
+                                        fun pull(d: Float) = if (sideways) {
+                                            PictureStretch.sideways(scaleAtDragStart[0], stretchAtDragStart[0], room, currentCanvasWidth, d)
+                                        } else {
+                                            val shown = look.shownAspect(ratio * stretchAtDragStart[0])
+                                            PictureStretch.upDown(scaleAtDragStart[0], stretchAtDragStart[0], shown, room, currentCanvasWidth, d)
+                                        }
+                                        // Near its own shape that wins; else its edges stick to the guides.
+                                        val raw = pull(drag)
+                                        val pulled = if (raw.ownShape) {
+                                            currentScene?.clear()
+                                            raw
+                                        } else {
+                                            val stuck = currentScene?.resize(
+                                                c.id, { d -> pull(d).let { p -> boxOf(p.scaleW, p.stretch, c.x, c.y) } }, drag,
+                                                currentCanvasWidth, currentCanvasHeight, threshold, haptic,
+                                            ) ?: drag
+                                            pull(stuck)
+                                        }
+                                        // A tick each time it comes to its own shape.
+                                        val own = if (pulled.ownShape) 1f else 0f
+                                        if (own != stretchAtDragStart[1]) {
+                                            stretchAtDragStart[1] = own
+                                            if (pulled.ownShape) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                        }
+                                        currentOnUpdate(current.id, "stretch") { it.copy(scaleW = pulled.scaleW, stretch = pulled.stretch) }
+                                    },
+                                    onDragEnd = { currentScene?.clear() },
+                                )
+                            }
                         }
                     }
                     // The knob that turns it, beyond its top, about its middle.
@@ -2389,14 +2695,19 @@ private fun BoxScope.ResizeHandle(
     dragKey: String,
     onDragStart: () -> Unit,
     onDrag: (totalX: Float, totalY: Float) -> Unit,
+    /** How much wider than it is laid out what holds it is drawn (a stretched caption): drawn round all the same. */
+    squash: () -> Float = { 1f },
+    onDragEnd: () -> Unit = {},
 ) {
     val currentOnDragStart by rememberUpdatedState(onDragStart)
     val currentOnDrag by rememberUpdatedState(onDrag)
+    val currentOnDragEnd by rememberUpdatedState(onDragEnd)
     Box(
         modifier = Modifier
             .align(Alignment.BottomEnd)
             .offset(x = 6.dp, y = 6.dp)
             .size(16.dp)
+            .graphicsLayer { scaleX = 1f / squash().coerceAtLeast(0.01f) }
             .background(MaterialTheme.colorScheme.primary, CircleShape)
             .border(2.dp, Color.White, CircleShape)
             .pointerInput(dragKey) {
@@ -2408,6 +2719,8 @@ private fun BoxScope.ResizeHandle(
                         totalY = 0f
                         currentOnDragStart()
                     },
+                    onDragEnd = { currentOnDragEnd() },
+                    onDragCancel = { currentOnDragEnd() },
                     onDrag = { change, dragAmount ->
                         change.consume()
                         totalX += dragAmount.x
@@ -2417,6 +2730,64 @@ private fun BoxScope.ResizeHandle(
                 )
             },
     )
+}
+
+/**
+ * A grip in the middle of the right side ([sideways]) or of the bottom of a
+ * picture, to pull it out of its shape: a short bar along that side, in a
+ * larger area that takes the touch. [onDrag] receives how far the finger went
+ * on the screen since the drag started, in pixels, whatever the picture's
+ * turn and size do to the grip meanwhile (it is measured from the root, not
+ * from the grip, which moves with the edge it pulls).
+ */
+@Composable
+private fun BoxScope.StretchHandle(
+    dragKey: String,
+    sideways: Boolean,
+    onDragStart: () -> Unit,
+    onDrag: (dx: Float, dy: Float) -> Unit,
+    /** How much wider than it is laid out what holds it is drawn (a stretched caption): drawn as it is all the same. */
+    squash: () -> Float = { 1f },
+    onDragEnd: () -> Unit = {},
+) {
+    val currentOnDragEnd by rememberUpdatedState(onDragEnd)
+    val currentOnDragStart by rememberUpdatedState(onDragStart)
+    val currentOnDrag by rememberUpdatedState(onDrag)
+    val where = remember { arrayOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+    val label = stringResource(if (sideways) R.string.stretch_handle_sideways else R.string.stretch_handle_up_down)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .align(if (sideways) Alignment.CenterEnd else Alignment.BottomCenter)
+            .offset(x = if (sideways) 14.dp else 0.dp, y = if (sideways) 0.dp else 14.dp)
+            .size(28.dp)
+            .graphicsLayer { scaleX = 1f / squash().coerceAtLeast(0.01f) }
+            .onGloballyPositioned { where[0] = it }
+            .semantics { contentDescription = label }
+            .pointerInput(dragKey, sideways) {
+                var start = Offset.Zero
+                detectDragGestures(
+                    onDragStart = { at ->
+                        start = where[0]?.takeIf { it.isAttached }?.localToRoot(at) ?: at
+                        currentOnDragStart()
+                    },
+                    onDragEnd = { currentOnDragEnd() },
+                    onDragCancel = { currentOnDragEnd() },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        val now = where[0]?.takeIf { it.isAttached }?.localToRoot(change.position) ?: return@detectDragGestures
+                        currentOnDrag(now.x - start.x, now.y - start.y)
+                    },
+                )
+            },
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = if (sideways) 8.dp else 22.dp, height = if (sideways) 22.dp else 8.dp)
+                .background(MaterialTheme.colorScheme.primary, CircleShape)
+                .border(2.dp, Color.White, CircleShape),
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2434,6 +2805,9 @@ private fun StatusBadges(
     denoise: DenoiseShown? = null,
     playing: Boolean = false,
     onOpenDenoise: ((String?) -> Unit)? = null,
+    /** The export steadies the video, which the preview cannot show (see StabilizeBadge). */
+    stabilizing: Boolean = false,
+    onOpenStabilize: (() -> Unit)? = null,
 ) {
     val clipsLabel = stringResource(R.string.badge_clips, clipCount)
     val streamCopyLabel = stringResource(R.string.badge_stream_copy)
@@ -2478,8 +2852,21 @@ private fun StatusBadges(
         ) {
             DenoiseBadge(shown = denoise, playing = playing, onOpen = onOpenDenoise)
         }
+        AnimatedVisibility(
+            visible = stabilizing,
+            enter = scaleIn(motion.fastSpatialSpec()) + fadeIn(motion.fastEffectsSpec()),
+            exit = scaleOut(motion.fastSpatialSpec()) + fadeOut(motion.fastEffectsSpec()),
+        ) {
+            StabilizeBadge(playing = playing, onOpen = onOpenStabilize)
+        }
     }
 }
 
 /** How far away a soft shadow's letters are drawn, so that only their cast shadow shows (pixels). */
 private const val SHADOW_CAST = 20_000f
+
+/** How far the video editor zooms in on a small crop frame (see core.image.CropFocus). */
+private const val CROP_FOCUS_MAX_SCALE = 6f
+
+/** How long a draw of the preview's grain lasts: a frame of a 30 fps video (noise draws anew every frame). */
+private const val GRAIN_FRAME_MS = 33L

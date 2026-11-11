@@ -333,5 +333,10 @@ object JsonText {
         }
     }
 
-    private const val MAX_DEPTH = 64
+    /**
+     * Deepest nesting read. A project nests a project of its own for every
+     * editor stacked on it (see core.stack), five levels each: room for
+     * about two hundred, while a hostile file still cannot overflow the stack.
+     */
+    const val MAX_DEPTH = 1024
 }

@@ -522,6 +522,8 @@ fun ValueSlider(
                 enabled = enabled,
                 modifier = Modifier
                     .weight(1f)
+                    // In a sheet that fades for live changes (the SVG editor's), dragging it fades the sheet.
+                    .peeksSheet()
                     .semantics {
                         contentDescription = label
                         stateDescription = valueText

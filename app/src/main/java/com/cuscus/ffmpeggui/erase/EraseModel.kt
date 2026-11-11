@@ -51,29 +51,27 @@ object EraseModel {
     )
 
     val MIGAN: SpeechModel = SpeechModel(
-        variant = null,
         name = MIGAN_NAME,
-        archive = null,
         downloads = listOf(SpeechModel.Download(MIGAN_FILE.name, "$MIGAN_FILES_URL/resolve/main/${MIGAN_FILE.name}?download=true")),
         folder = "erase/migan",
         prefs = "erase_model_migan",
         tempFolder = "importing-erase-migan",
         files = listOf(MIGAN_FILE),
-        samples = emptyList(),
         installedBytes = 28_100_000L,
+        // It changes pictures: imported only after the AI marks (MarkingGate).
+        generative = true,
     )
 
     val LAMA: SpeechModel = SpeechModel(
-        variant = null,
         name = LAMA_NAME,
-        archive = null,
         downloads = listOf(SpeechModel.Download(LAMA_FILE.name, "$LAMA_FILES_URL/resolve/main/${LAMA_FILE.name}?download=true")),
         folder = "erase/lama",
         prefs = "erase_model_lama",
         tempFolder = "importing-erase-lama",
         files = listOf(LAMA_FILE),
-        samples = emptyList(),
         installedBytes = 208_000_000L,
+        // It changes pictures: imported only after the AI marks (MarkingGate).
+        generative = true,
     )
 
     fun of(variant: EraseVariant): SpeechModel = if (variant == EraseVariant.FAST) MIGAN else LAMA

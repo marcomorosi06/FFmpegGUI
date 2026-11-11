@@ -46,8 +46,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -66,8 +76,10 @@ import com.cuscus.ffmpeggui.ui.expressive.springPress
  * The AI marks' page: why the app marks what its models make (the law, said
  * plainly), what it marks and how, what the marks never say (nothing about
  * anyone), where they stop working, and the marks' own files, imported
- * before any model. A banner on the smart features' hub says whether they
- * are there; every feature's page says so while they are not.
+ * before the dub's and the magic eraser's models. A banner on the smart
+ * features' hub says whether they are there; while they are not, the dub's
+ * and the eraser's tiles are grey and their pages say why, their cards grey
+ * and out of reach (LockedForMarks). The other features need no marks.
  */
 
 /** The marks' state and actions. */
@@ -78,7 +90,7 @@ class MarksFeatureUi(
     val onImport: (List<Uri>) -> Unit,
     val onStopImport: () -> Unit,
     val onVerify: () -> Unit,
-    /** Removes the marks, and every model with them. */
+    /** Removes the marks, and the dub's and the eraser's models with them (the others stay). */
     val onDeleteAll: () -> Unit,
     val onUnload: () -> Unit,
 ) {
@@ -215,8 +227,9 @@ internal fun MarksSection(marks: MarksFeatureUi) {
 }
 
 /**
- * The hub's banner: while the marks are missing, a large card that says they
- * come first and why, its badge breathing between two shapes; once they are
+ * The hub's banner: while the marks are missing, a large card that says the
+ * dub and the eraser need them first and why (the other features do not),
+ * its badge breathing between two shapes; once they are
  * here, a quiet line that they are on. Either opens the marks' page.
  */
 @Composable
@@ -275,7 +288,7 @@ internal fun MarksBanner(ready: Boolean, onOpen: () -> Unit) {
     }
 }
 
-/** On a feature's page while the marks are missing: its models cannot be imported yet, and why. */
+/** On the dub's or the eraser's page while the marks are missing: its models cannot be imported yet, and why. */
 @Composable
 internal fun MarksFirstNotice(onOpen: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
@@ -304,6 +317,56 @@ internal fun MarksFirstNotice(onOpen: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(R.string.marks_set_up), style = MaterialTheme.typography.titleSmallEmphasized)
+        }
+    }
+}
+
+/**
+ * Grey, as a thing that cannot be used yet: its colours drained (saturation
+ * 0) and faded. Draws only; [LockedForMarks] also keeps it out of reach.
+ */
+internal fun Modifier.greyedOut(on: Boolean = true): Modifier = if (!on) this else this
+    .alpha(0.5f)
+    .drawWithCache {
+        val paint = Paint().apply { colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }) }
+        onDrawWithContent {
+            drawIntoCanvas { it.saveLayer(Rect(Offset.Zero, size), paint) }
+            drawContent()
+            drawIntoCanvas { it.restore() }
+        }
+    }
+
+/**
+ * The dub's or the eraser's cards while the AI marks are missing: shown, so
+ * that what the feature needs can be read, but grey and out of reach. A tap
+ * anywhere on them opens the marks' page ([onOpen]); a drag still scrolls
+ * the page (the cover takes taps only). Screen readers hear one button that
+ * says why and leads to the marks.
+ */
+@Composable
+internal fun LockedForMarks(locked: Boolean, onOpen: () -> Unit, content: @Composable () -> Unit) {
+    val haptic = LocalHapticFeedback.current
+    val why = stringResource(R.string.marks_locked)
+    val setUp = stringResource(R.string.marks_set_up)
+    // The cards stay in the same place whether locked or not, so their state survives the marks' arrival.
+    Box {
+        Box(modifier = if (locked) Modifier.greyedOut().clearAndSetSemantics {} else Modifier) { content() }
+        if (locked) {
+            // Over the cards, in front of them: they never see a touch.
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClickLabel = setUp,
+                        role = Role.Button,
+                    ) {
+                        haptic.performHapticFeedback(HapticFeedbackType.Reject)
+                        onOpen()
+                    }
+                    .semantics { contentDescription = why },
+            )
         }
     }
 }

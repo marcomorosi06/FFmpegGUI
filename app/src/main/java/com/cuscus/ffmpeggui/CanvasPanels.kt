@@ -101,6 +101,10 @@ internal fun ImageCanvasPanel(
     onSelectPicture: () -> Unit,
     /** How the picture lies on the canvas now, if one of the three ways (see photoFit). */
     pictureFit: CanvasFit? = null,
+    /** The picture is pulled out of its shape (by Stretch or by its side handles). */
+    pictureStretched: Boolean = false,
+    /** Gives the picture its own shape back, where it is and as wide. */
+    onPictureOriginalShape: () -> Unit = {},
 ) {
     val haptic = LocalHapticFeedback.current
     val motion = MaterialTheme.motionScheme
@@ -195,6 +199,7 @@ internal fun ImageCanvasPanel(
                     picture = true,
                     enabled = enabled,
                 )
+                StretchedNotice(stretched = pictureStretched, onOriginalShape = onPictureOriginalShape, enabled = enabled)
                 OutlinedButton(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.ContextClick)

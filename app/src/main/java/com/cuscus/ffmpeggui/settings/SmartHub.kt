@@ -104,6 +104,12 @@ import com.cuscus.ffmpeggui.ui.expressive.springPress
  * its film large, a line about it, and only its own cards (models, tests,
  * voices). Back goes back to the hub. Other screens can open a feature's page
  * directly (see SmartPageRequest).
+ *
+ * The dub and the magic eraser make voices and pictures that pass for real:
+ * their models need the invisible AI marks first (MarkingGate). While the
+ * marks are missing their tiles are grey, their status says so, and their
+ * pages show the cards grey and out of reach under the way to the marks
+ * (LockedForMarks). The other features need no marks.
  */
 
 /** The features' pages. */
@@ -122,9 +128,18 @@ internal enum class SmartPage(
     DUB(Icons.Rounded.RecordVoiceOver, MaterialShapes.Cookie12Sided, R.string.dub_section, R.string.smart_tag_dub, R.string.dub_intro),
     ABOUT(Icons.Rounded.Info, MaterialShapes.Pill, R.string.smart_about_models, R.string.smart_tag_about, R.string.smart_about_intro),
 
-    /** The invisible AI marks, before any model (see MarksSection): opened from the hub's banner. */
+    /** The invisible AI marks, before the dub's and the eraser's models (see MarksSection): opened from the hub's banner. */
     MARKS(Icons.Rounded.VerifiedUser, MaterialShapes.Clover8Leaf, R.string.marks_section, R.string.marks_tag, R.string.marks_intro),
 }
+
+/**
+ * True for the features whose models make what must carry the invisible AI
+ * marks (the dub's voices, the eraser's pictures): they need the marks first.
+ */
+internal val SmartPage.needsMarks: Boolean get() = this == SmartPage.DUB || this == SmartPage.ERASE
+
+/** True when [this] feature cannot be set up now: it needs the AI marks, and they are missing. */
+internal fun SmartPage.lockedFor(smart: SmartFeaturesUi): Boolean = needsMarks && smart.marks?.ready == false
 
 /** Each feature's own pair of colours, used on its tile, its badge and its page. */
 @Composable
@@ -151,7 +166,7 @@ internal object SmartPageRequest {
 }
 
 /** What a tile says of its feature. */
-private enum class StatusKind { READY, MISSING, WORKING, PROBLEM, INFO }
+private enum class StatusKind { READY, MISSING, WORKING, PROBLEM, INFO, LOCKED }
 
 private class FeatureStatus(val text: String, val kind: StatusKind)
 
@@ -167,7 +182,11 @@ private fun modelStatus(state: SpeechModelStore.State?): FeatureStatus {
 }
 
 @Composable
-private fun statusOf(page: SmartPage, smart: SmartFeaturesUi): FeatureStatus = when (page) {
+private fun statusOf(page: SmartPage, smart: SmartFeaturesUi): FeatureStatus =
+    if (page.lockedFor(smart)) FeatureStatus(stringResource(R.string.smart_status_needs_marks), StatusKind.LOCKED) else featureStatus(page, smart)
+
+@Composable
+private fun featureStatus(page: SmartPage, smart: SmartFeaturesUi): FeatureStatus = when (page) {
     SmartPage.SPEECH -> modelStatus(smart.model)
     SmartPage.CUTOUT -> modelStatus(smart.cutout.model)
     SmartPage.ERASE -> {
@@ -294,7 +313,7 @@ private fun Hub(smart: SmartFeaturesUi, onBack: () -> Unit, onOpen: (SmartPage) 
                 )
             }
             Spacer(modifier = Modifier.width(12.dp))
-            ReadyGrid(features, readyPages, onOpen = onOpen)
+            ReadyGrid(features, readyPages, locked = features.filter { it.lockedFor(smart) }.toSet(), onOpen = onOpen)
         }
         Spacer(modifier = Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -347,7 +366,13 @@ private fun Hub(smart: SmartFeaturesUi, onBack: () -> Unit, onOpen: (SmartPage) 
     features.chunked(2).forEachIndexed { row, pair ->
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             pair.forEachIndexed { i, feature ->
-                FeatureTile(feature, statusOf(feature, smart), order = 2 + row * 2 + i, modifier = Modifier.weight(1f)) { onOpen(feature) }
+                FeatureTile(
+                    feature,
+                    statusOf(feature, smart),
+                    locked = feature.lockedFor(smart),
+                    order = 2 + row * 2 + i,
+                    modifier = Modifier.weight(1f),
+                ) { onOpen(feature) }
             }
             if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
         }
@@ -358,10 +383,11 @@ private fun Hub(smart: SmartFeaturesUi, onBack: () -> Unit, onOpen: (SmartPage) 
 /**
  * The features as a small grid of their badges: lit in their own colours when
  * ready, quiet when not. One after another they round off and back, a slow
- * ripple across the grid; a tap opens the feature.
+ * ripple across the grid; a tap opens the feature. Those [locked] for want
+ * of the AI marks are fainter still.
  */
 @Composable
-private fun ReadyGrid(features: List<SmartPage>, ready: Set<SmartPage>, onOpen: (SmartPage) -> Unit) {
+private fun ReadyGrid(features: List<SmartPage>, ready: Set<SmartPage>, locked: Set<SmartPage>, onOpen: (SmartPage) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
     val wave by rememberLoop(1_300 * features.size, "readyWave", still = -1f)
@@ -381,6 +407,7 @@ private fun ReadyGrid(features: List<SmartPage>, ready: Set<SmartPage>, onOpen: 
                         color = if (lit) tone.container else scheme.surfaceContainerHighest,
                         modifier = Modifier
                             .size(44.dp)
+                            .greyedOut(page in locked)
                             .springPress(interaction, pressedScale = 0.85f)
                             .clickable(interactionSource = interaction, indication = null, role = Role.Button) {
                                 haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
@@ -400,9 +427,14 @@ private fun ReadyGrid(features: List<SmartPage>, ready: Set<SmartPage>, onOpen: 
     }
 }
 
-/** A feature as a tile: its film playing, its badge and name, a line, and whether it is ready. */
+/**
+ * A feature as a tile: its film playing, its badge and name, a line, and
+ * whether it is ready. [locked] (the dub or the eraser without the AI marks):
+ * all of it grey; a tap still opens its page, which says why and leads to
+ * the marks.
+ */
 @Composable
-private fun FeatureTile(page: SmartPage, status: FeatureStatus, order: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun FeatureTile(page: SmartPage, status: FeatureStatus, locked: Boolean, order: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
@@ -412,6 +444,7 @@ private fun FeatureTile(page: SmartPage, status: FeatureStatus, order: Int, modi
         modifier = modifier
             .popIn(true, order)
             .springPress(interaction, pressedScale = 0.94f)
+            .greyedOut(locked)
             .clip(RoundedCornerShape(if (pressed) 36.dp else 28.dp))
             .background(scheme.surfaceContainerHigh)
             .clickable(interactionSource = interaction, indication = LocalIndication.current, role = Role.Button) {
@@ -501,6 +534,7 @@ private fun StatusChip(status: FeatureStatus, modifier: Modifier = Modifier) {
         StatusKind.PROBLEM -> scheme.errorContainer to scheme.onErrorContainer
         StatusKind.MISSING -> scheme.surfaceContainerHighest to scheme.onSurfaceVariant
         StatusKind.INFO -> scheme.secondaryContainer to scheme.onSecondaryContainer
+        StatusKind.LOCKED -> scheme.surfaceContainerHighest to scheme.onSurfaceVariant
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -513,6 +547,7 @@ private fun StatusChip(status: FeatureStatus, modifier: Modifier = Modifier) {
                     StatusKind.READY -> Icons.Rounded.CheckCircle
                     StatusKind.PROBLEM -> Icons.Rounded.ErrorOutline
                     StatusKind.INFO -> Icons.Rounded.Info
+                    StatusKind.LOCKED -> Icons.Rounded.Lock
                     else -> Icons.Rounded.Download
                 },
                 contentDescription = null,
@@ -541,6 +576,7 @@ private fun FeaturePage(page: SmartPage, smart: SmartFeaturesUi, onBack: () -> U
             .fillMaxWidth()
             .height(220.dp)
             .popIn(true, 0)
+            .greyedOut(page.lockedFor(smart))
             .clip(RoundedCornerShape(36.dp)),
     ) {
         SmartShowcase(page, modifier = Modifier.fillMaxSize())
@@ -571,20 +607,24 @@ private fun FeaturePage(page: SmartPage, smart: SmartFeaturesUi, onBack: () -> U
         StatusChip(statusOf(page, smart))
     }
     Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.popIn(true, 2)) {
-        // Without the AI marks no model can be imported: said before its cards, with the way there.
+        // The dub and the eraser need the AI marks first: said before their cards, which stay
+        // grey and out of reach until the marks are here. The other features need none.
         val marks = smart.marks
-        if (marks != null && !marks.ready && page != SmartPage.MARKS && page != SmartPage.ABOUT) {
-            MarksFirstNotice { onOpen(SmartPage.MARKS) }
-        }
-        when (page) {
-            SmartPage.SPEECH -> SpeechSection(smart)
-            SmartPage.TRANSLATE -> smart.translation?.let { TranslationSettingsSection(it, showHeading = false) }
-            SmartPage.CUTOUT -> CutoutSection(smart)
-            SmartPage.ERASE -> smart.erase?.let { EraseSettingsSection(it) }
-            SmartPage.VOICE -> smart.voice?.let { VoiceSettingsSection(it) }
-            SmartPage.DUB -> smart.dub?.let { DubSection(it) }
-            SmartPage.ABOUT -> AboutModelsSection()
-            SmartPage.MARKS -> marks?.let { MarksSection(it) }
+        val locked = page.lockedFor(smart)
+        if (locked) MarksFirstNotice { onOpen(SmartPage.MARKS) }
+        LockedForMarks(locked, onOpen = { onOpen(SmartPage.MARKS) }) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                when (page) {
+                    SmartPage.SPEECH -> SpeechSection(smart)
+                    SmartPage.TRANSLATE -> smart.translation?.let { TranslationSettingsSection(it, showHeading = false) }
+                    SmartPage.CUTOUT -> CutoutSection(smart)
+                    SmartPage.ERASE -> smart.erase?.let { EraseSettingsSection(it) }
+                    SmartPage.VOICE -> smart.voice?.let { VoiceSettingsSection(it) }
+                    SmartPage.DUB -> smart.dub?.let { DubSection(it) }
+                    SmartPage.ABOUT -> AboutModelsSection()
+                    SmartPage.MARKS -> marks?.let { MarksSection(it) }
+                }
+            }
         }
     }
 }

@@ -67,16 +67,13 @@ object StemModels {
 
     /** Bandit's file, kept the way the speech model's are. */
     val SCENE: SpeechModel = SpeechModel(
-        variant = null,
         name = BANDIT_NAME,
-        archive = null,
         downloads = listOf(SpeechModel.Download(BANDIT.name, "$BANDIT_DOWNLOAD_URL/${BANDIT.name}")),
         // bandit-onnx-2's: the first file (bandit-onnx-1) was in "stems/bandit-v2" (see RetiredModels).
         folder = "stems/bandit-v2-2",
         prefs = "stems_bandit_2",
         tempFolder = "importing-bandit",
         files = listOf(BANDIT),
-        samples = emptyList(),
         installedBytes = BANDIT.bytes ?: 0L,
     )
 
@@ -107,15 +104,12 @@ object StemModels {
 
     /** Spleeter's file, kept the way the speech model's are. */
     val INSTRUMENTS: SpeechModel = SpeechModel(
-        variant = null,
         name = SPLEETER_NAME,
-        archive = null,
         downloads = listOf(SpeechModel.Download(INSTRUMENTS_FILE.name, "$SPLEETER_DOWNLOAD_URL/${INSTRUMENTS_FILE.name}")),
         folder = "stems/spleeter-5stems",
         prefs = "stems_spleeter",
         tempFolder = "importing-spleeter",
         files = listOf(INSTRUMENTS_FILE),
-        samples = emptyList(),
         installedBytes = INSTRUMENTS_FILE.bytes ?: 0L,
     )
 }

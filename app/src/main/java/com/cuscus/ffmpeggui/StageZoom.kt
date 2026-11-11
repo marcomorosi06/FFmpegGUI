@@ -63,7 +63,9 @@ import kotlin.math.roundToInt
  * where they are seen. Two fingers on a sticker still size and turn the
  * sticker; a stroke being drawn when a second finger comes is dropped (it was
  * the start of a pinch, not a line). A pill over the canvas says how far it
- * is zoomed and springs it back when tapped.
+ * is zoomed and springs it back when tapped. While a picture is cropped, the
+ * canvas frames the crop frame by itself each time it is let go (animateTo,
+ * core.image.CropFocus).
  */
 
 /** How far the canvas is zoomed ([scale], 1 = it fits) and moved ([x], [y], in pixels of the stage). */
@@ -98,6 +100,26 @@ internal class StageZoom {
         scale = next
         x = nx.coerceIn(-limitX, limitX)
         y = ny.coerceIn(-limitY, limitY)
+    }
+
+    /**
+     * To [view] (zoom and place; see core.image.CropFocus), with the theme's
+     * default spatial spring: the crop frame let go, framed on the stage.
+     */
+    suspend fun animateTo(view: com.cuscus.ffmpeggui.core.image.CropFocus.View, motion: MotionScheme) {
+        val fromScale = scale
+        val fromX = x
+        val fromY = y
+        if (fromScale == view.scale && fromX == view.x && fromY == view.y) return
+        animate(0f, 1f, animationSpec = motion.defaultSpatialSpec()) { t, _ ->
+            // The spring may overshoot a little: never below the canvas that fits.
+            scale = (fromScale + (view.scale - fromScale) * t).coerceAtLeast(MIN_SCALE * 0.98f)
+            x = fromX + (view.x - fromX) * t
+            y = fromY + (view.y - fromY) * t
+        }
+        scale = view.scale
+        x = view.x
+        y = view.y
     }
 
     /** Back to the canvas that fits, with the theme's default spatial spring. */

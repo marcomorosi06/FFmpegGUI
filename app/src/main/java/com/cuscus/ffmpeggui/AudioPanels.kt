@@ -762,6 +762,8 @@ internal fun AudioTagsContent(
     picture: Boolean = false,
     /** Where the words heard come from, to fill the lyrics with what is sung; null hides that. */
     lyrics: SubtitleEditing? = null,
+    /** The song as the editor plays it, to time the lyrics by hand (LyricsSyncDialog); null hides that. */
+    lyricsPlayback: LyricsPlayback? = null,
 ) {
     val haptic = LocalHapticFeedback.current
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = panelModifier) {
@@ -808,7 +810,7 @@ internal fun AudioTagsContent(
             TagField(R.string.tag_copyright, Icons.Rounded.Copyright, tags.copyright, "copyright", onTags, last = true) { t, v -> t.copy(copyright = v) }
         }
         // Lyrics belong to songs: shown for a sound file, or where some were read.
-        if (!picture && (lyrics != null || tags.lyrics.isNotBlank())) LyricsCard(tags.lyrics, onTags, lyrics)
+        if (!picture && (lyrics != null || tags.lyrics.isNotBlank())) LyricsCard(tags.lyrics, onTags, lyrics, lyricsPlayback)
         // Every other tag of the file, grouped, with what takes them away.
         AllTagsCard(tags, onTags, picture)
         PanelHint(stringResource(if (picture) R.string.picture_tags_hint else R.string.audio_tags_hint))

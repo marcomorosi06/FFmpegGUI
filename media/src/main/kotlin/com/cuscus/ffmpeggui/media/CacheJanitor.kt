@@ -16,6 +16,8 @@ import java.io.File
  *  - stills (pictures added as clips, freeze frames, see [AndroidStillMaker]) and
  *    cover pictures of audio files (see [AndroidCoverArtist])
  *    live in `stills/` and go the same way;
+ *  - what an editor of the stack applies (see core.stack, [newNested]) lives
+ *    in `nested/` and goes the same way (a saved project keeps its copy);
  *  - working copies made for a conversion live in `staging/` and are deleted by
  *    [CacheSourceStager] at the end of every run;
  *  - [sweep] removes whatever a killed process or an older version of the app
@@ -58,6 +60,16 @@ class CacheJanitor(
         return file to FileProvider.getUriForFile(appContext, authority, file).toString()
     }
 
+    /**
+     * A new file for what an editor of the stack applies (see core.stack),
+     * with [extension], in the internal cache, and its content URI.
+     */
+    fun newNested(extension: String): Pair<File, String> {
+        val directory = File(appContext.cacheDir, NESTED).apply { mkdirs() }
+        val file = File(directory, "nested_${clock()}_${System.nanoTime() % 100_000}.$extension")
+        return file to FileProvider.getUriForFile(appContext, authority, file).toString()
+    }
+
     override fun discard(sourceUri: String) {
         val (directory, name) = ownedFile(sourceUri) ?: return
         listOfNotNull(appContext.externalCacheDir, appContext.cacheDir)
@@ -82,6 +94,9 @@ class CacheJanitor(
 
             // Stills of projects that were never closed: no project survives a restart.
             File(appContext.cacheDir, STILLS).listFiles()?.forEach { it.deleteRecursively() }
+            // What editors of the stack applied, the same way (a saved project has its copy).
+            File(appContext.cacheDir, NESTED).listFiles()?.forEach { it.deleteRecursively() }
+            File(appContext.cacheDir, NESTED_WORK).listFiles()?.forEach { it.deleteRecursively() }
 
             // Denoise comparisons of an editor that was closed while one was being read.
             File(appContext.cacheDir, FfmpegDenoiseSampler.DIRECTORY).listFiles()?.forEach { it.deleteRecursively() }
@@ -119,15 +134,18 @@ class CacheJanitor(
         // Only a plain file name directly inside one of our directories qualifies.
         if (name.contains('/') || name.startsWith(".")) return null
         val directory = segments.getOrNull(segments.size - 2)
-        if (directory != RECORDINGS && directory != STILLS) return null
+        if (directory != RECORDINGS && directory != STILLS && directory != NESTED) return null
         return directory to name
     }
 
-    private companion object {
+    internal companion object {
         const val TAG = "CacheJanitor"
         const val STAGING = "staging"
         const val RECORDINGS = "recordings"
         const val STILLS = "stills"
+        const val NESTED = "nested"
+        /** Where the engine renders for the stack before the file is moved into [NESTED] (FfmpegNestedRenderer). */
+        const val NESTED_WORK = "nested-work"
         const val RECENT_RECORDING_MS = 10 * 60 * 1000L
 
         /** "<name>_<13-digit epoch millis>.<ext>", the naming used by earlier versions. */

@@ -197,9 +197,7 @@ internal class AudioFilters {
         label: String = "aw",
     ): List<String> {
         val filters = mutableListOf<String>()
-        if (effects.audioDenoise > 0f) {
-            filters += fmt("anlmdn=s=%.2f", effects.audioDenoise.coerceIn(0f, 1f) * ANLMDN_MAX_STRENGTH)
-        }
+        audioDenoiseFilter(effects.audioDenoise)?.let { filters += it }
         if (effects.reversed) {
             // areverse hands the samples back with their old timestamps, which are out of
             // order once the footage has been joined from several segments: renumber them.
@@ -327,3 +325,12 @@ internal class AudioFilters {
         const val NORMALIZED_SAMPLE_RATE = 48000
     }
 }
+
+/**
+ * The sound's denoise at [strength] (0..1; see Effects.audioDenoise): FFmpeg's
+ * anlmdn (non-local means), or null for none. Shared by the export and the
+ * editor's listening comparison (see core/preview/AudioDenoiseSample.kt), so
+ * both run the very same filter.
+ */
+internal fun audioDenoiseFilter(strength: Float): String? =
+    if (strength > 0f) fmt("anlmdn=s=%.2f", strength.coerceIn(0f, 1f) * AudioFilters.ANLMDN_MAX_STRENGTH) else null

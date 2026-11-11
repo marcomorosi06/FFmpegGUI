@@ -11,7 +11,23 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AspectRatio
+import androidx.compose.material.icons.rounded.Restore
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -40,7 +56,10 @@ import kotlin.math.abs
  * whole with bars around it, covering it with its edges cut, or stretched to
  * it with nothing cut and no bars. Each choice is a tile drawn as it looks: a
  * picture with a round subject in the frame, the subject squashed when
- * stretched.
+ * stretched. The same three, drawn the same way, fit a sticker or a picture
+ * laid over the video (OverlayArrangeCard). Pulled out of its shape (by
+ * Stretch or by the handles on its sides, see PictureStretch), a picture says
+ * so and offers its own shape back ([StretchedNotice]).
  */
 
 /** The name of [CanvasFit] on its tile. */
@@ -114,7 +133,7 @@ internal fun CanvasFitChooser(
  * happens to its shape.
  */
 @Composable
-private fun CanvasFitPreview(fit: CanvasFit, frameRatio: Float, pictureRatio: Float, color: Color) {
+internal fun CanvasFitPreview(fit: CanvasFit, frameRatio: Float, pictureRatio: Float, color: Color) {
     Canvas(modifier = Modifier.size(32.dp)) {
         val side = size.minDimension
         val stroke = 2.dp.toPx()
@@ -184,5 +203,57 @@ internal fun photoFit(photo: ImageOverlay?, canvas: PictureCanvas?, pictureWidth
         near(photo.scaleW, fittedPhoto(c, pictureWidth, pictureHeight).widthFraction) -> CanvasFit.FIT
         near(photo.scaleW, maxOf(1f, canvasRatio / pictureRatio)) -> CanvasFit.FILL
         else -> null
+    }
+}
+
+/**
+ * Said under the ways to fit a picture while it is pulled out of its shape
+ * (its stretch is not 1): that it is, and a button that gives it its own
+ * shape back where it is, as wide as it is ([onOriginalShape]). How to pull
+ * it by hand is said under it.
+ */
+@Composable
+internal fun StretchedNotice(stretched: Boolean, onOriginalShape: () -> Unit, enabled: Boolean = true) {
+    val scheme = MaterialTheme.colorScheme
+    val haptic = LocalHapticFeedback.current
+    val motion = MaterialTheme.motionScheme
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = stretched,
+            enter = androidx.compose.animation.expandVertically(motion.defaultSpatialSpec()) + fadeIn(motion.defaultEffectsSpec()),
+            exit = androidx.compose.animation.shrinkVertically(motion.fastSpatialSpec()) + fadeOut(motion.fastEffectsSpec()),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(scheme.tertiaryContainer)
+                    .padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            ) {
+                Icon(Icons.Rounded.AspectRatio, contentDescription = null, tint = scheme.onTertiaryContainer, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    stringResource(R.string.stretch_stretched),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = scheme.onTertiaryContainer,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                FilledTonalButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onOriginalShape()
+                    },
+                    enabled = enabled,
+                    shapes = ButtonDefaults.shapes(),
+                ) {
+                    Icon(Icons.Rounded.Restore, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(stringResource(R.string.stretch_original_shape))
+                }
+            }
+        }
+        PanelHint(stringResource(R.string.stretch_handles_hint))
     }
 }

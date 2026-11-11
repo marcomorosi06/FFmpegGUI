@@ -29,7 +29,10 @@ drift apart.
   releases, because their makers publish them for PyTorch or TensorFlow only,
   or in a form a phone cannot run: EdgeTAM, BiRefNet-lite, Bandit v2 and
   Spleeter's five stems. For those the project is a distributor, and keeps
-  every condition of their licences (below).
+  every condition of their licences (below). Two more are served from its
+  own releases **unchanged**, so that the files the app pins stay where
+  nobody can replace them: TrustMark's (the AI marks) and the speech model's
+  (Parakeet, as sherpa-onnx converted it).
   Each release's page (written by `scripts/model-release-notes.py`) gives
   the model's makers and licence (for Bandit v2, the CC BY-SA attribution and
   the changes), links every file it holds, the commit and the lock it was
@@ -39,7 +42,7 @@ drift apart.
 
 | Feature | Model | Made by | Licence of the model | ONNX file by | Served from |
 |---|---|---|---|---|---|
-| Subtitles from speech | Parakeet TDT 0.6B v3 | NVIDIA | CC BY 4.0 | sherpa-onnx (int8); pantinor (SmoothQuant) | Hugging Face, GitHub |
+| Subtitles from speech | Parakeet TDT 0.6B v3 | NVIDIA | CC BY 4.0 | sherpa-onnx (int8) | **this repository's releases** (sherpa-onnx's files, unchanged) |
 | Cut-out, Fast | U2-NetP | Xuebin Qin et al. | Apache 2.0 | rembg (MIT) | rembg's GitHub releases |
 | Cut-out, Precise | IS-Net (general use) | Xuebin Qin et al. (DIS) | Apache 2.0 | rembg (MIT) | rembg's GitHub releases |
 | Cut-out, Finest | BiRefNet-lite (general use) | Zheng Peng et al. | MIT | **this project** | **this repository's releases** |
@@ -51,8 +54,8 @@ drift apart.
 | AI dubbing | Kokoro-82M v1.0 | hexgrad | Apache 2.0 | sherpa-onnx (Apache 2.0) | sherpa-onnx's GitHub releases |
 | AI dubbing, extra voices | Piper voices | their authors | each its own | Piper / sherpa-onnx | Hugging Face, GitHub |
 | Subtitle translation | Opus-MT | University of Helsinki | CC BY 4.0 | Xenova | Hugging Face |
-| **AI marks** (voices), before any other model | AudioSeal | Meta | MIT | **this project** | **this repository's releases** |
-| **AI marks** (pictures), before any other model | TrustMark Q | Adobe | MIT | Adobe | **this repository's releases** (Adobe's files, unchanged) |
+| **AI marks** (voices), before the dub's and the eraser's models | AudioSeal | Meta | MIT | **this project** | **this repository's releases** |
+| **AI marks** (pictures), before the dub's and the eraser's models | TrustMark Q | Adobe | MIT | Adobe | **this repository's releases** (Adobe's files, unchanged) |
 
 ## The project's own conversions
 
@@ -297,8 +300,11 @@ each instrument on the video as a track of its own.
 What the app's models make carries a mark that cannot be seen or heard (EU
 AI Act, Regulation (EU) 2024/1689, Article 50(2); see docs/ARCHITECTURE.md,
 "Marked as made with AI"). These four files write and find it. They are
-imported before any other model (`MarkingGate`); without them no model stays
-on the phone (`MarkingSweep`). The marks carry nothing but "made with AI":
+imported before the models that make voices and pictures, the dub's (Kokoro,
+the Piper voices) and the magic eraser's (MI-GAN, LaMa) (`MarkingGate`);
+without them none of those stays on the phone (`MarkingSweep`). The other
+models (speech, translation, cut-out and its corrections, stems) make
+nothing that is marked and need no marks. The marks carry nothing but "made with AI":
 their payloads are constants, the same for everyone (`core/marking/Marks.kt`).
 That they carry no fingerprint is the design, not a certainty: see
 docs/ARCHITECTURE.md, "That they carry nothing is not certain".
@@ -360,32 +366,61 @@ docs/ARCHITECTURE.md, "That they carry nothing is not certain".
   (`assets/licenses/ai-markers/`, readable in About, Licences), with the
   NOTICE of what was converted and what is unchanged.
 
+## Parakeet TDT 0.6B v3 (subtitles from speech): sherpa-onnx's files, served here
+
+By NVIDIA, CC BY 4.0 (https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), as
+the sherpa-onnx project exported it to ONNX and quantised it to int8
+(https://github.com/k2-fsa/sherpa-onnx; published at
+https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
+and in sherpa-onnx's `asr-models` release). CC BY asks for credit: the app
+gives it in About, Licences, and in Smart features. Its token list ships with
+the app (`assets/licenses/parakeet/ATTRIBUTION.txt`, with the licence).
+
+**Why this repository serves it.** The places upstream serve whatever was
+uploaded last under the same name. In November 2026 what was downloaded from
+them stopped passing the app's check against the pins it has had since
+2026-10-18 (commit 1fbba8d), the archive and the loose files alike, and why
+was not established. The app refused them, as it should, and its pins were
+not moved to whatever is served now: a file that changes without a word is
+exactly what they are there to stop. Instead the files the app was pinned
+to, checked against those pins, are served from this repository's release
+`parakeet-onnx-1`, byte for byte, where they cannot change under the app.
+
+- `scripts/parakeet-onnx.lock` pins the three files (name, SHA-256, size),
+  the release tag and the licence; `speech/SpeechModel.kt` pins the same,
+  and `scripts/check-model-pins.py` checks that they agree.
+- The release holds the three files with `LICENSE.txt` (the CC BY 4.0 legal
+  code, the copy the app bundles), `NOTICE.txt` (the attribution, where the
+  files come from, and that nothing was changed) and `SHA256SUMS.txt`, all
+  three written by `scripts/check-model-pins.py --parakeet-side-files DIR`;
+  `--release-dir parakeet=DIR` checks a folder before it is uploaded.
+- CC BY 4.0, section 3(a): the release and the app credit NVIDIA, keep its
+  notices, link the licence, say that the files are unchanged and that no
+  endorsement is implied.
+
+The files: `encoder.int8.onnx` `acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247`
+(652,184,281 bytes), `decoder.int8.onnx`
+`179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e` (11,845,275
+bytes), `joiner.int8.onnx`
+`3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3` (6,355,277
+bytes), and in the app `tokens.txt`
+`d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d` (kept byte
+for byte by `.gitattributes`).
+
+**No longer offered.** The SmoothQuant build (by pantinor, on Hugging Face,
+CC BY 4.0: `encoder.int8.onnx`
+`1db13b37849829eecce166bf2e1c7d4d334ceed9e3b9b95c515188dd870301ae`,
+`decoder.int8.onnx`
+`0018457edb28af7715cfd86ae47a6d67775492d7d32de58a41e7aa09305121e1`) and the
+import of sherpa-onnx's archive
+(`5793d0fd397c5778d2cf2126994d58e9d56b1be7c04d13c7a15bb1b4eafb16bf`), with
+the speed test that listened to the archive's recordings, are gone: a
+SmoothQuant model still on a phone is deleted at the next start
+(`RetiredModels`), and so are the recordings.
+
 ## Files published by others, which the app points to
 
 The app only links to these and checks them; it does not host or change them.
-
-### Parakeet TDT 0.6B v3 (subtitles from speech)
-
-By NVIDIA, CC BY 4.0 (https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3).
-CC BY asks for credit: the app gives it in About, Licences, and in Smart
-features. Its token list ships with the app
-(`assets/licenses/parakeet/ATTRIBUTION.txt`, with the licence).
-
-- **int8**, as converted by sherpa-onnx (csukuangfj, Hugging Face, or the
-  sherpa-onnx `asr-models` release archive):
-  `encoder.int8.onnx` `acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247`,
-  `decoder.int8.onnx` `179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e`,
-  the archive `5793d0fd397c5778d2cf2126994d58e9d56b1be7c04d13c7a15bb1b4eafb16bf`.
-- **SmoothQuant**, by pantinor on Hugging Face, the same licence:
-  `encoder.int8.onnx` `1db13b37849829eecce166bf2e1c7d4d334ceed9e3b9b95c515188dd870301ae`,
-  `decoder.int8.onnx` `0018457edb28af7715cfd86ae47a6d67775492d7d32de58a41e7aa09305121e1`.
-- Both: `joiner.int8.onnx` `3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3`,
-  `tokens.txt` `d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d`
-  (in the app), and the speed test's recordings, from the archive:
-  `en.wav` `148b936b43ce7c546a866e64da059f0458aee2d65e617f16e9d94f06e8d99ed6`,
-  `de.wav` `36d3c4845b9808a1656a2a2e92d884590e2db94389e6fe559643291ae0cd3710`,
-  `fr.wav` `b59be4349b92d344fb903677165eaf4694025d1ab119c608726ecbcb3164b528`,
-  `es.wav` `49fd2cfa4b62db7068143c582b35de9d31ec2733495ece3611105131d21de06c`.
 
 ### IS-Net and U2-NetP (subject cut-out, Precise and Fast)
 

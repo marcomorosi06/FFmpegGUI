@@ -2,6 +2,7 @@
 
 package com.cuscus.ffmpeggui
 
+import com.cuscus.ffmpeggui.ui.expressive.peeksSheet
 import android.graphics.Bitmap
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
@@ -167,7 +168,8 @@ internal fun CompactSlider(
             onValueChange = onValueChange,
             onValueChangeFinished = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
             valueRange = valueRange,
-            modifier = Modifier.weight(1f).semantics { contentDescription = label },
+            // In a sheet that fades for live changes (the SVG editor's), dragging it fades the sheet.
+            modifier = Modifier.weight(1f).peeksSheet().semantics { contentDescription = label },
         )
         Spacer(modifier = Modifier.width(8.dp))
         AnimatedVisibility(

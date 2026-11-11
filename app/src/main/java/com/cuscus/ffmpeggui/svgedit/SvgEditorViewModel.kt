@@ -288,7 +288,12 @@ class SvgEditorViewModel(application: Application) : AndroidViewModel(applicatio
     /** [src] traced as [settings] say, as a drawing whose colours are named; and how many colours it has. */
     private fun traced(src: TraceSource, settings: TraceSettings): Pair<SvgDocument, VectorImage> {
         val image = VectorTracer.trace(src.raster, settings.sane())
-        val doc = SvgDocument.parse(image.toSvg(src.width, src.height))
+        return documentOf(image, src.width, src.height) to image
+    }
+
+    /** [image] as a drawing of [width] x [height] pixels, each colour a layer named after it. */
+    private fun documentOf(image: VectorImage, width: Int, height: Int): SvgDocument {
+        val doc = SvgDocument.parse(image.toSvg(width, height))
         // Each colour a layer of its own, named after it; a shaded shape after the colour it shades.
         val named = doc.copy(nodes = doc.nodes.mapIndexed { i, n ->
             val fill = (n as? SvgShape)?.style?.fill
@@ -309,7 +314,7 @@ class SvgEditorViewModel(application: Application) : AndroidViewModel(applicatio
             seen[id] = count
             if (count == 1 || n !is SvgShape) n else n.copy(id = "$id-$count")
         })
-        return unique to image
+        return unique
     }
 
     /** Starts from an empty drawing [width] x [height] (pixels), with a [background] when given (ARGB). */
@@ -321,13 +326,17 @@ class SvgEditorViewModel(application: Application) : AndroidViewModel(applicatio
         start(SvgDocument.blank(width.toDouble(), height.toDouble(), background), name)
     }
 
-    /** Starts from [doc] (a drawing made by the app, a trace say). */
-    fun openDocument(doc: SvgDocument, name: String) {
+    /**
+     * Starts from a picture traced elsewhere in the app ([image], the photo
+     * editor's Trace, at [width] x [height] pixels): its shapes become the
+     * drawing's, named and layered as a trace made here.
+     */
+    fun openTraced(image: VectorImage, width: Int, height: Int, name: String) {
         opening?.cancel()
         tracingJob?.cancel()
         traceSource = null
         _tracing.value = null
-        start(doc, name)
+        start(documentOf(image, width, height), name)
     }
 
     private fun start(doc: SvgDocument, name: String, id: String = store.newId()) {

@@ -2,8 +2,6 @@ package com.cuscus.ffmpeggui.svgedit
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -14,23 +12,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
-import kotlin.math.abs
+import com.cuscus.ffmpeggui.ui.expressive.LocalSheetPeek
+import com.cuscus.ffmpeggui.ui.expressive.SheetPeek
 
 /**
- * A bottom sheet of the SVG editor that gets out of the way while an option is
- * being changed: a finger held on a control, or dragging it sideways (a slider),
- * fades the sheet and its scrim almost away, so the drawing under it shows
- * what the option does live. Lifting the finger brings the sheet back.
- * A vertical drag is a scroll of the sheet and leaves it as it is.
+ * A bottom sheet of the SVG editor that gets out of the way while an option
+ * that shows its change live is used: a finger held on a slider, or dragging
+ * it sideways, fades the sheet and its scrim almost away, so the drawing
+ * under it shows what the option does. Lifting the finger brings the sheet
+ * back. Only the controls marked so ([peeksSheet]: the sliders) do it: a
+ * hold or a sideways swipe elsewhere (a tile, the layers being reordered)
+ * leaves the sheet as it is (issue #25).
  */
 // SheetState, ModalBottomSheet and BottomSheetDefaults are still experimental in material3.
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,7 +39,8 @@ internal fun PeekThroughSheet(
     containerColor: Color,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    var peeking by remember { mutableStateOf(false) }
+    val peek = remember { SheetPeek() }
+    val peeking = peek.peeking
     // Effects springs: alpha and colour must never overshoot.
     val motion = MaterialTheme.motionScheme
     val contentAlpha by animateFloatAsState(
@@ -65,48 +64,17 @@ internal fun PeekThroughSheet(
         containerColor = container,
         scrimColor = scrim,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .graphicsLayer { alpha = contentAlpha }
-                .pointerInput(Unit) {
-                    awaitEachGesture {
-                        // Initial pass and nothing consumed: the controls still get every touch.
-                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                        val slop = viewConfiguration.touchSlop
-                        val outcome = withTimeoutOrNull<Gesture>(PEEK_HOLD_MS) {
-                            while (true) {
-                                val event = awaitPointerEvent(PointerEventPass.Initial)
-                                val change = event.changes.firstOrNull { it.id == down.id } ?: return@withTimeoutOrNull Gesture.ENDED
-                                if (!change.pressed) return@withTimeoutOrNull Gesture.ENDED
-                                val dx = abs(change.position.x - down.position.x)
-                                val dy = abs(change.position.y - down.position.y)
-                                if (dy > slop && dy > dx) return@withTimeoutOrNull Gesture.SCROLL
-                                if (dx > slop) return@withTimeoutOrNull Gesture.SIDEWAYS
-                            }
-                            @Suppress("UNREACHABLE_CODE")
-                            Gesture.ENDED
-                        }
-                        // Null: held still long enough. Sideways: a slider being dragged.
-                        if (outcome == null || outcome == Gesture.SIDEWAYS) {
-                            peeking = true
-                            do {
-                                val event = awaitPointerEvent(PointerEventPass.Initial)
-                            } while (event.changes.any { it.pressed })
-                            peeking = false
-                        }
-                    }
-                },
-        ) {
-            Column(modifier = Modifier.fillMaxWidth(), content = content)
+        CompositionLocalProvider(LocalSheetPeek provides peek) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer { alpha = contentAlpha },
+            ) {
+                Column(modifier = Modifier.fillMaxWidth(), content = content)
+            }
         }
     }
 }
-
-private enum class Gesture { ENDED, SCROLL, SIDEWAYS }
-
-/** How long a finger rests on a control before the sheet fades. */
-private const val PEEK_HOLD_MS = 300L
 
 /** What is left of the controls while peeking: enough to keep the finger on its target. */
 private const val PEEK_CONTENT_ALPHA = 0.18f

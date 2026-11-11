@@ -1,0 +1,37 @@
+# The speech model's files: NVIDIA's Parakeet TDT 0.6B v3 as the sherpa-onnx
+# project exported it to ONNX and quantised it to int8. This project does not
+# make them: it serves them, byte for byte as sherpa-onnx published them, from
+# the release below, so that the files the app pins (speech/SpeechModel.kt)
+# stay where nobody can replace them. scripts/check-model-pins.py checks that
+# the app pins what this lock does, and writes the release's side files
+# (--parakeet-side-files DIR: LICENSE.txt, NOTICE.txt, SHA256SUMS.txt).
+# docs/MODELS.md, "Parakeet TDT 0.6B v3", has the whole record.
+
+# The model, by NVIDIA, under CC BY 4.0; its legal code is the copy the app
+# bundles (licence_file), the same that goes out as the release's LICENSE.txt.
+model               https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+model_by            NVIDIA Corporation
+licence             CC BY 4.0
+licence_url         https://creativecommons.org/licenses/by/4.0/
+licence_file        app/src/main/assets/licenses/parakeet/CC-BY-4.0.txt
+licence_sha256      d557539df68e771cc1eedcc91d13f70fca930e508d11eedcafa4b15db49e3744
+
+# Where sherpa-onnx published the files (the app pinned them from there on
+# 2026-10-18, commit 1fbba8d), and its project.
+converter           https://github.com/k2-fsa/sherpa-onnx
+published_at        https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
+pinned_since        2026-10-18
+pinned_in_commit    1fbba8d
+
+# The files, as the app pins them (the token list, tokens.txt, is in the app:
+# app/src/main/assets/speech/parakeet-tdt-0.6b-v3-tokens.txt).
+encoder_file        encoder.int8.onnx
+encoder_sha256      acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247
+encoder_bytes       652184281
+decoder_file        decoder.int8.onnx
+decoder_sha256      179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e
+decoder_bytes       11845275
+joiner_file         joiner.int8.onnx
+joiner_sha256       3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3
+joiner_bytes        6355277
+release_tag         parakeet-onnx-1

@@ -1,10 +1,8 @@
 package com.cuscus.ffmpeggui
 
-import android.Manifest
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ObjectAnimator
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
@@ -19,6 +17,7 @@ import com.cuscus.ffmpeggui.ui.theme.LocalSystemBars
 import com.cuscus.ffmpeggui.ui.theme.background
 import com.cuscus.ffmpeggui.ui.theme.rememberSystemBars
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -168,6 +167,7 @@ class MainActivity : ComponentActivity() {
                     LocalSystemBars provides systemBars,
                     LocalStillGainMaps provides container.stillGainMaps,
                     LocalDenoiseSampler provides container.denoiseSampler,
+                    LocalAudioDenoiseSampler provides container.audioDenoiseSampler,
                 ) {
                 // The window as the screens get it (inside the system bars and a camera's
                 // notch at the side), measured once for all of them (see WindowLayout).
@@ -270,17 +270,16 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(windowFocused) { if (windowFocused) reclaim() }
                     val duplicateName = stringResource(R.string.projects_copy_name, "%s")
 
-                    // An export shows its progress in a notification: Android 13 and later ask first.
-                    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+                    // An export shows its progress in a notification: before every export, while
+                    // notifications are not allowed, they are asked for first (Android's question, or
+                    // the way to its settings once it no longer asks); the export starts after the answer.
+                    val notificationsFirst = com.cuscus.ffmpeggui.export.rememberNotificationsFirst()
                     // [adjust] changes what this one export makes, not the project.
                     val startExportOf: ((ConversionSettings) -> ConversionSettings) -> Unit = { adjust ->
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                        ) {
-                            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        notificationsFirst {
+                            vm.startConversion(adjust)
+                            navController.navigate(Screen.Processing.route)
                         }
-                        vm.startConversion(adjust)
-                        navController.navigate(Screen.Processing.route)
                     }
                     val startExport: () -> Unit = { startExportOf { it } }
 
@@ -463,6 +462,7 @@ class MainActivity : ComponentActivity() {
                         onSetUp = { area ->
                             container.smartFeatures.acknowledgeRetiredModels()
                             com.cuscus.ffmpeggui.settings.SmartPageRequest.next = when (area) {
+                                com.cuscus.ffmpeggui.cutout.RetiredModels.Area.SPEECH -> com.cuscus.ffmpeggui.settings.SmartPage.SPEECH
                                 com.cuscus.ffmpeggui.cutout.RetiredModels.Area.CUTOUT -> com.cuscus.ffmpeggui.settings.SmartPage.CUTOUT
                                 com.cuscus.ffmpeggui.cutout.RetiredModels.Area.VOICE -> com.cuscus.ffmpeggui.settings.SmartPage.VOICE
                             }
@@ -471,7 +471,7 @@ class MainActivity : ComponentActivity() {
                         onDismiss = container.smartFeatures::acknowledgeRetiredModels,
                     )
 
-                    // Models deleted for want of the AI marks (MarkingSweep): said once, with the way to the marks.
+                    // Dub and eraser models deleted for want of the AI marks (MarkingSweep): said once, with the way to the marks.
                     val clearedForMarks by container.smartFeatures.clearedForMarks.collectAsState()
                     com.cuscus.ffmpeggui.marking.ModelsClearedDialog(
                         removed = clearedForMarks,
@@ -482,7 +482,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onDismiss = container.smartFeatures::acknowledgeClearedForMarks,
                     )
-                    // A model to be imported before the AI marks (MarkingGate): why they come first.
+                    // A dub or eraser model to be imported before the AI marks (MarkingGate): why they come first.
                     val markRefusals by com.cuscus.ffmpeggui.marking.MarkingGate.refusals.collectAsState()
                     var answeredRefusals by remember { mutableStateOf(markRefusals) }
                     if (markRefusals > answeredRefusals) {
@@ -897,6 +897,44 @@ class MainActivity : ComponentActivity() {
                                 navController.popBackStack()
                                 return@composable
                             }
+                            // Editors in a stack (see core.stack): a part of a project opened in the editor made
+                            // for it, on top of this one, as many deep as wanted; the map says where one is.
+                            val stackSteps by vm.editorStack.collectAsState()
+                            val nestedApply by vm.nestedApply.collectAsState()
+                            // Where the user asked to go (the hops from the project), while it is asked
+                            // whether to lose the changes of the editors left on the way.
+                            var goTo by remember { mutableStateOf<List<com.cuscus.ffmpeggui.core.stack.StackHop>?>(null) }
+                            val go: (List<com.cuscus.ffmpeggui.core.stack.StackHop>) -> Unit = { hops ->
+                                if (vm.stackChangedAbove(vm.stackLevelTowards(hops))) {
+                                    goTo = hops
+                                } else {
+                                    vm.navigateStack(hops)
+                                }
+                            }
+                            val stackBack: () -> Unit = { go(vm.stackHops().dropLast(1)) }
+                            // The map of the editors, open over the editor.
+                            var mapOpen by remember { mutableStateOf(false) }
+                            // Back, when nothing in the editor takes it: down to the editor under this one.
+                            androidx.activity.compose.BackHandler(enabled = stackSteps.isNotEmpty()) { stackBack() }
+                            val stackEditing = EditorStackEditing(
+                                nested = stackSteps.isNotEmpty(),
+                                canOpen = vm::canOpenNested,
+                                onOpen = { clipId, kind -> vm.openNested(clipId, kind) },
+                                onApply = vm::applyNested,
+                                steps = stackSteps,
+                                onShowMap = { mapOpen = true },
+                            )
+                            // Each editor of the stack keeps its own state (the clip selected, the tool open)
+                            // while one is open on top of it; what is left for good forgets it.
+                            val levels = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+                            val level = (stackSteps.size - 1).coerceAtLeast(0)
+                            var deepest by remember { mutableStateOf(level) }
+                            LaunchedEffect(level) {
+                                if (level < deepest) ((level + 1)..deepest).forEach { levels.removeState(it) }
+                                deepest = level
+                            }
+                            Box(modifier = Modifier.fillMaxSize()) {
+                            levels.SaveableStateProvider(level) {
                             if (format.isTextArt) {
                                 // A picture saved as text: an editor of its own.
                                 com.cuscus.ffmpeggui.textart.TextArtEditorScreen(
@@ -917,9 +955,7 @@ class MainActivity : ComponentActivity() {
                                     onStart = startExport,
                                     onBack = { navController.popBackStack() },
                                 )
-                                return@composable
-                            }
-                            if (format.isImage) {
+                            } else if (format.isImage) {
                                 ImageEditorScreen(
                                     inputUri = inputUri,
                                     format = format,
@@ -964,10 +1000,15 @@ class MainActivity : ComponentActivity() {
                                     onUndo = vm::undo,
                                     onRedo = vm::redo,
                                     onStart = startExport,
-                                    onBack = { navController.popBackStack() },
+                                    onBack = { if (stackSteps.isNotEmpty()) stackBack() else navController.popBackStack() },
+                                    stack = stackEditing,
+                                    // The Trace tool's shapes, drawn on in the SVG editor.
+                                    onEditTraced = { image, name ->
+                                        svgEditor.openTraced(image, image.width, image.height, name)
+                                        navController.navigate(Screen.SvgEditor.route)
+                                    },
                                 )
-                                return@composable
-                            }
+                            } else {
                             // A debug build makes the editor again when its sound path changes (see DebugBench).
                             androidx.compose.runtime.key(com.cuscus.ffmpeggui.debug.DebugBench.soundTrial) {
                                 ConfigScreen(
@@ -983,6 +1024,12 @@ class MainActivity : ComponentActivity() {
                                     framerate = s.framerate,
                                     qualityLevel = s.qualityLevel,
                                     keepHdr = s.keepHdr,
+                                    stabilize = s.stabilize,
+                                    stabilizeShakiness = s.stabilizeShakiness,
+                                    stabilizeSmoothing = s.stabilizeSmoothing,
+                                    onStabilize = vm::setStabilize,
+                                    onStabilizeShakiness = vm::setStabilizeShakiness,
+                                    onStabilizeSmoothing = vm::setStabilizeSmoothing,
                                     wholeEffects = s.wholeEffects,
                                     onUpdateEffects = vm::updateEffects,
                                     onTransitionForAll = vm::setTransitionForAll,
@@ -1139,12 +1186,49 @@ class MainActivity : ComponentActivity() {
                                     onFrameExtractionMode = vm::setFrameExtractionMode,
                                     onFrameExtractionRate = vm::setFrameExtractionRate,
                                     onFrameExtractionTimecode = vm::setFrameExtractionTimecode,
-                                    onBack = { navController.popBackStack() },
+                                    onBack = { if (stackSteps.isNotEmpty()) stackBack() else navController.popBackStack() },
+                                    stack = stackEditing,
                                     normalizationGainDb = sourceLoudness?.let(::normalizationGainDb) ?: 0f,
                                     canUndo = canUndo,
                                     canRedo = canRedo,
                                     onUndo = vm::undo,
                                     onRedo = vm::redo,
+                                )
+                            }
+                            }
+                            }
+                            NestedApplyOverlay(
+                                state = nestedApply,
+                                onStop = vm::stopApplying,
+                                onRetry = {
+                                    vm.dismissApplyProblem()
+                                    vm.applyNested()
+                                },
+                                onDismiss = vm::dismissApplyProblem,
+                            )
+                            }
+                            if (mapOpen) {
+                                // Built again as the editors change (an apply, a clip cut).
+                                val graph = remember(stackSteps, s) { vm.stackGraph() }
+                                StackGraphSheet(
+                                    graph = graph,
+                                    onDismiss = { mapOpen = false },
+                                    onGo = { hops ->
+                                        mapOpen = false
+                                        go(hops)
+                                    },
+                                )
+                            }
+                            goTo?.let { hops ->
+                                val level = vm.stackLevelTowards(hops)
+                                LeaveStackDialog(
+                                    editors = (stackSteps.size - 1 - level).coerceAtLeast(1),
+                                    toTitle = stackSteps.getOrNull(level)?.title.orEmpty(),
+                                    onLeave = {
+                                        goTo = null
+                                        vm.navigateStack(hops)
+                                    },
+                                    onStay = { goTo = null },
                                 )
                             }
                         }
@@ -1196,17 +1280,14 @@ class MainActivity : ComponentActivity() {
                                 var usageRefresh by remember { mutableIntStateOf(0) }
                                 // The video chip's test: where it is, and what it found.
                                 val calibration by container.hardwareCalibration.state.collectAsState()
-                                // The speech model of the smart features, and its speed test.
+                                // The speech model of the smart features.
                                 val smart = container.smartFeatures
                                 val speechLoaded by smart.engine.loaded.collectAsState()
-                                val speedTest by smart.test.collectAsState()
                                 val cutoutLoaded by smart.cutoutEngine.inMemory.collectAsState()
                                 val refineLoaded by smart.refineEngine.inMemory.collectAsState()
                                 val cutoutTest by smart.cutoutTest.collectAsState()
-                                // Which build of each model is chosen, and where every build is.
-                                val speechVariant by smart.speechVariant.collectAsState()
+                                // Which cut-out model is chosen, and where every one is.
                                 val cutoutVariant by smart.cutoutVariant.collectAsState()
-                                val speechVariants = smart.speechStores.mapValues { (_, store) -> store.state.collectAsState().value }
                                 val cutoutVariants = smart.cutoutStores.mapValues { (_, store) -> store.state.collectAsState().value }
                                 val translationModels by smart.translationStore.models.collectAsState()
                                 val translationImport by smart.translationStore.importing.collectAsState()
@@ -1248,20 +1329,14 @@ class MainActivity : ComponentActivity() {
                                     // Not while an export uses FFmpeg and the chip.
                                     canCalibrate = conversionState !is ConversionState.Processing,
                                     smart = SmartFeaturesUi(
-                                        variant = speechVariant,
-                                        variants = speechVariants,
-                                        onChoose = smart::chooseSpeech,
                                         model = speechModel,
                                         loaded = speechLoaded,
-                                        test = speedTest,
                                         // Not while the editor is making subtitles with the model.
                                         idle = speech !is SpeechStatus.Working,
-                                        onImport = { uris -> smart.speechStores.getValue(speechVariant).import(uris) },
-                                        onStopImport = { smart.speechStores.getValue(speechVariant).stop() },
-                                        onVerify = { smart.speechStores.getValue(speechVariant).verify() },
-                                        onDelete = { smart.deleteModel(speechVariant) },
-                                        onTest = smart::runTest,
-                                        onStopTest = smart::stopTest,
+                                        onImport = smart.store::import,
+                                        onStopImport = smart.store::stop,
+                                        onVerify = smart.store::verify,
+                                        onDelete = smart::deleteModel,
                                         onUnload = smart.engine::unload,
                                         translation = TranslationFeatureUi(
                                             models = translationModels,
@@ -1338,7 +1413,7 @@ class MainActivity : ComponentActivity() {
                                             onImport = smart.markerStore::import,
                                             onStopImport = smart.markerStore::stop,
                                             onVerify = smart.markerStore::verify,
-                                            onDeleteAll = smart::deleteMarkersAndModels,
+                                            onDeleteAll = smart::deleteMarkersAndGenerativeModels,
                                             onUnload = smart.marker::unload,
                                         ),
                                         fastKernels = fastKernels,

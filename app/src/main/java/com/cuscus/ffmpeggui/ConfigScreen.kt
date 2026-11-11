@@ -53,6 +53,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import com.cuscus.ffmpeggui.stickers.stickerColours
 import androidx.compose.material3.*
@@ -182,6 +186,13 @@ fun ConfigScreen(
     qualityLevel: Float,
     /** HDR footage stays HDR (see EncodingSettings.keepHdr). */
     keepHdr: Boolean,
+    /** The whole video is steadied by the export (vid.stab), how shaky it is (1..10) and over how many frames (0..100). */
+    stabilize: Boolean = false,
+    stabilizeShakiness: Int = 5,
+    stabilizeSmoothing: Int = 10,
+    onStabilize: (Boolean) -> Unit = {},
+    onStabilizeShakiness: (Int) -> Unit = {},
+    onStabilizeSmoothing: (Int) -> Unit = {},
     /** Effects of the whole video; those of each clip are in [timeline]. */
     wholeEffects: Effects,
     /** Changes the effects of one clip (its id) or, for null, of the whole video. */
@@ -215,6 +226,12 @@ fun ConfigScreen(
     onStart: () -> Unit,
     onBack: () -> Unit,
     isManualMode: Boolean,
+    /**
+     * Editors in a stack (see core.stack): a selected clip's way into the
+     * editor made for a part of it, and, when this editor is open on top of
+     * another, "Apply" in place of "Export". Null: neither.
+     */
+    stack: EditorStackEditing? = null,
     manualCommand: String,
     onManualCommandChange: (String) -> Unit,
     onResetManualMode: () -> Unit,
@@ -1048,6 +1065,7 @@ fun ConfigScreen(
         item(EditorTool.AUDIO, null),
         item(EditorTool.VOICE_SPLIT, null),
         item(EditorTool.AUDIO_EQ, null),
+        item(EditorTool.AUDIO_DENOISE, null),
         item(EditorTool.AUDIO_CLEAN, null),
         item(EditorTool.AUDIO_DYNAMICS, null),
         item(EditorTool.AUDIO_SPACE, null),
@@ -1067,6 +1085,7 @@ fun ConfigScreen(
         item(EditorTool.VOLUME, null),
         item(EditorTool.VOICE_SPLIT, null),
         item(EditorTool.AUDIO_EQ, null),
+        item(EditorTool.AUDIO_DENOISE, null),
         item(EditorTool.AUDIO_CLEAN, null),
         item(EditorTool.AUDIO_DYNAMICS, null),
         item(EditorTool.AUDIO_SPACE, null),
@@ -1102,6 +1121,7 @@ fun ConfigScreen(
         item(EditorTool.KEY, null),
         // A GIF holds no HDR.
         if (gifMode) null else item(EditorTool.HDR, null),
+        item(EditorTool.STABILIZE, null),
         item(EditorTool.TRANSFORM, null),
         item(EditorTool.SPEED, null),
         item(EditorTool.FADE, null),
@@ -1120,6 +1140,7 @@ fun ConfigScreen(
                 item(EditorTool.CLIP_TRIM, clip.id),
                 item(EditorTool.SPEED, clip.id),
                 item(EditorTool.VOLUME, clip.id),
+                item(EditorTool.AUDIO_DENOISE, clip.id),
                 item(EditorTool.VOICE_SPLIT, clip.id),
                 item(EditorTool.FADE, clip.id),
             )
@@ -1131,6 +1152,7 @@ fun ConfigScreen(
             if (selectedClipIsStill) item(EditorTool.MOTION, clip.id) else null,
             item(EditorTool.SPEED, clip.id),
             if (gifMode) null else item(EditorTool.VOLUME, clip.id),
+            if (gifMode || selectedClipIsStill) null else item(EditorTool.AUDIO_DENOISE, clip.id),
             if (gifMode || selectedClipIsStill) null else item(EditorTool.VOICE_SPLIT, clip.id),
             item(EditorTool.TRANSFORM, clip.id),
             item(EditorTool.FRAMING, clip.id),
@@ -1296,8 +1318,14 @@ fun ConfigScreen(
             },
             onExport = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                showExportDialog = true
+                // On top of another editor: what is made here goes back down there.
+                val applyHere = stack?.takeIf { it.nested }
+                applyHere?.onApply?.invoke()
+                if (applyHere == null) showExportDialog = true
             },
+            applies = stack?.nested == true,
+            stackSteps = stack?.steps?.takeIf { it.size >= 2 },
+            onStackMap = { stack?.onShowMap?.invoke() },
             playerRight = playerSide,
             onSwapSides = { right -> onLandscapeLayout(if (right) LandscapeLayout.PLAYER_LEFT else LandscapeLayout.PLAYER_RIGHT) },
             onUsualLayout = if (usualLayout) {
@@ -1409,6 +1437,9 @@ fun ConfigScreen(
                 nowPlaying = nowPlaying,
                 // The denoise badge opens its tool, for the clip whose denoise it is.
                 onOpenDenoise = if (isManualMode || previewFullscreen) null else { clipId -> openTool(EditorTool.DETAILS, clipId) },
+                // So does the steadying's badge.
+                stabilizing = stabilize && !audioMode,
+                onOpenStabilize = if (isManualMode || previewFullscreen) null else { { openTool(EditorTool.STABILIZE, null) } },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -1559,7 +1590,29 @@ fun ConfigScreen(
                     },
                 )
                 Spacer(modifier = Modifier.weight(1f))
+                // A selected part (a clip, a picture or video laid over, a sound) opens in the editor
+                // made for it, on top of this one: its first tool, unlike the others, opens the
+                // "Open in" panel. A text, a shape or an effect of the app's has its own panels.
+                val openPart: (() -> Unit)? = when {
+                    stack == null || isManualMode -> null
+                    selectedSound != null -> {
+                        { selectedTool = EditorTool.OPEN_IN }
+                    }
+                    selectedText != null -> null
+                    selectedImage != null -> if (selectedImage.uri != null && selectedImage.shape == null && !selectedImage.isEffect) {
+                        { selectedTool = EditorTool.OPEN_IN }
+                    } else {
+                        null
+                    }
+                    selectedClip != null -> {
+                        { openTool(EditorTool.OPEN_IN, selectedClip.id) }
+                    }
+                    else -> null
+                }
                 EditorToolbar(
+                    leading = openPart?.let { open ->
+                        { OpenInEditorButton(onClick = open) }
+                    },
                     items = soundItems ?: overlayItems ?: clipItems ?: (if (audioRowOpen && !audioMode) videoAudioItems else wholeItems),
                     onBack = when {
                         selectedSound != null -> {
@@ -1719,12 +1772,63 @@ fun ConfigScreen(
                 }
                 EditorTool.AUDIO_PITCH -> AudioPitchContent(audioEffects, onAudioEffects)
                 EditorTool.AUDIO_EQ -> AudioEqualizerContent(fxEffects, fxChange)
+                EditorTool.AUDIO_DENOISE -> {
+                    // Read through derivedStateOf: only a change of clip recomposes, not every tick.
+                    val segmentNow by remember { derivedStateOf { playback.snapshot.value.segment } }
+                    AudioDenoisePanel(
+                    strength = scopeEffects.audioDenoise,
+                    onStrength = { value -> updateScope { it.copy(audioDenoise = value) } },
+                    clipScope = selectedClip != null,
+                    // The other denoise the export runs on that sound: the whole video's, or the clip's there.
+                    other = if (selectedClip != null) {
+                        wholeEffects.audioDenoise
+                    } else {
+                        playingClips.getOrNull(segmentNow)?.effects?.audioDenoise ?: 0f
+                    },
+                    spotNow = {
+                        denoiseFrameAt(playingClips, sources, playback.snapshot.value, scopeClipId, hdrKept = false)?.let { at ->
+                            val clip = playingClips.firstOrNull { it.id == at.clipId }
+                            val source = sources.firstOrNull { it.uri == at.sourceUri }
+                            SoundSpot(
+                                clipId = at.clipId,
+                                sourceUri = at.sourceUri.toString(),
+                                positionMs = at.positionMs,
+                                clipStartMs = at.clipStartMs,
+                                clipEndMs = clip?.endMs,
+                                hasSound = !at.still && source?.info?.hasAudio != false,
+                            )
+                        }
+                    },
+                    // The clip's own, then the whole video's: as the export runs them.
+                    strengthsAt = { clipId ->
+                        listOf(playingClips.firstOrNull { it.id == clipId }?.effects?.audioDenoise ?: 0f, wholeEffects.audioDenoise)
+                    },
+                    onPausePreview = { playback.isPlaying.value = false },
+                    enabled = !isManualMode,
+                    )
+                }
                 EditorTool.AUDIO_CLEAN -> AudioCleanUpContent(fxEffects, fxChange)
                 EditorTool.AUDIO_DYNAMICS -> AudioDynamicsContent(fxEffects, fxChange)
                 EditorTool.AUDIO_SPACE -> AudioSpaceContent(fxEffects, fxChange)
                 EditorTool.AUDIO_FX -> AudioEffectsContent(fxEffects, fxChange)
                 EditorTool.AUDIO_STEREO -> AudioStereoContent(fxEffects, fxChange)
-                EditorTool.AUDIO_TAGS -> AudioTagsContent(tags, onTags, lyrics = subtitles.takeIf { format.isAudioOnly })
+                EditorTool.AUDIO_TAGS -> AudioTagsContent(
+                    tags,
+                    onTags,
+                    lyrics = subtitles.takeIf { format.isAudioOnly },
+                    // The lyrics timed by hand against the song as it will be made (issue #16).
+                    lyricsPlayback = if (format.isAudioOnly) {
+                        LyricsPlayback(
+                            positionMs = { playback.snapshot.value.outputMs },
+                            durationMs = { playback.snapshot.value.outputDurationMs },
+                            playing = { playback.isPlaying.value },
+                            onPlaying = { playback.isPlaying.value = it },
+                            onSeek = { outputMs -> seekTimeline(Math.round(clock.timelineMs(outputMs))) },
+                        )
+                    } else {
+                        null
+                    },
+                )
                 EditorTool.AUDIO_COVER -> AudioCoverContent(coverUri, format, splitMode != SplitMode.DISABLED, onSetCover)
                 EditorTool.AUDIO_PARTS -> AudioPartsContent(splitMode, splitValue, clock.outputDurationMs, onSplit)
                 EditorTool.SOUND_TRIM -> selectedSound?.let { sound ->
@@ -1863,18 +1967,27 @@ fun ConfigScreen(
                 )
                 EditorTool.DETAILS -> {
                     val frame = denoiseFrame
-                    // The clip at the frame compared, and its denoise: the export runs it, then the whole video's.
-                    val frameClipDenoise = frame?.let { at -> playingClips.firstOrNull { it.id == at.clipId } }?.effects?.color?.denoise ?: 0f
+                    // The clip at the frame compared, and its settings: the export runs them, then the whole video's.
+                    val frameClipColor = frame?.let { at -> playingClips.firstOrNull { it.id == at.clipId } }?.effects?.color ?: ColorSettings()
+                    val frameClipDenoise = frameClipColor.denoise
                     val wholeDenoise = wholeEffects.color.denoise
-                    DenoisePanel(
-                        strength = scopeEffects.color.denoise,
-                        onStrength = { value -> updateScope { it.copy(color = it.color.copy(denoise = value)) } },
+                    VideoDetailsPanel(
+                        color = scopeEffects.color,
+                        onColor = { change -> updateScope { it.copy(color = change(it.color)) } },
                         clipScope = selectedClip != null,
-                        otherStrength = if (selectedClip != null) wholeDenoise else frameClipDenoise,
-                        frame = frame,
-                        strengths = listOf(frameClipDenoise, wholeDenoise),
+                        other = if (selectedClip != null) wholeEffects.color else frameClipColor,
                         enabled = !isManualMode,
-                    )
+                    ) {
+                        DenoisePanel(
+                            strength = scopeEffects.color.denoise,
+                            onStrength = { value -> updateScope { it.copy(color = it.color.copy(denoise = value)) } },
+                            clipScope = selectedClip != null,
+                            otherStrength = if (selectedClip != null) wholeDenoise else frameClipDenoise,
+                            frame = frame,
+                            strengths = listOf(frameClipDenoise, wholeDenoise),
+                            enabled = !isManualMode,
+                        )
+                    }
                 }
                 EditorTool.KEY -> ColorKeyContent(
                     key = scopeEffects.key,
@@ -1884,6 +1997,17 @@ fun ConfigScreen(
                     newBackground = 0x000000,
                     onRefreshSample = { keySampleRequest++ },
                     fillHint = stringResource(R.string.key_fill_video_hint),
+                )
+                EditorTool.STABILIZE -> StabilizePanel(
+                    on = stabilize,
+                    shakiness = stabilizeShakiness,
+                    smoothing = stabilizeSmoothing,
+                    onOn = onStabilize,
+                    onShakiness = onStabilizeShakiness,
+                    onSmoothing = onStabilizeSmoothing,
+                    // Copying the streams or extracting frames runs no filter to steady it with.
+                    available = !useStreamCopy && frameExtractionMode == FrameExtractionMode.DISABLED,
+                    enabled = !isManualMode,
                 )
                 EditorTool.HDR -> HdrVideoPanel(
                     hdrLook = wholeEffects.hdrLook,
@@ -2099,6 +2223,8 @@ fun ConfigScreen(
                             onLayer = { move -> onArrangeImage(selectedText.id, move) },
                             canForward = position in 0 until count - 1,
                             canBackward = position > 0,
+                            onOriginalShape = { updateText(selectedText.id, null) { it.copy(stretch = 1f) } },
+                            textStretch = selectedText.laidStretch,
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         OverlayLayoutContent(
@@ -2122,6 +2248,9 @@ fun ConfigScreen(
                             onLayer = { move -> onArrangeImage(selectedImage.id, move) },
                             canForward = position in 0 until count - 1,
                             canBackward = position > 0,
+                            picture = selectedImage,
+                            frameRatio = frameRatio,
+                            onOriginalShape = { updateImage(selectedImage.id, null) { it.copy(stretch = 1f) } },
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         OverlayLayoutContent(
@@ -2211,6 +2340,51 @@ fun ConfigScreen(
                     useStreamCopy = useStreamCopy,
                     onUseStreamCopy = onUseStreamCopy,
                 )
+                EditorTool.OPEN_IN -> {
+                    val editing = stack
+                    val sound = selectedSound
+                    val image = selectedImage
+                    val clip = selectedClip
+                    // What the selected part opens in, here: no picture in the audio editor, no sound in a GIF.
+                    val editor = when {
+                        audioMode -> com.cuscus.ffmpeggui.core.stack.NestedEditor.AUDIO
+                        gifMode -> com.cuscus.ffmpeggui.core.stack.NestedEditor.GIF
+                        else -> com.cuscus.ffmpeggui.core.stack.NestedEditor.VIDEO
+                    }
+                    val target: Triple<String, List<com.cuscus.ffmpeggui.core.stack.NestedKind>, com.cuscus.ffmpeggui.core.stack.NestedKind?>? = when {
+                        sound != null -> Triple(sound.id, listOf(com.cuscus.ffmpeggui.core.stack.NestedKind.SOUND), sound.nested?.kind)
+                        image != null -> Triple(
+                            image.id,
+                            com.cuscus.ffmpeggui.core.stack.NestedKind.forOverlay(image.isVideo, image.isGif, image.hasAudio && !gifMode),
+                            image.nested?.kind,
+                        )
+                        clip != null -> Triple(
+                            clip.id,
+                            com.cuscus.ffmpeggui.core.stack.NestedKind.forClip(editor, selectedClipIsStill),
+                            sources.firstOrNull { it.id == clip.sourceId }?.nested?.kind,
+                        )
+                        else -> null
+                    }
+                    if (target != null && editing != null) {
+                        OpenInPanel(
+                            partId = target.first,
+                            kinds = target.second,
+                            editing = EditorStackEditing(
+                                nested = editing.nested,
+                                canOpen = editing.canOpen,
+                                // The panel closes first: coming back to this editor, it is not open any more.
+                                onOpen = { id, kind ->
+                                    selectedTool = null
+                                    editing.onOpen(id, kind)
+                                },
+                                onApply = editing.onApply,
+                                steps = editing.steps,
+                                onShowMap = editing.onShowMap,
+                            ),
+                            edited = target.third,
+                        )
+                    }
+                }
                 EditorTool.EXTRACT -> FrameExtractionSectionContent(
                     frameExtractionMode = frameExtractionMode,
                     frameExtractionRate = frameExtractionRate,
@@ -2585,6 +2759,16 @@ internal fun EditorTopBar(
     formatLabel: String,
     onClose: () -> Unit,
     onExport: () -> Unit,
+    /** This editor is open on top of another (see core.stack): "Apply" in place of "Export". */
+    applies: Boolean = false,
+    /**
+     * The editors of the stack (see core.stack), shown under the file's name
+     * as a row of badges; tapped, the map opens ([onStackMap]). Null: not
+     * stacked (the output format shows there instead), and the close button
+     * closes; stacked, it goes back to the editor below.
+     */
+    stackSteps: List<com.cuscus.ffmpeggui.core.stack.StackStep>? = null,
+    onStackMap: () -> Unit = {},
     /** Where the player is (true: on the right of the tools); null shows no switch. */
     playerRight: Boolean? = null,
     /** The switch was tapped; it gets where the player was. */
@@ -2608,10 +2792,29 @@ internal fun EditorTopBar(
             .padding(6.dp),
     ) {
         FilledTonalIconButton(onClick = onClose, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(48.dp)) {
-            Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.action_close))
+            if (stackSteps != null) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.stack_back_below))
+            } else {
+                Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.action_close))
+            }
         }
         Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        val mapInteraction = remember { MutableInteractionSource() }
+        val mapLabel = stringResource(R.string.stack_map_show)
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .then(
+                    if (stackSteps != null) {
+                        Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable(interactionSource = mapInteraction, indication = LocalIndication.current, role = Role.Button, onClickLabel = mapLabel, onClick = onStackMap)
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    } else {
+                        Modifier
+                    },
+                ),
+        ) {
             Text(
                 text = fileName,
                 style = MaterialTheme.typography.titleMediumEmphasized,
@@ -2619,13 +2822,28 @@ internal fun EditorTopBar(
                 maxLines = 1,
                 overflow = TextOverflow.MiddleEllipsis,
             )
-            Text(
-                text = stringResource(R.string.editor_output_format, formatLabel),
-                style = MaterialTheme.typography.labelMedium,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (stackSteps != null) {
+                // Where one is among the stacked editors, in the bar, out of the way of everything.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StackPath(stackSteps)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = formatLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            } else {
+                Text(
+                    text = stringResource(R.string.editor_output_format, formatLabel),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         Spacer(modifier = Modifier.width(8.dp))
         Row(
@@ -2654,9 +2872,9 @@ internal fun EditorTopBar(
                 contentPadding = PaddingValues(horizontal = 20.dp),
                 modifier = Modifier.heightIn(min = 48.dp),
             ) {
-                Icon(Icons.Rounded.IosShare, contentDescription = null, modifier = Modifier.size(20.dp))
+                Icon(if (applies) Icons.Rounded.Check else Icons.Rounded.IosShare, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.editor_export), style = MaterialTheme.typography.labelLargeEmphasized, maxLines = 1)
+                Text(stringResource(if (applies) R.string.stack_apply else R.string.editor_export), style = MaterialTheme.typography.labelLargeEmphasized, maxLines = 1)
             }
         }
     }

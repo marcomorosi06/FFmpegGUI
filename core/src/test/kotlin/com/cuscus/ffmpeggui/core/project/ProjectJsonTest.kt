@@ -204,4 +204,14 @@ private fun Random.randomFields(type: Class<*>, depth: Int): Any {
     val constructor = type.constructors.first { c -> c.parameterCount == components && !c.isSynthetic }
     val args = constructor.genericParameterTypes.map { randomValue(it, depth + 1) }
     return constructor.newInstance(*args.toTypedArray())
+
+    @Test
+    fun aVignetteSavedAsOnOrOffReadsAsAStrength() {
+        val on = ModelJson.colorSettings(JsonText.parse("{\"vignette\":true}") as Json.Obj)
+        val off = ModelJson.colorSettings(JsonText.parse("{\"vignette\":false}") as Json.Obj)
+        assertEquals(com.cuscus.ffmpeggui.core.model.ColorSettings.VIGNETTE_WAS_ON, on.vignette, 0f)
+        assertEquals(0f, off.vignette, 0f)
+        val strength = com.cuscus.ffmpeggui.core.model.ColorSettings(vignette = 0.8f)
+        assertEquals(strength, ModelJson.colorSettings(ModelJson.write(strength)))
+    }
 }

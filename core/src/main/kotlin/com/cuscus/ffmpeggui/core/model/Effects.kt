@@ -183,12 +183,17 @@ data class ColorSettings(
     val brightness: Float = 0f,
     val contrast: Float = 1f,
     val saturation: Float = 1f,
-    /** -1..1, 0 = untouched. */
+    /** -1..1, 0 = untouched: above 0 sharper (unsharp), below 0 softer. */
     val sharpness: Float = 0f,
-    /** Blur sigma, 0 = off. */
+    /** Blur sigma in the footage's pixels, 0..[BLUR_MAX], 0 = off. */
     val gaussianBlur: Float = 0f,
-    val vignette: Boolean = false,
-    /** Noise strength 0..60, 0 = off. */
+    /**
+     * How dark the corners go, 0..1, 0 = off: FFmpeg's vignette, its angle
+     * this times [VIGNETTE_MAX_ANGLE] (0.5 is FFmpeg's own default, PI/5), as
+     * the photo editor's vignette.
+     */
+    val vignette: Float = 0f,
+    /** Noise strength 0..[GRAIN_MAX], 0 = off: FFmpeg's noise, changing every frame. */
     val filmGrain: Float = 0f,
     /**
      * Denoise strength 0..[DENOISE_MAX], 0 = off: FFmpeg's hqdn3d with this as
@@ -200,7 +205,23 @@ data class ColorSettings(
     companion object {
         /** The strongest denoise: beyond it hqdn3d smears detail away. */
         const val DENOISE_MAX = 10f
+
+        /** The strongest blur, as gblur's sigma. */
+        const val BLUR_MAX = 20f
+
+        /** The strongest grain, as noise's strength. */
+        const val GRAIN_MAX = 60f
+
+        /** vignette's angle at full strength (as the photo editor's). */
+        const val VIGNETTE_MAX_ANGLE = kotlin.math.PI / 2.5
+
+        /** A project of an older version kept the vignette as on or off: on is FFmpeg's default. */
+        const val VIGNETTE_WAS_ON = 0.5f
     }
+
+    /** True when sharpness, blur, vignette or grain change the picture (the Details tool's finishing touches). */
+    val hasFinishingTouches: Boolean
+        get() = sharpness != 0f || gaussianBlur > 0f || vignette > 0f || filmGrain > 0f
 }
 
 /** The ways a camera can move over a still picture. */

@@ -30,14 +30,11 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BlurOn
-import androidx.compose.material.icons.rounded.ZoomOutMap
 import androidx.compose.material.icons.rounded.BorderOuter
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.CropFree
 import androidx.compose.material.icons.rounded.CropSquare
 import androidx.compose.material.icons.rounded.DeleteSweep
-import androidx.compose.material.icons.rounded.Fullscreen
-import androidx.compose.material.icons.rounded.FitScreen
 import androidx.compose.material.icons.rounded.FlipToBack
 import androidx.compose.material.icons.rounded.FlipToFront
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -391,22 +388,48 @@ internal fun OverlayBlurCard(look: OverlayLook, onLook: LookChange) {
 
 // -- Arrange: fit, fill, layers ------------------------------------------------------------------------
 
-/** How a picture is fitted to the frame, in one tap. */
-internal enum class FitMode(val labelRes: Int, val icon: ImageVector) {
-    FIT(R.string.overlay_fit, Icons.Rounded.FitScreen),
-    FILL(R.string.overlay_fill, Icons.Rounded.Fullscreen),
-    STRETCH(R.string.overlay_stretch, Icons.Rounded.ZoomOutMap),
-    WIDTH(R.string.overlay_full_width, Icons.Rounded.ViewWeek),
-    CENTER(R.string.overlay_center, Icons.Rounded.CenterFocusStrong),
+/**
+ * How a picture is fitted to the frame, in one tap. The first three are the
+ * ways a picture meets a frame everywhere in the app ([fit]: Whole, Cover,
+ * Stretch, drawn as they look by CanvasFitPreview); the last two only place
+ * it, with an icon.
+ */
+internal enum class FitMode(val labelRes: Int, val icon: ImageVector?, val fit: com.cuscus.ffmpeggui.core.model.CanvasFit?) {
+    FIT(R.string.canvas_fit_whole, null, com.cuscus.ffmpeggui.core.model.CanvasFit.FIT),
+    FILL(R.string.canvas_fit_cover, null, com.cuscus.ffmpeggui.core.model.CanvasFit.FILL),
+    STRETCH(R.string.canvas_fit_stretch, null, com.cuscus.ffmpeggui.core.model.CanvasFit.STRETCH),
+    WIDTH(R.string.overlay_full_width, Icons.Rounded.ViewWeek, null),
+    CENTER(R.string.overlay_center, Icons.Rounded.CenterFocusStrong, null),
 }
+
+/**
+ * Which of Whole, Cover or Stretch [this] lies as now on a frame of
+ * [frameRatio]; null when it was moved, sized, turned or pulled by hand.
+ */
+internal fun ImageOverlay.fitIn(frameRatio: Float): FitMode? {
+    fun near(a: Float, b: Float) = kotlin.math.abs(a - b) < 2e-3f
+    return listOf(FitMode.FIT, FitMode.FILL, FitMode.STRETCH).firstOrNull { mode ->
+        val fitted = fittedTo(mode, frameRatio)
+        near(x, fitted.x) && near(y, fitted.y) && near(scaleW, fitted.scaleW) && near(laidStretch, fitted.laidStretch) &&
+            kotlin.math.abs(rotationDegrees % 360f) < 0.01f
+    }
+}
+
+/** Width / height of the box [this] is laid in at its own shape (its look's room included), for the drawings. */
+internal val ImageOverlay.ownLaidRatio: Float
+    get() = look.laidAspect(aspect).takeIf { aspect > 0f && it > 0f } ?: 1f
 
 /**
  * [overlay] fitted to a frame of [frameRatio] (width / height) by [mode], centred:
  * whole inside it, covering it (cut by it), pulled to its shape (filling it with
- * nothing cut), as wide as it, or simply centred. Fitting it whole or covering
- * gives it its own shape back; the others keep its stretch.
+ * nothing cut), as wide as it, or simply centred. Whole, Cover and Stretch put
+ * it back upright (as the photo on its canvas is); Whole and Cover give it its
+ * own shape back; Full width and Centre keep its shape and its turn.
  */
-internal fun ImageOverlay.fittedTo(mode: FitMode, frameRatio: Float): ImageOverlay {
+internal fun ImageOverlay.fittedTo(mode: FitMode, frameRatio: Float): ImageOverlay =
+    placedBy(mode, frameRatio).let { if (mode.fit != null) it.copy(rotationDegrees = 0f) else it }
+
+private fun ImageOverlay.placedBy(mode: FitMode, frameRatio: Float): ImageOverlay {
     if (mode == FitMode.CENTER) return copy(x = 0.5f, y = 0.5f)
     val room = 1f + 2f * look.margin
     if (mode == FitMode.STRETCH) {
@@ -414,7 +437,7 @@ internal fun ImageOverlay.fittedTo(mode: FitMode, frameRatio: Float): ImageOverl
         // (see OverlayLook.laidAspect); its own shape not known: covering instead.
         val margins = 2f * look.margin
         val inverse = (1f + margins) / frameRatio - margins
-        if (aspect <= 0f || inverse <= 0f) return fittedTo(FitMode.FILL, frameRatio)
+        if (aspect <= 0f || inverse <= 0f) return placedBy(FitMode.FILL, frameRatio)
         // Its shown part (see OverlayLook.shownAspect) pulled to that shape.
         val stretch = com.cuscus.ffmpeggui.core.model.ImagePlacement.saneStretch(1f / inverse / look.shownAspect(aspect).coerceAtLeast(1e-3f))
         return copy(x = 0.5f, y = 0.5f, scaleW = (1f / room).coerceIn(0.02f, com.cuscus.ffmpeggui.core.model.ImagePlacement.MAX_WIDTH), stretch = stretch)
@@ -431,7 +454,11 @@ internal fun ImageOverlay.fittedTo(mode: FitMode, frameRatio: Float): ImageOverl
     return own.copy(x = 0.5f, y = 0.5f, scaleW = width)
 }
 
-/** Fit, fill, full width, centre; then the layers: to the front, forward, backward, to the back. */
+/**
+ * Whole, cover, stretch (drawn as they look, the one it lies as lit), full
+ * width, centre, and, while it is out of its shape, the way back to it; then
+ * the layers: to the front, forward, backward, to the back.
+ */
 @Composable
 internal fun OverlayArrangeCard(
     /** Fits a picture to the frame; null (a caption) shows only the layers. */
@@ -440,18 +467,43 @@ internal fun OverlayArrangeCard(
     /** It lies under other captions or pictures (it can come forward) / over others (it can go back). */
     canForward: Boolean,
     canBackward: Boolean,
+    /** The picture fitted, for the drawings and which way it lies now; null for a caption. */
+    picture: ImageOverlay? = null,
+    /** Width / height of the frame it is fitted to. */
+    frameRatio: Float = 16f / 9f,
+    /** Gives the picture its own shape back, where it is and as wide (stretch 1); a caption, at its size. */
+    onOriginalShape: () -> Unit = {},
+    /** A caption's stretch (see TextOverlay.stretch), to offer its own shape back; null for a picture. */
+    textStretch: Float? = null,
 ) {
     val haptic = LocalHapticFeedback.current
     PanelCard {
         if (onFit != null) {
             Text(stringResource(R.string.overlay_fit_title), style = MaterialTheme.typography.titleSmallEmphasized, color = MaterialTheme.colorScheme.onSurface)
+            val pictureRatio = picture?.ownLaidRatio ?: 1f
             OptionTileRow(
-                options = FitMode.entries.map { TileOption(it, stringResource(it.labelRes), it.icon) },
+                options = FitMode.entries.filter { it.fit != null }.map { mode ->
+                    val fit = mode.fit!!
+                    TileOption(
+                        value = mode,
+                        label = stringResource(mode.labelRes),
+                        preview = { color -> CanvasFitPreview(fit = fit, frameRatio = frameRatio, pictureRatio = pictureRatio, color = color) },
+                    )
+                },
+                selected = picture?.fitIn(frameRatio),
+                onSelect = onFit,
+                role = androidx.compose.ui.semantics.Role.Button,
+            )
+            OptionTileRow(
+                options = FitMode.entries.filter { it.fit == null }.map { TileOption(it, stringResource(it.labelRes), it.icon) },
                 selected = null,
                 onSelect = onFit,
                 role = androidx.compose.ui.semantics.Role.Button,
             )
+            if (picture != null) StretchedNotice(stretched = picture.laidStretch != 1f, onOriginalShape = onOriginalShape)
         }
+        // A caption has no ways to fit, but it can be stretched by hand too.
+        if (onFit == null && textStretch != null) StretchedNotice(stretched = textStretch != 1f, onOriginalShape = onOriginalShape)
         Text(stringResource(R.string.overlay_layers), style = MaterialTheme.typography.titleSmallEmphasized, color = MaterialTheme.colorScheme.onSurface)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             listOf(

@@ -40,6 +40,30 @@ class TextLookExportTest {
     }
 
     @Test
+    fun `a stretched caption is drawn on a narrower canvas and widened about its anchor`() {
+        val g = graph(caption.copy(x = 0.25f, y = 0.75f, stretch = 2f))
+        // Twice as wide: a canvas as wide as the frame (2 / 2), as high as two, widened twice.
+        assertTrue(g, g.contains("format=rgba,lutrgb=r=255:g=255:b=255:a=0,scale=w=trunc(iw*2/2.0000/2)*2:h=ih*2,setsar=1,drawtext="))
+        assertTrue(g, g.contains(":fontsize=h/2*0.0500:x='w/2-tw*0.2500':y='h/2-th*0.7500'"))
+        assertTrue(g, g.contains(",scale=w=trunc(iw*2.0000/2)*2:h=ih,setsar=1["))
+        assertTrue(g, g.contains("overlay=x='main_w*0.2500-overlay_w/2':y='main_h*0.7500-overlay_h/2':format=auto"))
+        // Narrower: the canvas of every layered caption, then narrowed; turned after it.
+        val narrow = graph(caption.copy(stretch = 0.5f, rotationDegrees = 30f))
+        assertTrue(narrow, narrow.contains("scale=w=iw*2:h=ih*2,setsar=1,drawtext="))
+        assertTrue(narrow, narrow.contains(",scale=w=trunc(iw*0.5000/2)*2:h=ih,setsar=1,rotate=a=0.523599:c=none["))
+        // Hardly stretched: drawn straight on the frame, as before.
+        assertFalse(graph(caption.copy(stretch = 1.0005f)).contains("lutrgb"))
+    }
+
+    @Test
+    fun `a stretch is kept with the project, within its range`() {
+        val stretched = caption.copy(stretch = 1.75f)
+        assertEquals(stretched, ModelJson.textOverlay(ModelJson.write(stretched)))
+        assertEquals(4f, caption.copy(stretch = 9f).laidStretch, 0f)
+        assertEquals(1f, caption.copy(stretch = Float.NaN).laidStretch, 0f)
+    }
+
+    @Test
     fun `a blended caption is mixed as a blended picture is`() {
         val g = graph(caption.copy(blend = com.cuscus.ffmpeggui.core.model.LayerBlend.MULTIPLY))
         assertTrue(g, g.contains("split=4["))

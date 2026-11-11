@@ -283,7 +283,11 @@ object ModelJson {
             saturation = o.float("saturation", d.saturation),
             sharpness = o.float("sharpness", d.sharpness),
             gaussianBlur = o.float("gaussianBlur", d.gaussianBlur),
-            vignette = o.bool("vignette", d.vignette),
+            // An older project kept it as on or off.
+            vignette = when (val v = o["vignette"]) {
+                is Json.Bool -> if (v.value) ColorSettings.VIGNETTE_WAS_ON else 0f
+                else -> o.float("vignette", d.vignette)
+            },
             filmGrain = o.float("filmGrain", d.filmGrain),
             denoise = o.float("denoise", d.denoise),
         )
@@ -432,6 +436,7 @@ object ModelJson {
         put("locked", t.locked)
         if (t.rotationDegrees != 0f) put("rotationDegrees", t.rotationDegrees)
         if (t.blend != LayerBlend.NORMAL) put("blend", t.blend.name)
+        if (t.stretch != 1f) put("stretch", t.stretch)
         putKeyframes(t.keyframes)
     }
 
@@ -486,6 +491,7 @@ object ModelJson {
             locked = o.bool("locked", d.locked),
             rotationDegrees = o.float("rotationDegrees", d.rotationDegrees),
             blend = LayerBlend.named(o.stringOrNull("blend")),
+            stretch = o.float("stretch", d.stretch),
         )
     }
 

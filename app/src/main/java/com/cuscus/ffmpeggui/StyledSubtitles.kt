@@ -24,6 +24,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import com.cuscus.ffmpeggui.core.preview.SnapBox
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -123,6 +124,12 @@ internal fun StyledSubtitleLayer(
     sampleText: String,
     onStyle: (String?, (SubtitleStyle) -> SubtitleStyle) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * What else lies on this frame (see SnapScene): dragged, the text sticks to
+     * its guides as captions and pictures do, resized its edges do, and the
+     * others line up with it; null: only the middle holds it.
+     */
+    scene: SnapScene? = null,
 ) {
     val measurer = rememberTextMeasurer(cacheSize = 24)
     val density = LocalDensity.current
@@ -133,6 +140,13 @@ internal fun StyledSubtitleLayer(
     var frame by remember { mutableStateOf(IntSize.Zero) }
     val currentStyle by rememberUpdatedState(style)
     val currentOnStyle by rememberUpdatedState(onStyle)
+    val currentScene by rememberUpdatedState(scene)
+    val threshold = snapThreshold(density)
+    // Where the text lies (as drawn), for what else is moved on this frame to line up with.
+    androidx.compose.runtime.DisposableEffect(scene) {
+        scene?.register(SUBTITLES_SNAP_ID) { handle.takeUnless { it.isEmpty }?.let { SnapBox(it.left, it.top, it.right, it.bottom) } }
+        onDispose { scene?.unregister(SUBTITLES_SNAP_ID) }
+    }
     val family = remember(font?.file) {
         font?.let { FontFamily(Font(it.file, weight = if (it.facts.weight >= BOLD_WEIGHT) FontWeight.Bold else FontWeight.Normal)) } ?: FontFamily.SansSerif
     }
@@ -265,9 +279,13 @@ internal fun StyledSubtitleLayer(
                             if (down.position.x > size.width - corner && down.position.y > size.height - corner) return@awaitEachGesture
                             down.consume()
                             haptic.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
-                            var x = currentStyle.x
-                            var y = currentStyle.y
-                            var snapped = abs(x - 0.5f) < SNAP
+                            val startX = currentStyle.x
+                            val startY = currentStyle.y
+                            // Where the text lay when it was taken: it moves with the finger from there.
+                            val startBox = handle
+                            var movedX = 0f
+                            var movedY = 0f
+                            var snapped = abs(startX - 0.5f) < SNAP
                             while (true) {
                                 val event = awaitPointerEvent()
                                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
@@ -275,15 +293,26 @@ internal fun StyledSubtitleLayer(
                                 val moved = change.positionChange()
                                 if (moved == Offset.Zero || change.isConsumed) continue
                                 change.consume()
-                                x = (x + moved.x / frame.width).coerceIn(0f, 1f)
-                                y = (y + moved.y / frame.height).coerceIn(0f, 1f)
-                                // The middle holds the text a little, with a tick as it gets there.
-                                val nearMiddle = abs(x - 0.5f) < SNAP
-                                if (nearMiddle && !snapped) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                                snapped = nearMiddle
-                                val shownX = if (nearMiddle) 0.5f else x
-                                currentOnStyle("move") { it.copy(x = shownX, y = y) }
+                                movedX += moved.x
+                                movedY += moved.y
+                                val guides = currentScene
+                                val (shownX, shownY) = if (guides != null && !startBox.isEmpty) {
+                                    // Its edges and middle stick to the frame's and to the others', with a tick.
+                                    val box = SnapBox(startBox.left + movedX, startBox.top + movedY, startBox.right + movedX, startBox.bottom + movedY)
+                                    val snap = guides.snap(SUBTITLES_SNAP_ID, box, frame.width.toFloat(), frame.height.toFloat(), threshold, haptic)
+                                    ((startX + (movedX + snap.dx) / frame.width).coerceIn(0f, 1f)) to
+                                        ((startY + (movedY + snap.dy) / frame.height).coerceIn(0f, 1f))
+                                } else {
+                                    // The middle holds the text a little, with a tick as it gets there.
+                                    val x = (startX + movedX / frame.width).coerceIn(0f, 1f)
+                                    val nearMiddle = abs(x - 0.5f) < SNAP
+                                    if (nearMiddle && !snapped) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                    snapped = nearMiddle
+                                    (if (nearMiddle) 0.5f else x) to (startY + movedY / frame.height).coerceIn(0f, 1f)
+                                }
+                                currentOnStyle("move") { it.copy(x = shownX, y = shownY) }
                             }
+                            currentScene?.clear()
                             haptic.performHapticFeedback(HapticFeedbackType.GestureEnd)
                         }
                     },
@@ -298,17 +327,43 @@ internal fun StyledSubtitleLayer(
                         .pointerInput(Unit) {
                             var start = 0f
                             var total = 0f
+                            var startBox = Rect.Zero
                             detectDragGestures(
                                 onDragStart = {
                                     start = currentStyle.size
                                     total = 0f
+                                    startBox = handle
                                     haptic.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
                                 },
-                                onDragEnd = { haptic.performHapticFeedback(HapticFeedbackType.GestureEnd) },
+                                onDragEnd = {
+                                    currentScene?.clear()
+                                    haptic.performHapticFeedback(HapticFeedbackType.GestureEnd)
+                                },
+                                onDragCancel = { currentScene?.clear() },
                             ) { change, amount ->
                                 change.consume()
                                 total += amount.x + amount.y
-                                val size = (start + total / (frame.height * 1.5f)).coerceIn(SubtitleStyle.MIN_SIZE, SubtitleStyle.MAX_SIZE)
+                                val raw = (start + total / (frame.height * 1.5f)).coerceIn(SubtitleStyle.MIN_SIZE, SubtitleStyle.MAX_SIZE)
+                                // It grows about the middle of its bottom line (where x and y put it): its
+                                // edges stick to the guides as it does.
+                                val guides = currentScene
+                                val size = if (guides != null && !startBox.isEmpty && start > 0f) {
+                                    val anchorX = currentStyle.x * frame.width
+                                    val anchorY = currentStyle.y * frame.height
+                                    val box = { s: Float ->
+                                        val k = s / start
+                                        SnapBox(
+                                            anchorX + (startBox.left - anchorX) * k,
+                                            anchorY + (startBox.top - anchorY) * k,
+                                            anchorX + (startBox.right - anchorX) * k,
+                                            anchorY + (startBox.bottom - anchorY) * k,
+                                        )
+                                    }
+                                    guides.resize(SUBTITLES_SNAP_ID, box, raw, frame.width.toFloat(), frame.height.toFloat(), threshold, haptic)
+                                        .coerceIn(SubtitleStyle.MIN_SIZE, SubtitleStyle.MAX_SIZE)
+                                } else {
+                                    raw
+                                }
                                 currentOnStyle("size") { it.copy(size = size) }
                             }
                         },
@@ -342,6 +397,9 @@ private const val GHOST_ALPHA = 0.55f
 
 /** The text sticks to the middle within this share of the frame width. */
 private const val SNAP = 0.015f
+
+/** The styled subtitles' place among what lines up on the frame (see SnapScene). */
+private const val SUBTITLES_SNAP_ID = "styled-subtitles"
 
 /** The handle reaches this far around the text, for a finger. */
 private val HANDLE_SLACK = 16.dp

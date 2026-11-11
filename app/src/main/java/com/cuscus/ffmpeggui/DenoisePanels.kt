@@ -119,8 +119,8 @@ import kotlin.math.roundToInt
 
 /*
  * The video editor's denoise (ColorSettings.denoise, FFmpeg's hqdn3d), for a
- * clip or for the whole video: the first setting of its Details tool, as the
- * photo editor's Details. Its signs outside the panel: a badge on the preview
+ * clip or for the whole video: the first setting of its Details tool (see
+ * VideoDetailsPanels, which names it in its row of settings). Its signs outside the panel: a badge on the preview
  * (DenoiseBadge, in EditorPreview's status badges) and a mark on the clip in
  * the timeline.
  *
@@ -227,16 +227,6 @@ internal fun DenoisePanel(
     val motion = MaterialTheme.motionScheme
     val level = DenoiseLevel.entries.firstOrNull { abs(it.strength - strength) < LEVEL_TOLERANCE }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-        // The Details tool's first setting, named: the others (sharpen, grain...) will join it.
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
-            Icon(Icons.Rounded.Grain, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                text = stringResource(R.string.details_denoise),
-                style = MaterialTheme.typography.titleMediumEmphasized,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
         ConnectedChoiceGroup(
             options = DenoiseLevel.entries,
             // A value between the levels shows none of them chosen.
@@ -365,7 +355,7 @@ internal fun DenoiseBadge(shown: DenoiseShown?, playing: Boolean, onOpen: ((Stri
             to = MaterialShapes.Cookie9Sided,
             morphed = arrived,
             color = glass,
-            modifier = Modifier.size(BADGE_SIZE),
+            modifier = Modifier.size(STATUS_BADGE_SIZE),
         ) {
             Icon(Icons.Rounded.Grain, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
         }
@@ -378,7 +368,7 @@ internal fun DenoiseBadge(shown: DenoiseShown?, playing: Boolean, onOpen: ((Stri
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .padding(start = 4.dp)
-                    .height(BADGE_SIZE)
+                    .height(STATUS_BADGE_SIZE)
                     .clip(CircleShape)
                     .background(glass)
                     .padding(horizontal = 8.dp),
@@ -742,13 +732,13 @@ private fun readComparison(path: String): DenoiseComparison? {
 }
 
 /** Side of the preview's badge. */
-private val BADGE_SIZE = 24.dp
+internal val STATUS_BADGE_SIZE = 24.dp
 
 /** How long the badge says what it is before it folds back to the cookie. */
-private const val BADGE_SPELLED_MS = 2_500L
+internal const val BADGE_SPELLED_MS = 2_500L
 
 /** The badge while the video plays: there, but not in the way. */
-private const val BADGE_PLAYING_ALPHA = 0.55f
+internal const val BADGE_PLAYING_ALPHA = 0.55f
 
 /** A strength this near a level is that level. */
 private const val LEVEL_TOLERANCE = 0.05f

@@ -50,6 +50,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.ViewWeek
 import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.Category
@@ -93,6 +94,8 @@ import androidx.compose.material.icons.rounded.Gif
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Gradient
 import androidx.compose.material.icons.rounded.HdrOn
+import androidx.compose.material.icons.rounded.Waves
+import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowLeft
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PhotoCamera
@@ -196,12 +199,16 @@ enum class EditorTool(@StringRes val labelRes: Int, val icon: ImageVector, val f
     // Tool of a selected still clip.
     MOTION(R.string.tool_motion, Icons.Rounded.ZoomIn, ToolFamily.PICTURE),
     COLOR(R.string.tool_color, Icons.Rounded.Palette, ToolFamily.PICTURE),
-    // The fine detail of the picture, as the photo editor's Details: for now its
-    // denoise (hqdn3d), compared before and after.
+    // The fine detail of the picture, as the photo editor's Details: its denoise
+    // (hqdn3d, compared before and after), sharpness, blur, vignette and grain.
     DETAILS(R.string.image_tool_details, Icons.Rounded.Details, ToolFamily.PICTURE),
     KEY(R.string.tool_key, Icons.Rounded.ContentCut, ToolFamily.PICTURE),
     // The HDR look of the whole video.
     HDR(R.string.tool_hdr, Icons.Rounded.HdrOn, ToolFamily.PICTURE),
+    // The whole video steadied (vid.stab, two passes of the export).
+    STABILIZE(R.string.tool_stabilize, Icons.Rounded.CenterFocusStrong, ToolFamily.PICTURE),
+    // The sound's denoise (anlmdn), for a clip or the whole video, heard before and after.
+    AUDIO_DENOISE(R.string.tool_audio_denoise, Icons.Rounded.Waves, ToolFamily.SOUND),
     TRANSFORM(R.string.tool_transform, Icons.Rounded.CropRotate, ToolFamily.PICTURE),
     // Tool of a selected clip: zoom and pan, with keyframes a move over time.
     FRAMING(R.string.tool_framing, Icons.Rounded.ZoomOutMap, ToolFamily.PICTURE),
@@ -217,6 +224,8 @@ enum class EditorTool(@StringRes val labelRes: Int, val icon: ImageVector, val f
     REMUX(R.string.tool_remux, Icons.Rounded.Sync, ToolFamily.OUTPUT),
     COMMAND(R.string.tool_command, Icons.Rounded.Terminal, ToolFamily.OUTPUT),
     GIF(R.string.tool_gif, Icons.Rounded.Gif, ToolFamily.OUTPUT),
+    // A part of the selected clip opened in the editor made for it, on top of this one (see core.stack).
+    OPEN_IN(R.string.stack_open, Icons.Rounded.OpenInNew, ToolFamily.PICTURE),
 }
 
 /** The accent of [family]: its main tone, with the tones that go on it. */
@@ -284,33 +293,51 @@ val PANEL_CONTENT_MAX_WIDTH = 720.dp
 
 /**
  * The tool row. With [onBack] (a clip is selected) a back button leads, which
- * returns to the tools of the whole video.
+ * returns to the tools of the whole video; [leading], when given, comes next,
+ * before the tools (a selected clip's way into another editor, see
+ * OpenInEditorButton). Both are the first items of the row and scroll away
+ * with the tools, a thin line after them: nothing stays in the tools' way.
  */
 @Composable
 fun EditorToolbar(
     items: List<ToolbarItem>,
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    leading: (@Composable () -> Unit)? = null,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth().height(TOOLBAR_HEIGHT),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (onBack != null) {
-                ToolButton(
-                    labelRes = R.string.tool_back,
-                    icon = Icons.Rounded.KeyboardDoubleArrowLeft,
-                    enabled = true,
-                    highlighted = true,
-                    onClick = onBack,
-                )
-            }
             LazyRow(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (onBack != null) {
+                    item(key = "toolbar-back") {
+                        ToolButton(
+                            labelRes = R.string.tool_back,
+                            icon = Icons.Rounded.KeyboardDoubleArrowLeft,
+                            enabled = true,
+                            highlighted = true,
+                            onClick = onBack,
+                        )
+                    }
+                }
+                if (leading != null) item(key = "toolbar-leading") { leading() }
+                if (onBack != null || leading != null) {
+                    item(key = "toolbar-divider") {
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 4.dp)
+                                .size(width = 1.dp, height = 32.dp)
+                                .background(MaterialTheme.colorScheme.outlineVariant),
+                        )
+                    }
+                }
                 items(items) { item ->
                     ToolButton(
                         labelRes = item.labelRes,

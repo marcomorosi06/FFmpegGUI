@@ -68,6 +68,7 @@ import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Opacity
+import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.Redo
 import androidx.compose.material.icons.rounded.RotateRight
@@ -251,6 +252,9 @@ internal enum class ImageTool(@StringRes val labelRes: Int, val icon: ImageVecto
 
     // Tool of a selected shape.
     SHAPE(R.string.tool_shape, Icons.Rounded.Category, ToolFamily.OVERLAY),
+
+    // The picture, or a sticker, opened in the photo editor on top of this one (see core.stack).
+    OPEN_IN(R.string.stack_open, Icons.Rounded.OpenInNew, ToolFamily.PICTURE),
 }
 
 private val TEXT_TOOLS = listOf(
@@ -341,6 +345,14 @@ fun ImageEditorScreen(
     onRedo: () -> Unit,
     onStart: () -> Unit,
     onBack: () -> Unit,
+    /**
+     * Editors in a stack (see core.stack): the picture itself and its
+     * stickers open in the photo editor on top of this one; open on top of
+     * another, this one applies instead of exporting. Null: no stack.
+     */
+    stack: EditorStackEditing? = null,
+    /** Opens the picture as traced (the Trace tool's shapes) in the SVG editor, named so; null: no such way. */
+    onEditTraced: ((com.cuscus.ffmpeggui.core.vector.VectorImage, String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -833,8 +845,14 @@ fun ImageEditorScreen(
             onExport = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 selectedTool = null
-                showExport = true
+                // On top of another editor: what is made here goes back down there.
+                val applyHere = stack?.takeIf { it.nested }
+                applyHere?.onApply?.invoke()
+                if (applyHere == null) showExport = true
             },
+            applies = stack?.nested == true,
+            stackSteps = stack?.steps?.takeIf { it.size >= 2 },
+            onStackMap = { stack?.onShowMap?.invoke() },
         )
     }
     // -- Lifting a subject off the photo: a long press on it (EdgeTAM, see SubjectLifter) -------
@@ -1153,9 +1171,30 @@ fun ImageEditorScreen(
         )
     }
     /** The tool row. */
+    // What opens in the photo editor on top of this one (see core.stack): a selected sticker
+    // (not a shape, nor the picture on its canvas), else the picture itself; a frame of a
+    // video is no picture of its own to open.
+    val openTarget: Triple<String, List<com.cuscus.ffmpeggui.core.stack.NestedKind>, com.cuscus.ffmpeggui.core.stack.NestedKind?>? = when {
+        stack == null || isManualMode || selectedText != null -> null
+        selectedSticker != null && !selectedSticker.isPhoto ->
+            if (selectedSticker.shape == null && !selectedSticker.isEffect && selectedSticker.uri != null) {
+                Triple(
+                    selectedSticker.id,
+                    com.cuscus.ffmpeggui.core.stack.NestedKind.forOverlay(selectedSticker.isVideo, selectedSticker.isGif, hasAudio = false),
+                    selectedSticker.nested?.kind,
+                )
+            } else {
+                null
+            }
+        clip != null && source != null && source.isStill -> Triple(clip.id, listOf(com.cuscus.ffmpeggui.core.stack.NestedKind.CLIP_PHOTO), source.nested?.kind)
+        else -> null
+    }
     val toolbarArea: @Composable () -> Unit = {
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Bottom) {
             EditorToolbar(
+                leading = openTarget?.let {
+                    { OpenInEditorButton { selectedTool = ImageTool.OPEN_IN } }
+                },
                 items = overlayItems ?: wholeItems,
                 onBack = if (overlayItems != null) ({ selectedOverlayId = null }) else null,
             )
@@ -1197,7 +1236,14 @@ fun ImageEditorScreen(
                     },
                 )
                 ImageTool.CORNERS -> ImageCornersPanel(corners = imageEdit.corners, cornerColor = imageEdit.cornerColor, format = format, onChange = onImageEdit)
-                ImageTool.TRACE -> ImageTracePanel(trace = imageEdit.trace, traced = traced.first, working = traced.second, onChange = onImageEdit)
+                ImageTool.TRACE -> ImageTracePanel(
+                    trace = imageEdit.trace,
+                    traced = traced.first,
+                    working = traced.second,
+                    onChange = onImageEdit,
+                    // Its shapes, to go on drawing in the SVG editor.
+                    onEditInSvg = onEditTraced?.let { open -> { image -> open(image, fileName.substringBeforeLast('.')) } },
+                )
                 ImageTool.CANVAS -> ImageCanvasPanel(
                     canvas = imageEdit.canvas,
                     pictureWidth = pictureFull.first,
@@ -1208,6 +1254,8 @@ fun ImageEditorScreen(
                     onFit = onFitPictureOnCanvas,
                     onSelectPicture = { select(PHOTO_LAYER_ID) },
                     pictureFit = photoFit(imageOverlays.firstOrNull { it.isPhoto }, imageEdit.canvas, pictureFull.first, pictureFull.second),
+                    pictureStretched = imageOverlays.firstOrNull { it.isPhoto }?.let { it.laidStretch != 1f } == true,
+                    onPictureOriginalShape = { onUpdateImage(PHOTO_LAYER_ID, null) { it.copy(stretch = 1f) } },
                 )
                 ImageTool.STRAIGHTEN -> ImageStraightenPanel(imageEdit, onImageEdit)
                 ImageTool.ADJUST -> ImageAdjustPanel(imageEdit.tone, onImageEdit)
@@ -1263,6 +1311,29 @@ fun ImageEditorScreen(
                     onAddSticker = { if (stickerShelf != null) stickerSheetOpen = true else stickerPicker.launch(arrayOf("image/*")) },
                     onAddShape = addShape,
                 )
+                ImageTool.OPEN_IN -> {
+                    val target = openTarget
+                    val editing = stack
+                    if (target != null && editing != null) {
+                        OpenInPanel(
+                            partId = target.first,
+                            kinds = target.second,
+                            editing = EditorStackEditing(
+                                nested = editing.nested,
+                                canOpen = editing.canOpen,
+                                // The panel closes first: coming back to this editor, it is not open any more.
+                                onOpen = { id, kind ->
+                                    selectedTool = null
+                                    editing.onOpen(id, kind)
+                                },
+                                onApply = editing.onApply,
+                                steps = editing.steps,
+                                onShowMap = editing.onShowMap,
+                            ),
+                            edited = target.third,
+                        )
+                    }
+                }
                 ImageTool.SHAPE -> selectedSticker?.let { sticker ->
                     sticker.shape?.let { shape ->
                         ShapeLayerPanel(
@@ -1348,6 +1419,8 @@ fun ImageEditorScreen(
                             onLayer = { move -> onArrangeImage(selectedText.id, move) },
                             canForward = position in 0 until count - 1,
                             canBackward = position > 0,
+                            onOriginalShape = { onUpdateText(selectedText.id, null) { it.copy(stretch = 1f) } },
+                            textStretch = selectedText.laidStretch,
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         OverlayLayoutContent(
@@ -1370,6 +1443,9 @@ fun ImageEditorScreen(
                             onLayer = { move -> onArrangeImage(selectedSticker.id, move) },
                             canForward = position in 0 until count - 1,
                             canBackward = position > 0,
+                            picture = selectedSticker,
+                            frameRatio = frameRatio,
+                            onOriginalShape = { onUpdateImage(selectedSticker.id, null) { it.copy(stretch = 1f) } },
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         OverlayLayoutContent(
@@ -1668,6 +1744,10 @@ private fun PictureStage(
 ) {
     val zoom = rememberStageZoom()
     val currentLift by rememberUpdatedState(lift)
+    // While the crop frame is held the canvas stays still; let go, it frames it (issue #33).
+    var cropHeld by remember { mutableStateOf(false) }
+    var cropFramed by remember { mutableStateOf(false) }
+    val motion = MaterialTheme.motionScheme
     // The canvas at zoom 1, in pixels: how far a zoomed one may be moved.
     val fitted = remember { FloatArray(2) }
     BoxWithConstraints(
@@ -1703,6 +1783,34 @@ private fun PictureStage(
         val framePx = scale * frame
         fitted[0] = scale * wholeW
         fitted[1] = scale * wholeH
+        // Cropping: the frame, let go, is zoomed in on and centred, away from the thumb; the
+        // tool closed, the canvas fits again.
+        val stageW = constraints.maxWidth.toFloat()
+        val stageH = constraints.maxHeight.toFloat()
+        val focusMargin = with(density) { CROP_FOCUS_MARGIN.toPx() }
+        LaunchedEffect(crop, cropHeld, stageW, stageH, pictureWidthPx, pictureHeightPx) {
+            if (crop == null) {
+                if (cropFramed) zoom.reset(motion)
+                cropFramed = false
+                return@LaunchedEffect
+            }
+            if (cropHeld) return@LaunchedEffect
+            val view = com.cuscus.ffmpeggui.core.image.CropFocus.frame(
+                crop = crop,
+                pictureLeft = framePx,
+                pictureTop = framePx,
+                pictureWidth = pictureWidthPx,
+                pictureHeight = pictureHeightPx,
+                contentWidth = scale * wholeW,
+                contentHeight = scale * wholeH,
+                stageWidth = stageW,
+                stageHeight = stageH,
+                margin = focusMargin,
+                maxScale = StageZoom.MAX_SCALE,
+            )
+            cropFramed = true
+            zoom.animateTo(view, motion)
+        }
         // Rounded as the export rounds the whole picture: by corners x half its shorter side.
         val rounded = roundsCorners(corners)
         val radiusPx = corners.coerceIn(0f, 1f) * min(wholeW, wholeH) * scale / 2f
@@ -1830,6 +1938,7 @@ private fun PictureStage(
                             freeform = cropAspect == CropAspect.FREE,
                             onCropRectChange = { changed -> onCrop(CropRect(changed.left, changed.top, changed.width, changed.height)) },
                             modifier = Modifier.fillMaxSize(),
+                            onHeldChange = { cropHeld = it },
                         )
                     }
                 }
@@ -2107,3 +2216,6 @@ private enum class EarlyEnd { TAP, OTHER }
 
 /** Where the long press's note sits while the selected sticker's actions show under it. */
 private val NOTE_OVER_ACTIONS = 92.dp
+
+/** Room kept around the crop frame when the editor zooms in on it, for its handles (see core.image.CropFocus). */
+internal val CROP_FOCUS_MARGIN = 36.dp

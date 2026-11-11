@@ -1,10 +1,17 @@
-* Video denoise, for a clip or the whole video
-* Denoise compared before and after, close up
-* Cut out tool (was Chroma key), with a finest cut-out: BiRefNet-lite
-* Photo editor: long-press a subject to lift it off as a sticker
-* EdgeTAM corrects cut-outs; SlimSAM removed
-* Your stickers: save cut-outs and lifted subjects, reuse them anywhere
-* Pictures and texts can go past the frame's edges
-* Less memory: one model at a time
+* Video denoise, sharpness, blur, grain
+* Cut out with BiRefNet-lite
+* Long-press lifts a photo's subject
+* EdgeTAM refines cut-outs
+* Cut-outs and lifts as stickers
+* Layers past the frame
+* One model in memory
 * ASCII/ANSI art
-* Ratio and pictures: whole, cover or stretch
+* Stretch and magnetic resize
+* AI marks only for dub and eraser
+* Exports ask to notify
+* Stacked clip, layer, sound editors
+* Crop zooms to its frame
+* Lyrics timed line by line
+* Stabilize; audio denoise
+* Speech model from our release
+* Lyrics: voice heard alone

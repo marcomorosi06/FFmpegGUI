@@ -2,6 +2,7 @@
 
 package com.cuscus.ffmpeggui.svgedit
 
+import com.cuscus.ffmpeggui.ui.expressive.peeksSheet
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
@@ -406,6 +407,8 @@ private fun StopBar(
                     .clip(CircleShape)
                     .background(Color(stop.argb.toInt() or (0xFF shl 24)))
                     .semantics { contentDescription = stopDescription }
+                    // Dragged along the bar, it changes the drawing live: the sheet fades meanwhile.
+                    .peeksSheet()
                     .pointerInput(Unit) {
                         detectTapGestures {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)

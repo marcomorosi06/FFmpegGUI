@@ -63,9 +63,10 @@ import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
 import kotlinx.coroutines.delay
 
 /**
- * Said when a model is to be imported before the AI marks (MarkingGate):
- * why the marks come first, with the law that asks for them, and what they
- * never say. Its badge, a lock, breathes between a cookie and a burst.
+ * Said when a dub or eraser model is to be imported before the AI marks
+ * (MarkingGate): why the marks come first for those, with the law that asks
+ * for them, and what they never say. Its badge, a lock, breathes between a
+ * cookie and a burst.
  */
 @Composable
 fun MarkersFirstDialog(onSetUp: () -> Unit, onDismiss: () -> Unit) {
@@ -88,9 +89,9 @@ fun MarkersFirstDialog(onSetUp: () -> Unit, onDismiss: () -> Unit) {
 }
 
 /**
- * Said once after the models were deleted for want of the AI marks
- * (MarkingSweep): which kinds went, the space they gave back, why, and the
- * way to the marks, then to the models again.
+ * Said once after the dub's or the eraser's models were deleted for want of
+ * the AI marks (MarkingSweep): which kinds went, the space they gave back,
+ * why, and the way to the marks, then to the models again.
  */
 @Composable
 fun ModelsClearedDialog(removed: List<MarkingSweep.Removed>, onSetUp: () -> Unit, onDismiss: () -> Unit) {

@@ -45,16 +45,15 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * The smart features of the settings: the builds of the speech model
- * ([speechStores], the one chosen in [speechVariant] is [store]), the engine
- * that runs it ([engine]), the transcriber the editor uses ([transcriber]) and
- * its speed test; the cut-out models ([cutoutStores], the one chosen in
+ * The smart features of the settings: the speech model ([store]), the engine
+ * that runs it ([engine]) and the transcriber the editor uses
+ * ([transcriber]); the cut-out models ([cutoutStores], the one chosen in
  * [cutoutVariant] is [cutoutStore]), their engine ([cutoutEngine]), the cutter
  * the editors use ([cutter]) and its speed test.
  *
- * Both builds of a model can be on the phone; the choice is kept. When the
- * chosen one is not installed and the other one gets imported, the other one
- * is chosen: what was just imported is what the user means to use.
+ * Several cut-out models can be on the phone; the choice is kept. When the
+ * chosen one is not installed and another one gets imported, that one is
+ * chosen: what was just imported is what the user means to use.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SmartFeatures(
@@ -75,17 +74,17 @@ class SmartFeatures(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /**
-     * The invisible AI marks (see MarkerModel): imported before any other
-     * model, written into what the models make. Made first: whether they are
-     * here decides, before any model store reads its files, whether the
-     * models may stay (MarkingSweep).
+     * The invisible AI marks (see MarkerModel): imported before the dub's and
+     * the eraser's models, written into what those make. Made first: whether
+     * they are here decides, before any model store reads its files, whether
+     * those models may stay (MarkingSweep). The other models need none.
      */
     val markerStore = SpeechModelStore(context, MarkerModel.FILES)
 
     /** True when the marks are installed and checked (and pinned: see MarkerModel.NOT_PINNED). */
     val markersReady: Boolean get() = !MarkerModel.NOT_PINNED && markerStore.state.value is SpeechModelStore.State.Ready
 
-    /** What the models deleted at this start for want of the marks were, not yet shown to the user. */
+    /** What the dub and eraser models deleted at this start for want of the marks were, not yet shown to the user. */
     private val _cleared = MutableStateFlow(
         runCatching { MarkingSweep.sweep(app, markersReady) }.onFailure { Log.w(TAG, "Could not check the models against the AI marks", it) }
             .let { MarkingSweep.pending(app) },
@@ -110,32 +109,17 @@ class SmartFeatures(
         MarkingGate.ready = { markersReady }
     }
 
-    val speechStores: Map<SpeechVariant, SpeechModelStore> =
-        SpeechVariant.entries.associateWith { SpeechModelStore(context, SpeechModel.of(it)) }
+    /** The speech model. */
+    val store = SpeechModelStore(context, SpeechModel.PARAKEET)
 
-    private val _speechVariant = MutableStateFlow(
-        choices.getString(KEY_SPEECH, null)?.let { name -> SpeechVariant.entries.firstOrNull { it.name == name } }
-            ?: firstInstalled(SpeechVariant.entries) { speechStores.getValue(it).state.value } ?: SpeechVariant.INT8,
-    )
+    /** Where the speech model is. */
+    val speechState: StateFlow<SpeechModelStore.State> get() = store.state
 
-    /** The build of the speech model the editor uses. */
-    val speechVariant: StateFlow<SpeechVariant> = _speechVariant.asStateFlow()
-
-    /** The chosen build of the speech model. */
-    val store: SpeechModelStore get() = speechStores.getValue(_speechVariant.value)
-
-    /** Where the chosen build of the speech model is. */
-    val speechState: StateFlow<SpeechModelStore.State> = _speechVariant
-        .flatMapLatest { speechStores.getValue(it).state }
-        .stateIn(scope, SharingStarted.Eagerly, store.state.value)
-
-    val engine = SpeechEngine(context, { store }) {
-        // The chosen build's recordings, else the other's.
-        (listOf(store) + speechStores.values).asSequence().map { it.samples() }.firstOrNull { it.isNotEmpty() }.orEmpty()
-    }
+    val engine = SpeechEngine(context, store)
     /** Takes a file's sound out with FFmpeg (the speech model's, voice separation's, the AI check's). */
     internal val extractor = FfmpegAudioExtractor(context, executor)
-    val transcriber = SpeechTranscriber(context, engine, extractor)
+    // The voice set apart before is listened to instead of the whole sound (see core's ListenedSound).
+    val transcriber = SpeechTranscriber(context, engine, extractor) { uri -> voiceSeparator.voiceTracks(android.net.Uri.parse(uri)) }
 
     val cutoutStores: Map<CutoutVariant, CutoutModelStore> =
         CutoutVariant.entries.associateWith { CutoutModelStore(context, CutoutModel.of(it)) }
@@ -268,29 +252,19 @@ class SmartFeatures(
     }
 
     /**
-     * Removes the AI marks, and with them every model: none may stay without
-     * them (MarkingGate). What the models made stays: projects use it.
+     * Removes the AI marks, and with them the models that need them: the
+     * dub's (Kokoro, the Piper voices) and the eraser's. None of those may
+     * stay without the marks (MarkingGate); the other models (speech,
+     * translation, cut-out, stems) stay. What the models made stays: projects
+     * use it.
      */
-    fun deleteMarkersAndModels() {
-        engine.unload()
-        cutoutEngine.unload()
-        refineEngine.unload()
-        voiceSeparator.unload()
-        translator.unload()
+    fun deleteMarkersAndGenerativeModels() {
         dubber.unload()
         eraser.unload()
         marker.unload()
-        stopTest()
-        stopCutoutTest()
-        speechStores.values.forEach { it.delete() }
-        cutoutStores.values.forEach { it.delete() }
-        refineStore.delete()
         eraseStores.values.forEach { it.delete() }
-        voiceStore.delete()
-        instrumentsStore.delete()
         dubStore.delete()
         piperStore.voices.value.forEach { piperStore.delete(it.id) }
-        translationStore.models.value.forEach { translationStore.delete(it.id) }
         markerStore.delete()
         scope.launch(Dispatchers.IO) {
             // Whatever a store left (a half-finished import) goes too, without a notice: the user asked.
@@ -330,16 +304,6 @@ class SmartFeatures(
         refineStore.delete()
     }
 
-    /** Uses [variant] of the speech model from now on (the other one is let go of from memory). */
-    fun chooseSpeech(variant: SpeechVariant) {
-        if (_speechVariant.value == variant) return
-        stopTest()
-        _speechVariant.value = variant
-        choices.edit().putString(KEY_SPEECH, variant.name).apply()
-        engine.unload()
-        _test.value = TestState.Idle
-    }
-
     /** Uses [variant] of the cut-out model from now on (the other one is let go of from memory). */
     fun chooseCutout(variant: CutoutVariant) {
         if (_cutoutVariant.value == variant) return
@@ -361,26 +325,10 @@ class SmartFeatures(
         data class Failed(val problem: Problem) : CutoutTestState
     }
 
-    /** Where the speed test is. */
-    sealed interface TestState {
-        data object Idle : TestState
+    /** Why a speed test did not run. */
+    enum class Problem { NO_MODEL, NO_MEMORY, FAILED }
 
-        /** [loading] while the model is read into memory, then listening. */
-        data class Running(val loading: Boolean) : TestState
-
-        data class Done(val result: SpeechEngine.SpeedResult) : TestState
-
-        data class Failed(val problem: Problem) : TestState
-    }
-
-    enum class Problem { NO_MODEL, NO_MEMORY, FAILED, NO_RECORDINGS }
-
-    private var testJob: Job? = null
-
-    private val _test = MutableStateFlow<TestState>(TestState.Idle)
-    val test: StateFlow<TestState> = _test.asStateFlow()
-
-    /** True when the chosen model is installed and checked: the editor can make subtitles. */
+    /** True when the speech model is installed and checked: the editor can make subtitles. */
     val ready: Boolean get() = store.state.value is SpeechModelStore.State.Ready
 
     private var cutoutTestJob: Job? = null
@@ -425,48 +373,10 @@ class SmartFeatures(
         cutoutStores.getValue(variant).delete()
     }
 
-    /** Measures the model on the recordings that came with it. */
-    @Synchronized
-    fun runTest() {
-        if (testJob?.isActive == true) return
-        testJob = scope.launch {
-            _test.value = TestState.Running(loading = !engine.loaded.value)
-            // Once the model is in memory, the test is listening.
-            val loading = launch { engine.loaded.collect { if (it) _test.value = TestState.Running(loading = false) } }
-            _test.value = try {
-                TestState.Done(engine.speedTest())
-            } catch (e: CancellationException) {
-                _test.value = TestState.Idle
-                throw e
-            } catch (e: SpeechEngine.ModelMissing) {
-                TestState.Failed(Problem.NO_MODEL)
-            } catch (e: SpeechEngine.NoRecordings) {
-                TestState.Failed(Problem.NO_RECORDINGS)
-            } catch (e: SpeechEngine.NotEnoughMemory) {
-                TestState.Failed(Problem.NO_MEMORY)
-            } catch (e: Exception) {
-                Log.w(TAG, "Speed test failed", e)
-                TestState.Failed(Problem.FAILED)
-            } finally {
-                loading.cancel()
-            }
-        }
-    }
-
-    @Synchronized
-    fun stopTest() {
-        testJob?.cancel()
-        testJob = null
-    }
-
-    /** Removes the build [variant] of the speech model, and what was learnt about it. */
-    fun deleteModel(variant: SpeechVariant = _speechVariant.value) {
-        if (variant == _speechVariant.value) {
-            stopTest()
-            engine.unload()
-            _test.value = TestState.Idle
-        }
-        speechStores.getValue(variant).delete()
+    /** Removes the speech model, and what was learnt about it. */
+    fun deleteModel() {
+        engine.unload()
+        store.delete()
     }
 
     init {
@@ -481,9 +391,7 @@ class SmartFeatures(
         }
         // A model being imported or checked shows in the notifications while it is.
         if (work != null) {
-            speechStores.forEach { (variant, store) ->
-                report(store.state, WorkNotifier.Kind.SPEECH_MODEL, app.getString(R.string.work_model_speech_title, SpeechModel.of(variant).name), store::stop)
-            }
+            report(store.state, WorkNotifier.Kind.SPEECH_MODEL, app.getString(R.string.work_model_speech_title, SpeechModel.PARAKEET.name), store::stop)
             cutoutStores.forEach { (variant, store) ->
                 report(store.state, WorkNotifier.Kind.CUTOUT_MODEL, app.getString(R.string.work_model_cutout_title, CutoutModel.of(variant).name), store::stop)
             }
@@ -496,19 +404,6 @@ class SmartFeatures(
             report(dubStore.state, WorkNotifier.Kind.DUB_MODEL, app.getString(R.string.work_model_dub_title, DubModel.NAME), dubStore::stop)
         }
         // What was just imported is chosen when the chosen one is not there.
-        speechStores.forEach { (variant, store) ->
-            scope.launch {
-                var before = store.state.value
-                store.state.collect { now ->
-                    if (now is SpeechModelStore.State.Ready && before !is SpeechModelStore.State.Ready &&
-                        this@SmartFeatures.store.state.value !is SpeechModelStore.State.Ready
-                    ) {
-                        chooseSpeech(variant)
-                    }
-                    before = now
-                }
-            }
-        }
         cutoutStores.forEach { (variant, store) ->
             scope.launch {
                 var before = store.state.value
@@ -560,7 +455,6 @@ class SmartFeatures(
     private companion object {
         const val TAG = "SmartFeatures"
         const val PREFS = "smart_features"
-        const val KEY_SPEECH = "speech_variant"
         const val KEY_CUTOUT = "cutout_variant"
         const val KEY_FAST_KERNELS = "ai_fast_kernels"
         const val KEY_ERASE = "erase_variant"

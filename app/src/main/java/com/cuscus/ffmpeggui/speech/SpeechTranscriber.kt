@@ -18,23 +18,31 @@ import java.util.UUID
 /**
  * Finds the words said in a media file, with their times on the file's clock.
  *
- * The sound is first taken out with FFmpeg (16 kHz mono floats, in the cache),
- * then fed to the model [CHUNK_SECONDS] at a time, however long it is (an hour
- * is about 120 pieces): the model's memory grows with the square of what it
- * hears at once, and the sound waits on disk, not in memory. Each chunk ends at the quietest
- * moment of its last [CUT_WINDOW_SECONDS], so that no word is cut in two. The
- * words of every chunk are handed over as soon as they are found.
+ * The sound is first taken out with FFmpeg (16 kHz mono floats, in the cache):
+ * the voice alone when it was set apart before ([voiceOf], see core's
+ * ListenedSound: under music the model loses a voice it hears well alone),
+ * else the whole sound. Then it is fed to the model [CHUNK_SECONDS] at a
+ * time, however long it is (an hour is about 120 pieces): the model's memory
+ * grows with the square of what it hears at once, and the sound waits on
+ * disk, not in memory. Each chunk ends at the quietest moment of its last
+ * [CUT_WINDOW_SECONDS], so that no word is cut in two. The words of every
+ * chunk are handed over as soon as they are found.
  */
 class SpeechTranscriber(
     context: Context,
     private val engine: SpeechEngine,
     private val extractor: FfmpegAudioExtractor,
+    /** The voice stems kept for a file (by its address), to listen to instead of it; empty when there are none. */
+    private val voiceOf: (String) -> List<File> = { emptyList() },
 ) {
 
     /** Where the work on one file is. */
     sealed interface Step {
-        /** Taking the sound out of the file: [fraction] done, null while unknown. */
-        data class Extracting(val fraction: Float?) : Step
+        /**
+         * Taking the sound out of the file: [fraction] done, null while unknown;
+         * [voice] when it is the voice set apart before, not the whole sound.
+         */
+        data class Extracting(val fraction: Float?, val voice: Boolean = false) : Step
 
         /** Loading the model into memory. */
         data object Loading : Step
@@ -63,8 +71,14 @@ class SpeechTranscriber(
     ): List<SpokenWord> {
         val pcm = File(cache, UUID.randomUUID().toString() + ".pcm")
         try {
-            onStep(Step.Extracting(null))
-            when (extractor.extract(sourceUri, pcm, durationMs) { onStep(Step.Extracting(it)) }) {
+            val voice = voiceOf(sourceUri)
+            onStep(Step.Extracting(null, voice.isNotEmpty()))
+            val extracted = if (voice.isNotEmpty()) {
+                extractor.extractVoice(voice, pcm, durationMs) { onStep(Step.Extracting(it, voice = true)) }
+            } else {
+                extractor.extract(sourceUri, pcm, durationMs) { onStep(Step.Extracting(it)) }
+            }
+            when (extracted) {
                 ExecutionResult.Success -> Unit
                 ExecutionResult.Cancelled -> throw CancellationException("Stopped")
                 is ExecutionResult.Failed -> throw NoSound()

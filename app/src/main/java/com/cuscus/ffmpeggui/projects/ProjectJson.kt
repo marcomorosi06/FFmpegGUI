@@ -6,6 +6,8 @@ import com.cuscus.ffmpeggui.AudioClip
 import com.cuscus.ffmpeggui.ConversionSettings
 import com.cuscus.ffmpeggui.EditorSource
 import com.cuscus.ffmpeggui.ImageOverlay
+import com.cuscus.ffmpeggui.NestedEdit
+import com.cuscus.ffmpeggui.OpenEditor
 import com.cuscus.ffmpeggui.ShapeLayer
 import com.cuscus.ffmpeggui.core.model.LayerBlend
 import com.cuscus.ffmpeggui.core.model.AudioEffects
@@ -124,6 +126,38 @@ object ProjectJson {
         put("splitValue", s.splitValue)
         put("tags", ModelJson.write(s.tags))
         put("coverUri", s.coverUri?.toString())
+        put("openAbove", s.openAbove, ::writeOpen)
+    }
+
+    /** An editor left open on top (see OpenEditor), the one on top of it inside its settings. */
+    private fun writeOpen(e: OpenEditor): Json.Obj = jsonObject {
+        put("partId", e.partId)
+        put("kind", e.kind.name)
+        put("title", e.title)
+        put("fromUri", e.fromUri.toString())
+        put("fromName", e.fromName)
+        put("offsetMs", e.offsetMs)
+        put("format", e.format.name)
+        put("settings", write(e.settings))
+    }
+
+    /** An editor left open read back; null when this version does not know it, or it is incomplete. */
+    private fun openEditor(o: Json.Obj): OpenEditor? {
+        val kind = com.cuscus.ffmpeggui.core.stack.NestedKind.named(o.stringOrNull("kind")) ?: return null
+        val part = o.stringOrNull("partId") ?: return null
+        val from = o.stringOrNull("fromUri") ?: return null
+        val format = OutputFormat.entries.firstOrNull { it.name == o.stringOrNull("format") } ?: kind.format
+        val settings = o.obj("settings")?.let(::settings) ?: return null
+        return OpenEditor(
+            partId = part,
+            kind = kind,
+            title = o.string("title", ""),
+            fromUri = Uri.parse(from),
+            fromName = o.string("fromName", ""),
+            offsetMs = o.long("offsetMs", 0L),
+            format = format,
+            settings = settings,
+        )
     }
 
     fun settings(o: Json.Obj): ConversionSettings {
@@ -177,6 +211,7 @@ object ProjectJson {
             splitValue = o.int("splitValue", d.splitValue),
             tags = o.obj("tags")?.let(ModelJson::metadataTags) ?: d.tags,
             coverUri = o.stringOrNull("coverUri")?.let(Uri::parse),
+            openAbove = o.obj("openAbove")?.let(::openEditor),
         )
     }
 
@@ -186,6 +221,30 @@ object ProjectJson {
         put("fileName", s.fileName)
         put("info", s.info, ModelJson::write)
         put("originalUri", s.originalUri?.toString())
+        put("nested", s.nested, ::writeNested)
+    }
+
+    /** A nested edit (see NestedEdit): its project written as a project's settings are, nested ones in it too. */
+    private fun writeNested(n: NestedEdit): Json.Obj = jsonObject {
+        put("kind", n.kind.name)
+        put("fromUri", n.fromUri.toString())
+        put("fromName", n.fromName)
+        put("offsetMs", n.offsetMs)
+        put("settings", write(n.settings))
+    }
+
+    /** A nested edit read back; null when it is of a kind this version does not know, or incomplete. */
+    private fun nested(o: Json.Obj): NestedEdit? {
+        val kind = com.cuscus.ffmpeggui.core.stack.NestedKind.named(o.stringOrNull("kind")) ?: return null
+        val from = o.stringOrNull("fromUri") ?: return null
+        val settings = o.obj("settings")?.let(::settings) ?: return null
+        return NestedEdit(
+            kind = kind,
+            fromUri = Uri.parse(from),
+            fromName = o.string("fromName", ""),
+            settings = settings,
+            offsetMs = o.long("offsetMs", 0L),
+        )
     }
 
     fun source(o: Json.Obj): EditorSource? {
@@ -197,6 +256,7 @@ object ProjectJson {
             fileName = o.string("fileName", ""),
             info = o.objOrNull("info", null, ModelJson::mediaInfo),
             originalUri = o.stringOrNull("originalUri")?.let(Uri::parse),
+            nested = o.obj("nested")?.let(::nested),
         )
     }
 
@@ -219,6 +279,7 @@ object ProjectJson {
         put("aiVoice", a.aiVoice)
         put("effects", ModelJson.write(a.effects))
         with(ModelJson) { putKeyframes(a.keyframes) }
+        put("nested", a.nested, ::writeNested)
     }
 
     fun audioClip(o: Json.Obj): AudioClip? {
@@ -242,6 +303,7 @@ object ProjectJson {
             aiVoice = o.stringOrNull("aiVoice"),
             effects = o.obj("effects")?.let(ModelJson::audioEffects) ?: AudioEffects.NONE,
             keyframes = ModelJson.keyframes(o),
+            nested = o.obj("nested")?.let(::nested),
         )
     }
 
@@ -282,6 +344,7 @@ object ProjectJson {
         put("hidden", i.hidden)
         put("locked", i.locked)
         put("stretch", i.stretch)
+        put("nested", i.nested, ::writeNested)
     }
 
     fun writeShape(s: ShapeLayer): Json.Obj = jsonObject {
@@ -351,23 +414,40 @@ object ProjectJson {
             lookAmount = o.float("lookAmount", d.lookAmount),
             hidden = o.bool("hidden", d.hidden),
             locked = o.bool("locked", d.locked),
+            nested = o.obj("nested")?.let(::nested),
         )
     }
 
-    /** Every file the project refers to: its footage, sounds, pictures, subtitles and cover. */
+    /**
+     * Every file the project refers to: its footage, sounds, pictures,
+     * subtitles and cover, what its nested edits were made of with every file
+     * of their projects (opened again, they need them), and those of the
+     * editors left open on top of it.
+     */
     fun uris(s: ConversionSettings): List<Uri> = (
         s.sources.map { it.uri } +
+            (s.sources.map { it.nested } + s.audioClips.map { it.nested } + s.imageOverlays.map { it.nested })
+                .flatMap { nested -> nested?.let { listOf(it.fromUri) + uris(it.settings) }.orEmpty() } +
             s.audioClips.map { it.uri } +
             s.imageOverlays.mapNotNull { it.uri } +
-            listOfNotNull(s.subtitleUri, s.coverUri)
+            listOfNotNull(s.subtitleUri, s.coverUri) +
+            s.openAbove?.let { listOf(it.fromUri) + uris(it.settings) }.orEmpty()
         ).distinct()
 
     /** [s] with every file URI passed through [map]. */
     fun mapUris(s: ConversionSettings, map: (Uri) -> Uri): ConversionSettings = s.copy(
-        sources = s.sources.map { it.copy(uri = map(it.uri)) },
-        audioClips = s.audioClips.map { it.copy(uri = map(it.uri)) },
-        imageOverlays = s.imageOverlays.map { o -> o.uri?.let { o.copy(uri = map(it)) } ?: o },
+        sources = s.sources.map { source ->
+            source.copy(
+                uri = map(source.uri),
+                nested = source.nested?.let { mapNested(it, map) },
+            )
+        },
+        audioClips = s.audioClips.map { it.copy(uri = map(it.uri), nested = it.nested?.let { n -> mapNested(n, map) }) },
+        imageOverlays = s.imageOverlays.map { o -> (o.uri?.let { o.copy(uri = map(it)) } ?: o).copy(nested = o.nested?.let { mapNested(it, map) }) },
         subtitleUri = s.subtitleUri?.let(map),
         coverUri = s.coverUri?.let(map),
+        openAbove = s.openAbove?.let { it.copy(fromUri = map(it.fromUri), settings = mapUris(it.settings, map)) },
     )
+
+    private fun mapNested(n: NestedEdit, map: (Uri) -> Uri): NestedEdit = n.copy(fromUri = map(n.fromUri), settings = mapUris(n.settings, map))
 }

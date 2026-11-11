@@ -8,7 +8,8 @@ import kotlin.math.roundToInt
  * picture, the video itself), as in a slide editor: its edges and its middle
  * stick to the frame's edges and middle, and to those of the other things on
  * it, when they come close; turns stick to whole steps. All in pixels of the
- * frame the thing lies on.
+ * frame the thing lies on. What is resized or stretched by hand sticks the
+ * same way, by its moving edges ([snapResize]).
  */
 
 /** A box on the frame: left, top, right and bottom edges, in pixels. */
@@ -85,6 +86,63 @@ fun snapMove(moving: SnapBox, width: Float, height: Float, others: List<SnapBox>
         }
     }
     return Snap(dx, dy, guides)
+}
+
+/** How far to take what is resized, and the lines it now lies on. */
+data class SizeSnap(val value: Float, val guides: List<Guide>) {
+    /** Tells two snaps apart by where they stick (for a tick of feedback when that changes). */
+    val key: String get() = guides.joinToString(";") { "${if (it.vertical) "v" else "h"}${it.at.roundToInt()}" }
+}
+
+/**
+ * Where something resized by hand sticks: its box on a frame of [width] x
+ * [height] pixels is [boxAt] of one number (a size, a scale, how far a handle
+ * was pulled), its edges moving in step with it (an affine box, as every
+ * resize and stretch of the editors is). At [value], each edge that moves is
+ * tried against the edges and the middle of the frame and of [others]; the
+ * closest within [threshold] pixels (the frame first when two are as close)
+ * gives the value that lays that edge on that line exactly. Its middle does
+ * not count: what is resized about its middle keeps it where it is, and a
+ * move snaps it. The result also lists every line it then lies on.
+ */
+fun snapResize(boxAt: (Float) -> SnapBox, value: Float, width: Float, height: Float, others: List<SnapBox>, threshold: Float): SizeSnap {
+    val box = boxAt(value)
+    // How fast each edge moves with the value (they are affine in it).
+    val step = maxOf(abs(value) * 1e-3f, 1e-4f)
+    val ahead = boxAt(value + step)
+    fun edges(b: SnapBox) = listOf(b.left, b.right, b.top, b.bottom)
+    val now = edges(box)
+    val rates = edges(ahead).mapIndexed { i, e -> (e - now[i]) / step }
+    fun lines(vertical: Boolean): List<Float> =
+        (if (vertical) listOf(0f, width / 2f, width) else listOf(0f, height / 2f, height)) +
+            others.flatMap { if (vertical) listOf(it.left, it.centerX, it.right) else listOf(it.top, it.centerY, it.bottom) }
+    var best = Float.MAX_VALUE
+    var snapped = value
+    for (i in now.indices) {
+        val rate = rates[i]
+        if (!rate.isFinite() || abs(rate) < 1e-4f) continue
+        for (line in lines(vertical = i < 2)) {
+            val distance = abs(line - now[i])
+            if (distance <= threshold && distance < best - 0.01f) {
+                best = distance
+                snapped = value + (line - now[i]) / rate
+            }
+        }
+    }
+    val placed = boxAt(snapped)
+    val guides = mutableListOf<Guide>()
+    val placedEdges = edges(placed)
+    for (vertical in listOf(true, false)) {
+        val mine = if (vertical) placedEdges.subList(0, 2) else placedEdges.subList(2, 4)
+        val targets = (if (vertical) listOf(0f, width / 2f, width) else listOf(0f, height / 2f, height)).map { it to null as SnapBox? } +
+            others.flatMap { b -> (if (vertical) listOf(b.left, b.centerX, b.right) else listOf(b.top, b.centerY, b.bottom)).map { it to b } }
+        for ((line, target) in targets) {
+            if (mine.any { abs(it - line) < 0.5f } && guides.none { it.vertical == vertical && abs(it.at - line) < 0.5f && it.target == target }) {
+                guides += Guide(vertical, line, target)
+            }
+        }
+    }
+    return SizeSnap(snapped, guides)
 }
 
 /**

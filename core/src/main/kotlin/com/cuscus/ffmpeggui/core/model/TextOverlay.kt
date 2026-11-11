@@ -29,7 +29,9 @@ import kotlin.math.roundToInt
  * It is turned by [rotationDegrees] (clockwise) about its anchor: the point
  * of its box at ([x], [y]) of its size, which lies at ([x], [y]) of the frame
  * (the middle of a centred caption). [blend] mixes it with what lies under it
- * (see LayerBlend), as a picture's.
+ * (see LayerBlend), as a picture's. [stretch] pulls it out of its shape:
+ * that many times as wide at the same height (its look, outline, shadow and
+ * box, with it), about its anchor, before it is turned.
  *
  * A [hidden] caption is kept in the project but neither shown nor exported; a
  * [locked] one cannot be picked or moved on the picture (it is chosen from the
@@ -77,9 +79,17 @@ data class TextOverlay(
     val rotationDegrees: Float = 0f,
     /** How it mixes with what lies under it. */
     val blend: LayerBlend = LayerBlend.NORMAL,
+    /**
+     * How many times wider than its own shape it is drawn, at the same height
+     * (see [laidStretch]); 1 keeps it.
+     */
+    val stretch: Float = 1f,
 ) {
-    /** Drawn as a layer of its own (turned, or blended), rather than straight on the frame. */
-    val layered: Boolean get() = blend != LayerBlend.NORMAL || abs(rotationDegrees % 360f) > 0.01f
+    /** [stretch] as it is drawn: within ImagePlacement.MIN_STRETCH..MAX_STRETCH, 1 when it hardly changes it. */
+    val laidStretch: Float get() = ImagePlacement.saneStretch(stretch)
+
+    /** Drawn as a layer of its own (turned, blended or stretched), rather than straight on the frame. */
+    val layered: Boolean get() = blend != LayerBlend.NORMAL || abs(rotationDegrees % 360f) > 0.01f || laidStretch != 1f
 }
 
 /**

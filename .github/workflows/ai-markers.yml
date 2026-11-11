@@ -1,8 +1,9 @@
 name: AI marks (ONNX)
 
 # The files of the invisible AI marks (docs/MODELS.md, "The AI marks"): the app
-# imports them before any other model and writes their marks into what its
-# models make (EU AI Act, Article 50(2)). AudioSeal (Meta, MIT) converted to
+# imports them before the models that make voices and pictures (the dub's and
+# the magic eraser's) and writes their marks into what those make (EU AI Act,
+# Article 50(2)). AudioSeal (Meta, MIT) converted to
 # ONNX here, TrustMark Q (Adobe, MIT) as Adobe serves it.
 #
 # It runs by itself when what the files are made from changes on master (the
@@ -310,7 +311,7 @@ jobs:
             RUN_URL="$repo/actions/runs/$GITHUB_RUN_ID"
             {
               cat <<EOF
-          The invisible AI marks of [FFmpeg GUI]($repo): **AudioSeal** by Meta, converted to ONNX here, and **TrustMark Q** by Adobe, Adobe's own ONNX files unchanged, both under the MIT License. The app imports them before any other model and marks with them what its models make ([EU AI Act](https://eur-lex.europa.eu/eli/reg/2024/1689/oj), Article 50(2)).
+          The invisible AI marks of [FFmpeg GUI]($repo): **AudioSeal** by Meta, converted to ONNX here, and **TrustMark Q** by Adobe, Adobe's own ONNX files unchanged, both under the MIT License. The app imports them before the models that make voices and pictures (the dub's and the magic eraser's) and marks with them what those make ([EU AI Act](https://eur-lex.europa.eu/eli/reg/2024/1689/oj), Article 50(2)).
 
           The marks are made to carry nothing but "made with AI": the same for everyone, no identifier. That they carry none is not certain: see [the README]($repo/blob/master/README.md) before sharing what must not lead back to you.
 

@@ -5,9 +5,10 @@ import com.cuscus.ffmpeggui.speech.SpeechModel
 /**
  * The invisible AI marks (EU AI Act, Regulation (EU) 2024/1689, Article
  * 50(2)): the files that write a mark into what the app's models make, and
- * find it again. They are imported before any other model (MarkingGate):
- * without them no model is imported, and none stays on the phone
- * (MarkingSweep).
+ * find it again. They are imported before the models that make voices and
+ * pictures, the dub's and the magic eraser's (MarkingGate): without them
+ * none of those is imported, and none stays on the phone (MarkingSweep).
+ * The other models (speech, translation, cut-out, stems) need no marks.
  *
  *  - AudioSeal (Meta, MIT, the weights included): its generator and its
  *    detector, converted to ONNX by this project for a 5 s window at 16 kHz;
@@ -91,15 +92,12 @@ object MarkerModel {
 
     /** The files, kept the way the speech model's are (one import, every file checked). */
     val FILES: SpeechModel = SpeechModel(
-        variant = null,
         name = NAME,
-        archive = null,
         downloads = ALL.map { SpeechModel.Download(it.name, "$DOWNLOAD_URL/${it.name}") },
         folder = "markers/$RELEASE_TAG",
         prefs = "ai_markers",
         tempFolder = "importing-markers",
         files = ALL,
-        samples = emptyList(),
         installedBytes = ALL.sumOf { it.bytes ?: 0L },
     )
 }

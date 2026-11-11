@@ -38,6 +38,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,7 +66,8 @@ import com.cuscus.ffmpeggui.ui.expressive.PanelCard
  * sung with the speech model the smart subtitles use (the same words, heard
  * once). Plain lines, or synced lines the LRC way that players which know it
  * light up as the song plays. The badge on top morphs to say which kind the
- * text is, and how many lines it has.
+ * text is, and how many lines it has. A page of their own (LyricsSyncDialog)
+ * times the lines by hand while the song plays.
  */
 
 /** The lyrics field and what fills it; [speech] null leaves only the field. */
@@ -72,7 +76,21 @@ internal fun LyricsCard(
     lyrics: String,
     onTags: (String?, (MetadataTags) -> MetadataTags) -> Unit,
     speech: SubtitleEditing?,
+    /** The song as the editor plays it: a button opens the page that times the lines by hand. Null: no such page. */
+    playback: LyricsPlayback? = null,
 ) {
+    var syncing by rememberSaveable { mutableStateOf(false) }
+    if (syncing && playback != null) {
+        LyricsSyncDialog(
+            lyrics = lyrics,
+            playback = playback,
+            onDone = { text ->
+                syncing = false
+                onTags(null) { it.copy(lyrics = text) }
+            },
+            onDismiss = { syncing = false },
+        )
+    }
     val motion = MaterialTheme.motionScheme
     val haptic = LocalHapticFeedback.current
     val scheme = MaterialTheme.colorScheme
@@ -141,6 +159,21 @@ internal fun LyricsCard(
             shape = RoundedCornerShape(20.dp),
             modifier = Modifier.fillMaxWidth(),
         )
+        if (playback != null) {
+            // Each line stamped with when it is sung, while the song plays (issue #16).
+            FilledTonalButton(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+                    syncing = true
+                },
+                shapes = ButtonDefaults.shapes(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Rounded.AvTimer, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.lyrics_sync_open), maxLines = 1)
+            }
+        }
         if (speech != null) FromSinging(speech, hasLyrics = lyrics.isNotBlank())
     }
 }

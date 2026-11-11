@@ -52,7 +52,6 @@ import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material.icons.rounded.WifiOff
@@ -102,7 +101,6 @@ import com.cuscus.ffmpeggui.speech.SmartFeatures
 import com.cuscus.ffmpeggui.speech.SpeechEngine
 import com.cuscus.ffmpeggui.speech.SpeechModel
 import com.cuscus.ffmpeggui.speech.SpeechModelStore
-import com.cuscus.ffmpeggui.speech.SpeechVariant
 import com.cuscus.ffmpeggui.translate.TranslationFeatureUi
 import com.cuscus.ffmpeggui.translate.TranslationSettingsSection
 import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
@@ -123,29 +121,22 @@ import java.util.Locale
  * made from what is said, with the speech model, and the subject cut out of a
  * picture, with the cut-out model. For each: where to get it (the browser
  * downloads it: the app never goes online), importing it with every file
- * checked against its pinned SHA-256, checking it again, measuring its speed on
- * this phone, removing it.
+ * checked against its pinned SHA-256, checking it again, removing it (and,
+ * for the cut-out, measuring its speed on this phone).
  */
 
 /** The smart features' state and actions, for their settings page. */
 class SmartFeaturesUi(
-    /** The build of the model chosen, and where each build is. */
-    val variant: SpeechVariant,
-    val variants: Map<SpeechVariant, SpeechModelStore.State>,
-    val onChoose: (SpeechVariant) -> Unit,
-    /** Where the chosen build is. */
+    /** Where the speech model is. */
     val model: SpeechModelStore.State,
     /** The model is in memory now. */
     val loaded: Boolean,
-    val test: SmartFeatures.TestState,
     /** False while subtitles are being made (the model is in use). */
     val idle: Boolean,
     val onImport: (List<Uri>) -> Unit,
     val onStopImport: () -> Unit,
     val onVerify: () -> Unit,
     val onDelete: () -> Unit,
-    val onTest: () -> Unit,
-    val onStopTest: () -> Unit,
     val onUnload: () -> Unit,
     val cutout: CutoutFeatureUi,
     /** The translation models (any number of language pairs). */
@@ -156,7 +147,7 @@ class SmartFeaturesUi(
     val dub: DubFeatureUi? = null,
     /** The magic eraser's models (see EraseModel). */
     val erase: EraseFeatureUi? = null,
-    /** The invisible AI marks, imported before any model (see MarkerModel). */
+    /** The invisible AI marks, imported before the dub's and the eraser's models (see MarkerModel). */
     val marks: MarksFeatureUi? = null,
     /** Every model tries ONNX Runtime's XNNPACK kernels (see AiKernels). */
     val fastKernels: Boolean = true,
@@ -255,52 +246,20 @@ class RefineFeatureUi(
     val onUnload: () -> Unit,
 )
 
-/** The speech model's page: which build, its card, and its speed test. */
+/** The speech model's page: its card. */
 @Composable
 internal fun SpeechSection(smart: SmartFeaturesUi) {
     val context = LocalContext.current
     // Subtitles from speech.
-    val speech = SpeechModel.of(smart.variant)
-    VariantChooser(
-        options = listOf(
-            VariantOption(
-                title = stringResource(R.string.speech_variant_int8),
-                tag = stringResource(R.string.smart_variant_simple),
-                text = stringResource(R.string.speech_variant_int8_text, Formatter.formatShortFileSize(context, SpeechModel.INT8.installedBytes)),
-                icon = Icons.Rounded.Verified,
-                state = smart.variants[SpeechVariant.INT8],
-                selected = smart.variant == SpeechVariant.INT8,
-                onSelect = { smart.onChoose(SpeechVariant.INT8) },
-            ),
-            VariantOption(
-                title = stringResource(R.string.speech_variant_smoothquant),
-                tag = stringResource(R.string.smart_variant_best),
-                text = stringResource(R.string.speech_variant_smoothquant_text, Formatter.formatShortFileSize(context, SpeechModel.SMOOTHQUANT.installedBytes)),
-                icon = Icons.Rounded.Tune,
-                state = smart.variants[SpeechVariant.SMOOTHQUANT],
-                selected = smart.variant == SpeechVariant.SMOOTHQUANT,
-                onSelect = { smart.onChoose(SpeechVariant.SMOOTHQUANT) },
-            ),
-        ),
-        enabled = smart.idle,
-    )
-    val speechArchive = speech.archiveDownload
+    val speech = SpeechModel.PARAKEET
     val speechFiles = speech.files.filter { it.asset == null }.joinToString(", ") { it.name }
     ModelCard(
         spec = ModelSpec(
-            title = stringResource(R.string.smart_model_title_of, stringResource(if (smart.variant == SpeechVariant.INT8) R.string.speech_variant_int8 else R.string.speech_variant_smoothquant)),
+            title = stringResource(R.string.smart_model_title),
             importing = stringResource(R.string.smart_model_importing),
             downloadText = stringResource(R.string.smart_step_download_files_text, speech.downloads.size, Formatter.formatShortFileSize(context, speech.installedBytes)),
             downloads = speech.downloads.map { it.file to it.url },
-            otherDownload = speechArchive?.let { it.file to it.url },
-            otherDownloadText = speech.archive?.let {
-                stringResource(R.string.smart_step_download_archive, Formatter.formatShortFileSize(context, it.bytes))
-            },
-            importText = if (speechArchive != null) {
-                stringResource(R.string.smart_step_import_files_or_archive, speechFiles)
-            } else {
-                stringResource(R.string.smart_step_import_files_text, speechFiles)
-            },
+            importText = stringResource(R.string.smart_step_import_files_text, speechFiles),
             installedBytes = speech.installedBytes,
             notTheModel = stringResource(R.string.smart_problem_not_model_files),
             busy = stringResource(R.string.smart_busy),
@@ -316,8 +275,6 @@ internal fun SpeechSection(smart: SmartFeaturesUi) {
         onDelete = smart.onDelete,
         onUnload = smart.onUnload,
     )
-    if (smart.model is SpeechModelStore.State.Ready) SpeedTestCard(smart)
-
 }
 
 /** The cut-out's page: which model, its card and test, then the model that corrects it with brushes. */
@@ -469,12 +426,12 @@ internal fun AboutModelsSection() {
             { shape ->
                 SettingsRow(
                     shape = shape,
-                    icon = Icons.Rounded.Tune,
-                    title = stringResource(R.string.speech_variant_smoothquant),
-                    summary = stringResource(R.string.smart_smoothquant_summary, SpeechModel.LICENCE),
+                    icon = Icons.Rounded.Verified,
+                    title = stringResource(R.string.smart_parakeet_files),
+                    summary = stringResource(R.string.smart_parakeet_files_summary, SpeechModel.PARAKEET_RELEASE_TAG, SpeechModel.LICENCE),
                     badge = MaterialShapes.Diamond,
-                    link = SpeechModel.SMOOTHQUANT_PAGE_URL,
-                    onClick = { openLink(context, SpeechModel.SMOOTHQUANT_PAGE_URL) },
+                    link = SpeechModel.FILES_URL,
+                    onClick = { openLink(context, SpeechModel.FILES_URL) },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                 )
             },
@@ -885,9 +842,6 @@ internal class ModelSpec(
     val downloadText: String,
     /** What to download: file name and link, one button each (one button, unnamed, when alone). */
     val downloads: List<Pair<String, String>>,
-    /** Something else to download instead (file name and link), and what it is. */
-    val otherDownload: Pair<String, String>? = null,
-    val otherDownloadText: String? = null,
     val importText: String,
     val installedBytes: Long,
     val notTheModel: String,
@@ -1064,30 +1018,6 @@ internal fun ModelCard(
                             )
                         }
                         com.cuscus.ffmpeggui.ui.expressive.LinkDestination(url, modifier = Modifier.padding(start = 8.dp, bottom = 4.dp))
-                    }
-                    val other = spec.otherDownload
-                    if (other != null) {
-                        if (spec.otherDownloadText != null) {
-                            Text(
-                                spec.otherDownloadText,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = scheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp),
-                            )
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                                openLink(context, other.second)
-                            },
-                            shapes = ButtonDefaults.shapes(),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(stringResource(R.string.smart_download_archive), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        com.cuscus.ffmpeggui.ui.expressive.LinkDestination(other.second, modifier = Modifier.padding(start = 8.dp))
                     }
                 }
             }
@@ -1378,138 +1308,6 @@ private fun Checksums(checks: List<SpeechModelStore.FileCheck>, archiveMatches: 
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-/**
- * The speed test: loads the model and listens to the recordings that came with
- * it, then says how fast this phone is (times real time, what a minute of video
- * takes) and how many words it got right.
- */
-@Composable
-private fun SpeedTestCard(smart: SmartFeaturesUi) {
-    val scheme = MaterialTheme.colorScheme
-    val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
-    val test = smart.test
-    val running = test as? SmartFeatures.TestState.Running
-    val result = (test as? SmartFeatures.TestState.Done)?.result
-    val failed = (test as? SmartFeatures.TestState.Failed)?.problem
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
-            .background(scheme.surfaceContainerHigh)
-            .padding(16.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            MorphingContainer(
-                from = MaterialShapes.Cookie9Sided,
-                to = MaterialShapes.SoftBurst,
-                morphed = result != null,
-                color = if (failed != null) scheme.errorContainer else scheme.secondaryContainer,
-                modifier = Modifier.size(52.dp),
-            ) {
-                if (running != null) {
-                    LoadingIndicator(color = scheme.onSecondaryContainer, modifier = Modifier.size(36.dp))
-                } else {
-                    Icon(Icons.Rounded.Speed, contentDescription = null, tint = if (failed != null) scheme.onErrorContainer else scheme.onSecondaryContainer, modifier = Modifier.size(26.dp))
-                }
-            }
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.smart_test_title), style = SettingsRowTitle, color = scheme.onSurface)
-                Text(
-                    text = when {
-                        running?.loading == true -> stringResource(R.string.smart_test_loading)
-                        running != null -> stringResource(R.string.smart_test_listening, SpeechModel.INT8.samples.size)
-                        failed == SmartFeatures.Problem.NO_MEMORY -> stringResource(R.string.smart_test_no_memory, freeMemory(context))
-                        failed == SmartFeatures.Problem.NO_MODEL -> stringResource(R.string.smart_test_no_samples)
-                        failed == SmartFeatures.Problem.NO_RECORDINGS -> stringResource(R.string.smart_test_no_recordings)
-                        failed != null -> stringResource(R.string.smart_test_failed)
-                        result != null -> stringResource(R.string.smart_test_done, result.threads)
-                        else -> stringResource(R.string.smart_test_hint)
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = scheme.onSurfaceVariant,
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                )
-            }
-        }
-        if (result != null) {
-            Spacer(modifier = Modifier.height(14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Figure(
-                    value = String.format(Locale.ROOT, "%.1f\u00D7", result.timesRealTime),
-                    label = stringResource(R.string.smart_figure_speed),
-                    modifier = Modifier.weight(1f),
-                )
-                Figure(
-                    value = String.format(Locale.ROOT, "%d %%", Math.round(result.accuracy * 100)),
-                    label = stringResource(R.string.smart_figure_accuracy),
-                    modifier = Modifier.weight(1f),
-                )
-                Figure(
-                    value = seconds(result.loadMs),
-                    label = stringResource(R.string.smart_figure_load),
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            val minute = if (result.timesRealTime > 0f) (60_000f / result.timesRealTime).toLong() else 0L
-            Text(
-                stringResource(R.string.smart_test_minute, seconds(minute)),
-                style = MaterialTheme.typography.bodyMedium,
-                color = scheme.onSurface,
-                modifier = Modifier.padding(top = 12.dp, start = 4.dp),
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 10.dp)) {
-                result.samples.forEach { sample ->
-                    Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(scheme.surfaceContainerHighest).padding(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                Locale.forLanguageTag(sample.language).getDisplayLanguage(Locale.getDefault()),
-                                style = MaterialTheme.typography.labelLargeEmphasized,
-                                color = scheme.onSurface,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Text(
-                                String.format(Locale.ROOT, "%d %% \u00B7 %s", Math.round(sample.accuracy * 100), seconds(sample.workMs)),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = scheme.onSurfaceVariant,
-                            )
-                        }
-                        Text("\u201C" + sample.heard + "\u201D", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-                    }
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(14.dp))
-        if (running != null) {
-            OutlinedButton(
-                onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.Reject)
-                    smart.onStopTest()
-                },
-                shapes = ButtonDefaults.shapes(),
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-            ) { Text(stringResource(R.string.smart_stop)) }
-        } else {
-            Button(
-                onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                    smart.onTest()
-                },
-                enabled = smart.idle,
-                shapes = ButtonDefaults.shapes(),
-                colors = ButtonDefaults.filledTonalButtonColors(),
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) {
-                Text(
-                    stringResource(if (result == null) R.string.smart_test_start else R.string.smart_test_again),
-                    style = MaterialTheme.typography.titleSmallEmphasized,
-                )
             }
         }
     }

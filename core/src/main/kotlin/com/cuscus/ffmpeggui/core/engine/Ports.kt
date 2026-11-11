@@ -212,6 +212,19 @@ fun interface DenoiseSampler {
     suspend fun sample(request: com.cuscus.ffmpeggui.core.preview.DenoiseSampleRequest): String?
 }
 
+/**
+ * Writes the sound's denoise comparison (see
+ * [com.cuscus.ffmpeggui.core.preview.AudioDenoiseSample]) with FFmpeg.
+ */
+fun interface AudioDenoiseSampler {
+    /**
+     * The comparison [request] asks for: the paths of two new WAV files, as it
+     * is and denoised, which the caller deletes; null when it cannot be made.
+     * Cancelling the calling coroutine stops FFmpeg.
+     */
+    suspend fun sample(request: com.cuscus.ffmpeggui.core.preview.AudioDenoiseSampleRequest): Pair<String, String>?
+}
+
 /** Reads small text sources such as subtitle files. */
 fun interface TextSourceReader {
     /** Content decoded as UTF-8, or null when unreadable or larger than [maxBytes]. */

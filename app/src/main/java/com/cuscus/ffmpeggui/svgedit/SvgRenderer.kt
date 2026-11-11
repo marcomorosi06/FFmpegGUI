@@ -261,11 +261,41 @@ class SvgRenderer {
             if (style.stroke.kind != PaintKind.NONE && style.strokeWidth > 0) {
                 text.style = Paint.Style.STROKE
                 text.strokeWidth = style.strokeWidth.toFloat()
-                if (paint(text, style.stroke, style.strokeOpacity, null, emptyMap(), style)) canvas.drawText(line, n.x.toFloat(), y, text)
+                // The letters' outline, their overlapping parts merged first: a font made of
+                // overlapping pieces (the phone's sans, a variable font) would otherwise show
+                // their edges inside the letters (issue #23).
+                if (paint(text, style.stroke, style.strokeOpacity, null, emptyMap(), style)) canvas.drawPath(mergedLine(line, n.x.toFloat(), y), text)
                 text.style = Paint.Style.FILL
             }
         }
         text.shader = null
+    }
+
+    /**
+     * The outline of [line] as [text] (its font, size and alignment set) draws
+     * it at [x], [y], the overlapping pieces of its letters merged into one
+     * edge each. Kept for the lines drawn lately: merging is not free, and a
+     * drawing is drawn again on every change.
+     */
+    private fun mergedLine(line: String, x: Float, y: Float): Path {
+        val key = MergedKey(line, x, y, text.textSize, text.typeface, text.textAlign)
+        merged[key]?.let { return it }
+        val raw = Path()
+        text.getTextPath(line, 0, line.length, x, y, raw)
+        val out = mergeOverlaps(raw)
+        if (merged.size >= MERGED_KEPT) merged.clear()
+        merged[key] = out
+        return out
+    }
+
+    private data class MergedKey(val line: String, val x: Float, val y: Float, val size: Float, val typeface: Typeface?, val align: Paint.Align)
+
+    private val merged = HashMap<MergedKey, Path>()
+
+    /** [path] with the parts that overlap one another merged, as it fills (Skia's path ops); itself if they cannot be. */
+    private fun mergeOverlaps(path: Path): Path {
+        val out = Path()
+        return if (out.op(path, Path(), Path.Op.UNION)) out else path
     }
 
     /** The letters of [n] as one outline, in its own units, placed as they are drawn. */
@@ -285,7 +315,8 @@ class SvgRenderer {
             p.getTextPath(line, 0, line.length, n.x.toFloat(), y, piece)
             out.addPath(piece)
         }
-        return out
+        // One edge per letter, not one per overlapping piece of it (issue #23).
+        return mergeOverlaps(out)
     }
 
     private fun setFont(p: Paint, style: ResolvedStyle) {
@@ -392,6 +423,9 @@ class SvgRenderer {
 
     private companion object {
         const val TAG = "SvgRenderer"
+
+        /** How many merged lines of text are kept (see mergedLine). */
+        const val MERGED_KEPT = 256
         /** Pictures inside a drawing are decoded no larger than this. */
         const val MAX_PICTURE_SIDE = 2048
         /** How far around the origin a piece drawn by AndroidSVG may reach. */

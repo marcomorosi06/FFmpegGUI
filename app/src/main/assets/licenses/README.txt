@@ -172,7 +172,8 @@ IPTC Digital Source Type, two identifiers (the AI marks of exported files)
 Not part of the APK
 -------------------------------------------------------------------------
 The AI models are not in the app: the user downloads them, under their
-own licences. The AI marks come first (imported before any other model):
+own licences. The AI marks come first (imported before the models of the
+dub and of the magic eraser, which need them; the others do not):
   AudioSeal, by Meta ....................... MIT        (ONNX by FFmpeg GUI, from
                                                        Meta's weights)
                                                        ai-markers/LICENSE-audioseal.txt
@@ -182,7 +183,12 @@ own licences. The AI marks come first (imported before any other model):
                                                        ICCV 2025)
                                                        ai-markers/LICENSE-trustmark.txt
                                                        ai-markers/NOTICE.txt
-  Parakeet TDT 0.6B v3, by NVIDIA ......... CC-BY-4.0
+  Parakeet TDT 0.6B v3, by NVIDIA ......... CC-BY-4.0  (int8 ONNX by sherpa-onnx,
+                                                       served unchanged by
+                                                       FFmpeg GUI's release
+                                                       parakeet-onnx-1, with
+                                                       its NOTICE)
+                                                       parakeet/CC-BY-4.0.txt
   IS-Net and U2-NetP, by Xuebin Qin et al. . Apache-2.0 (ONNX by rembg, MIT)
   BiRefNet-lite, by Zheng Peng et al. ...... MIT        (ONNX by FFmpeg GUI, from
                                                        the author's weights)

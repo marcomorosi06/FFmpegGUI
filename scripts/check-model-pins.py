@@ -33,10 +33,21 @@ Offline (always):
      .github/workflows/ai-markers.yml), with their licences and NOTICE
      bundled (assets/licenses/ai-markers/).
 
+  7. The speech model (speech/SpeechModel.kt) pins what
+     scripts/parakeet-onnx.lock does (sherpa-onnx's files, served unchanged),
+     from this repository's release of its tag, with the CC BY 4.0 legal code
+     bundled as the lock pins it (assets/licenses/parakeet/).
+
 With --release-dir NAME=DIR (NAME edgetam, birefnet, bandit, spleeter or markers; the folder an export
 script wrote, or a release downloaded): the files there are the pinned ones,
 and LICENSE, NOTICE, PROVENANCE and SHA256SUMS are there and agree; with the
 onnx package installed, each file carries the licence and notice inside it.
+With parakeet=DIR: the three files are the pinned ones, and LICENSE.txt,
+NOTICE.txt and SHA256SUMS.txt are the ones --parakeet-side-files writes.
+
+With --parakeet-side-files DIR: writes into DIR the side files of the speech
+model's release (LICENSE.txt, NOTICE.txt, SHA256SUMS.txt), to upload with
+the three files (a hand-made release: nothing is built).
 
 With --online: the release assets answer, and the upstream LICENSE today is
 still the one pinned (a change is reported, not fixed: read it first).
@@ -365,6 +376,125 @@ def check_markers_online(lock):
             problem("could not read %s: %s" % (url, e))
 
 
+# -- 7. The speech model (sherpa-onnx's files, served unchanged) ---------------------------
+
+PARAKEET_ROLES = ("encoder", "decoder", "joiner")
+
+
+def parakeet_files(lock):
+    return [(lock[r + "_file"], lock[r + "_sha256"], int(lock[r + "_bytes"])) for r in PARAKEET_ROLES]
+
+
+def parakeet_notice(lock):
+    """The NOTICE.txt of the speech model's release: where the files come from, and that nothing was changed."""
+    lines = [
+        "Parakeet TDT 0.6B v3, int8 ONNX files - NOTICE",
+        "",
+        "These files are served by FFmpeg GUI (https://github.com/%s)" % REPOSITORY,
+        "in its release %s, so that the files its app pins by SHA-256 are kept" % lock["release_tag"],
+        "where they cannot change. They are not FFmpeg GUI's work.",
+        "",
+        "Model:       Parakeet TDT 0.6B v3, by %s" % lock["model_by"],
+        "             %s" % lock["model"],
+        "Licence:     Creative Commons Attribution 4.0 International (%s)," % lock["licence"],
+        "             %s" % lock["licence_url"],
+        "             full text in LICENSE.txt",
+        "Conversion:  exported to ONNX and quantised to int8 by the sherpa-onnx",
+        "             project (%s)," % lock["converter"],
+        "             published at %s" % lock["published_at"],
+        "",
+        "Changes:     none. Each file is byte for byte the one sherpa-onnx",
+        "             published, as the app has pinned it since %s" % lock["pinned_since"],
+        "             (commit %s of FFmpeg GUI):" % lock["pinned_in_commit"],
+        "",
+    ]
+    for name, digest, size in parakeet_files(lock):
+        lines.append("  %-19s %s  %d bytes" % (name, digest, size))
+    lines += [
+        "",
+        "The model's token list (tokens.txt) ships inside the app, with this same",
+        "attribution (About, Licences).",
+        "",
+        "Neither NVIDIA nor the sherpa-onnx project endorses FFmpeg GUI or this",
+        "release. The licensor offers the material as-is and makes no warranties:",
+        "see the licence for the full disclaimer. This notice is not legal advice.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def parakeet_sums(lock):
+    return "".join("%s  %s\n" % (digest, name) for name, digest, _ in parakeet_files(lock))
+
+
+def check_parakeet(lock):
+    source = read(os.path.join(APP, "speech", "SpeechModel.kt"))
+    tag = const(source, "PARAKEET_RELEASE_TAG")
+    if tag != lock["release_tag"]:
+        problem("SpeechModel.PARAKEET_RELEASE_TAG is %s, scripts/parakeet-onnx.lock says %s" % (tag, lock["release_tag"]))
+    else:
+        ok("Parakeet release tag %s" % tag)
+    if const(source, "DOWNLOAD_URL") != "https://github.com/%s/releases/download/$PARAKEET_RELEASE_TAG" % REPOSITORY:
+        problem("SpeechModel's DOWNLOAD_URL is not this repository's release")
+    pinned = {m.group(1): (m.group(1), m.group(2), int(m.group(3).replace("_", "")))
+              for m in re.finditer(r'ModelFile\("([^"]+\.onnx)", "([0-9a-f]{64})", ([0-9_]+)L', source)}
+    for want in parakeet_files(lock):
+        got = pinned.pop(want[0], None)
+        if got != want:
+            problem("SpeechModel pins %s as %s, the lock says %s" % (want[0], got, want))
+        else:
+            ok("Parakeet %s %s" % (want[0], want[1][:12]))
+    if pinned:
+        problem("SpeechModel pins ONNX files the lock does not: %s" % ", ".join(sorted(pinned)))
+    path = os.path.join(ROOT, lock["licence_file"])
+    if not os.path.isfile(path) or sha256(path) != lock["licence_sha256"]:
+        problem("%s is missing or not the CC BY 4.0 legal code the lock pins" % lock["licence_file"])
+    else:
+        ok("Parakeet's CC BY 4.0 legal code bundled, as pinned")
+    if any(ord(c) > 127 for c in parakeet_notice(lock)):
+        problem("Parakeet's NOTICE is not plain ASCII")
+
+
+def write_parakeet_side_files(folder, lock):
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(ROOT, lock["licence_file"]), "rb") as f:
+        licence = f.read()
+    with open(os.path.join(folder, "LICENSE.txt"), "wb") as f:
+        f.write(licence)
+    for name, text in (("NOTICE.txt", parakeet_notice(lock)), ("SHA256SUMS.txt", parakeet_sums(lock))):
+        with open(os.path.join(folder, name), "w", encoding="ascii", newline="\n") as f:
+            f.write(text)
+    ok("wrote LICENSE.txt, NOTICE.txt and SHA256SUMS.txt into %s" % folder)
+
+
+def check_parakeet_release(folder, lock):
+    for name, digest, size in parakeet_files(lock):
+        path = os.path.join(folder, name)
+        if not os.path.isfile(path):
+            problem("%s: %s is missing" % (folder, name))
+        elif os.path.getsize(path) != size or sha256(path) != digest:
+            problem("%s: %s is not the file pinned (%d bytes, SHA-256 %s)" % (folder, name, size, digest))
+        else:
+            ok("Parakeet: %s as pinned" % name)
+    path = os.path.join(folder, "LICENSE.txt")
+    if not os.path.isfile(path) or sha256(path) != lock["licence_sha256"]:
+        problem("%s: LICENSE.txt is missing or not the CC BY 4.0 legal code pinned" % folder)
+    for name, text in (("NOTICE.txt", parakeet_notice(lock)), ("SHA256SUMS.txt", parakeet_sums(lock))):
+        path = os.path.join(folder, name)
+        if not os.path.isfile(path) or read(path) != text:
+            problem("%s: %s is missing or not the one --parakeet-side-files writes" % (folder, name))
+
+
+def check_parakeet_online(lock):
+    for asset in [name for name, _, _ in parakeet_files(lock)] + ["LICENSE.txt", "NOTICE.txt", "SHA256SUMS.txt"]:
+        url = "https://github.com/%s/releases/download/%s/%s" % (REPOSITORY, lock["release_tag"], asset)
+        try:
+            status, _ = fetch(url, head=True)
+            ok("%s answers (%d)" % (url, status))
+        except Exception as e:  # noqa: BLE001
+            problem("%s does not answer: %s (upload it to the release %s)" % (url, e, lock["release_tag"]))
+
+
 # -- 2. The licences and notices bundled ------------------------------------------------
 
 def edgetam_notice(lock):
@@ -563,6 +693,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--release-dir", action="append", default=[], metavar="NAME=DIR")
     parser.add_argument("--online", action="store_true")
+    parser.add_argument("--parakeet-side-files", metavar="DIR")
     args = parser.parse_args()
 
     locks = {
@@ -575,10 +706,14 @@ def main():
                "bandit": stems_notice("bandit", locks["bandit"]), "spleeter": stems_notice("spleeter", locks["spleeter"])}
     markers = read_lock(os.path.join(ROOT, "scripts", "ai-markers.lock"))
     markers_text = markers_notice(markers)
+    parakeet = read_lock(os.path.join(ROOT, "scripts", "parakeet-onnx.lock"))
+    if args.parakeet_side_files:
+        write_parakeet_side_files(args.parakeet_side_files, parakeet)
 
     check_edgetam(locks["edgetam"])
     check_birefnet(locks["birefnet"])
     check_markers(markers)
+    check_parakeet(parakeet)
     # Only the models whose builds are checked here, when some are: else every one.
     checked = [item.partition("=")[0] for item in args.release_dir]
     for name, _, _ in STEMS:
@@ -593,13 +728,17 @@ def main():
         if name == "markers" and folder:
             check_markers_release(folder, markers, markers_text)
             continue
+        if name == "parakeet" and folder:
+            check_parakeet_release(folder, parakeet)
+            continue
         if name not in locks or not folder:
-            problem("--release-dir takes edgetam=DIR, birefnet=DIR, bandit=DIR, spleeter=DIR or markers=DIR, not %s" % item)
+            problem("--release-dir takes edgetam=DIR, birefnet=DIR, bandit=DIR, spleeter=DIR, markers=DIR or parakeet=DIR, not %s" % item)
             continue
         check_release(name, folder, locks[name], notices[name])
     if args.online:
         check_online(locks)
         check_markers_online(markers)
+        check_parakeet_online(parakeet)
 
     for note in notes:
         print("note  " + note)

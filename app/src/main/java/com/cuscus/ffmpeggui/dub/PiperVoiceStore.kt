@@ -111,7 +111,7 @@ class PiperVoiceStore(context: Context, private val kokoro: DubModelStore) {
     @Synchronized
     fun import(uris: List<Uri>) {
         if (job?.isActive == true || uris.isEmpty()) return
-        // The AI marks come first (MarkingGate): without them nothing is read.
+        // A voice comes after the AI marks (MarkingGate): without them nothing is read.
         if (!com.cuscus.ffmpeggui.marking.MarkingGate.allowsImport()) return
         job = scope.launch {
             _importing.value = Importing.Working(null, null)

@@ -130,6 +130,10 @@ data class ConversionSettings(
 
     // Made by the compressor (set only for its export, never saved with the project)
     val compression: Compression? = null,
+
+    // The editor left open on top of this one when the project was saved (see OpenEditor):
+    // only in what is saved, never in the editor's own settings
+    val openAbove: OpenEditor? = null,
 ) {
     /**
      * The clips that actually play: the timeline with the whole-sequence trim

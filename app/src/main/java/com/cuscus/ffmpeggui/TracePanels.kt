@@ -2,6 +2,15 @@
 
 package com.cuscus.ffmpeggui
 
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Draw
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -107,7 +116,15 @@ private fun brushOf(layer: VectorLayer): Brush {
 
 /** How the picture is traced (see TraceControls); [traced] the last result, [working] while a newer one is made. */
 @Composable
-internal fun ImageTracePanel(trace: TraceSettings, traced: VectorImage?, working: Boolean, onChange: ImageChange) {
+internal fun ImageTracePanel(
+    trace: TraceSettings,
+    traced: VectorImage?,
+    working: Boolean,
+    onChange: ImageChange,
+    /** Opens the shapes traced in the SVG editor, to go on drawing them; null: no such way. */
+    onEditInSvg: ((VectorImage) -> Unit)? = null,
+) {
+    val haptic = LocalHapticFeedback.current
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         TraceControls(
             settings = trace,
@@ -115,6 +132,23 @@ internal fun ImageTracePanel(trace: TraceSettings, traced: VectorImage?, working
             working = working,
             result = traced?.let { TraceResult(it.palette, it.outlines, it.gradients) },
         )
+        if (onEditInSvg != null) {
+            // The shapes as they are traced now, each colour a layer, in the editor made for them.
+            FilledTonalButton(
+                onClick = {
+                    val image = traced ?: return@FilledTonalButton
+                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                    onEditInSvg(image)
+                },
+                enabled = traced != null && !working,
+                shapes = ButtonDefaults.shapes(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Rounded.Draw, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.trace_edit_in_svg), maxLines = 1)
+            }
+        }
         PanelHint(stringResource(R.string.trace_hint))
     }
 }

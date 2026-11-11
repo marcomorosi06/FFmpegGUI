@@ -6,6 +6,7 @@ import com.cuscus.ffmpeggui.core.command.FfmpegCommand
 import com.cuscus.ffmpeggui.core.engine.ExecutionResult
 import com.cuscus.ffmpeggui.core.engine.FfmpegExecutor
 import com.cuscus.ffmpeggui.core.engine.ProgressParser
+import com.cuscus.ffmpeggui.core.subtitles.ListenedSound
 import java.io.File
 
 /**
@@ -28,19 +29,20 @@ class FfmpegAudioExtractor(context: Context, private val executor: FfmpegExecuto
         val input = ffmpegReadablePath(appContext, Uri.parse(sourceUri)) ?: return ExecutionResult.Failed(UNREADABLE)
         target.parentFile?.mkdirs()
         target.delete()
-        val command = FfmpegCommand(
-            listOf(
-                "-y", "-i", input,
-                "-map", "0:a:0", "-vn", "-sn", "-dn",
-                // Silence in front when the sound starts after the picture: sample 0 is the file's time 0,
-                // the clock the editor places the words on.
-                "-af", "aresample=$SAMPLE_RATE:first_pts=0",
-                "-ac", "1",
-                "-c:a", "pcm_f32le", "-f", "f32le",
-            ) + (if (limitMs > 0L) listOf("-t", String.format(java.util.Locale.ROOT, "%.3f", limitMs / 1000.0)) else emptyList()) +
-                target.absolutePath,
-        )
+        val command = ListenedSound.command(listOf(input), target.absolutePath, limitMs)
         val expected = (if (limitMs > 0L && (durationMs <= 0L || durationMs > limitMs)) limitMs else durationMs).takeIf { it > 0 }
+        return executor.execute(command) { line -> progress.fraction(line, expected)?.let(onProgress) }
+    }
+
+    /**
+     * As [extract], from the voice stems of a file ([stems], made by the voice
+     * separation, which start together): mixed into one, at their own levels.
+     */
+    suspend fun extractVoice(stems: List<File>, target: File, durationMs: Long, onProgress: (Float) -> Unit = {}): ExecutionResult {
+        target.parentFile?.mkdirs()
+        target.delete()
+        val command = ListenedSound.command(stems.map { it.absolutePath }, target.absolutePath)
+        val expected = durationMs.takeIf { it > 0 }
         return executor.execute(command) { line -> progress.fraction(line, expected)?.let(onProgress) }
     }
 
@@ -92,7 +94,7 @@ class FfmpegAudioExtractor(context: Context, private val executor: FfmpegExecuto
     }
 
     companion object {
-        const val SAMPLE_RATE = 16_000
+        const val SAMPLE_RATE = ListenedSound.SAMPLE_RATE
 
         /** Bytes of one sample in the written file. */
         const val BYTES_PER_SAMPLE = 4

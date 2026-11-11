@@ -55,15 +55,12 @@ object RefineModel {
 
     /** The model's files, kept the way the speech model's are. */
     val FILES: SpeechModel = SpeechModel(
-        variant = null,
         name = NAME,
-        archive = null,
         downloads = listOf(ENCODER, DECODER).map { SpeechModel.Download(it.name, "$DOWNLOAD_URL/${it.name}") },
         folder = "refine/edgetam",
         prefs = "refine_model_edgetam",
         tempFolder = "importing-refine",
         files = listOf(ENCODER, DECODER),
-        samples = emptyList(),
         installedBytes = listOf(ENCODER, DECODER).sumOf { it.bytes ?: 0L },
     )
 }

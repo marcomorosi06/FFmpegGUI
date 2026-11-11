@@ -16,6 +16,16 @@ import com.cuscus.ffmpeggui.AudioClip
 import com.cuscus.ffmpeggui.ConversionSettings
 import com.cuscus.ffmpeggui.ConversionState
 import com.cuscus.ffmpeggui.EditorSource
+import com.cuscus.ffmpeggui.NestedEdit
+import com.cuscus.ffmpeggui.OpenEditor
+import com.cuscus.ffmpeggui.isGif
+import com.cuscus.ffmpeggui.core.stack.GraphNode
+import com.cuscus.ffmpeggui.core.stack.GraphNodeKind
+import com.cuscus.ffmpeggui.core.stack.NestedKind
+import com.cuscus.ffmpeggui.core.stack.NestedPart
+import com.cuscus.ffmpeggui.core.stack.StackGraph
+import com.cuscus.ffmpeggui.core.stack.StackHop
+import com.cuscus.ffmpeggui.core.stack.StackStep
 import com.cuscus.ffmpeggui.core.voice.VoiceStem
 import com.cuscus.ffmpeggui.core.dub.DubTiming
 import com.cuscus.ffmpeggui.core.preview.onTimeline as cuesOnTimeline
@@ -189,6 +199,8 @@ class ConversionViewModel(
     private val subtitleParser: SubtitleParser = SubtitleParser(),
     /** Writes the sound of clips played backwards reversed, for the preview; null leaves them silent. */
     private val soundReverser: com.cuscus.ffmpeggui.core.engine.SoundReverser? = null,
+    /** Renders what an editor stacked on another applies (see core.stack); null: no stack. */
+    private val nestedRenderer: com.cuscus.ffmpeggui.core.stack.NestedRenderer? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
@@ -481,6 +493,8 @@ class ConversionViewModel(
      * from the saved state when this window comes back ([reclaimProject]).
      */
     private val holder = ProjectStore.Holder {
+        // Editors stacked on it close first: the project below them is the one let go.
+        abandonStack()
         val id = projectId ?: return@Holder
         closeProject(keep = null)
         handedOver = id
@@ -504,6 +518,8 @@ class ConversionViewModel(
 
     /** Opens the file at [uri] as a new project; [name] shown (and naming the exports) instead of its own. */
     fun setInputUri(uri: Uri, name: String? = null) {
+        // Editors stacked on the project close first, their edits left (it is the project that goes).
+        abandonStack()
         // The previous project is gone: an export of it still running is stopped (its
         // result would have nowhere to go), then the recordings it was made of are deleted.
         conversion?.cancel()
@@ -685,7 +701,10 @@ class ConversionViewModel(
     }
 
     private fun restore(project: SavedProject) {
-        val settings = project.settings
+        abandonStack()
+        // The editors left open on top of it open again once it is in (see OpenEditor).
+        val above = project.settings.openAbove
+        val settings = project.settings.copy(openAbove = null)
         val main = settings.source(EditorSource.MAIN_ID) ?: settings.sources.firstOrNull()
         conversion?.cancel()
         conversion = null
@@ -730,6 +749,7 @@ class ConversionViewModel(
             }
         }
         updateCommandPreview()
+        reopenStack(above)
     }
 
     /** Goes back one editing step. */
@@ -810,7 +830,7 @@ class ConversionViewModel(
         val setting = when {
             before.rotation != after.rotation || before.flipHorizontal != after.flipHorizontal ||
                 before.flipVertical != after.flipVertical || before.reversed != after.reversed ||
-                before.muted != after.muted || before.color.vignette != after.color.vignette ||
+                before.muted != after.muted ||
                 before.keepPitch != after.keepPitch -> return null
             // A speed curve put or taken away is a step of its own; moving its nodes groups.
             (before.speedCurve == null) != (after.speedCurve == null) -> return null
@@ -828,6 +848,11 @@ class ConversionViewModel(
             before.motion != after.motion -> "motion"
             // The denoise is a slider of its own: it groups apart from the colours.
             before.color.denoise != after.color.denoise -> "videoDenoise"
+            // So are the Details tool's finishing touches, each of its own.
+            before.color.sharpness != after.color.sharpness -> "sharpness"
+            before.color.gaussianBlur != after.color.gaussianBlur -> "blur"
+            before.color.vignette != after.color.vignette -> "vignette"
+            before.color.filmGrain != after.color.filmGrain -> "grain"
             before.color != after.color -> "color"
             before.speed != after.speed -> "speed"
             before.fadeInSeconds != after.fadeInSeconds -> "fadeIn"
@@ -1013,7 +1038,7 @@ class ConversionViewModel(
                         if (clip.id != id) return@map clip
                         val span = clip.span.copy(fileDurationMs = info.durationMs)
                             .withFileRange(0L, clip.span.rangeMs.coerceAtMost(info.durationMs))
-                        clip.copy(uri = uri, name = name, span = span, loudnessLufs = knownLoudness[uri], aiVoice = null)
+                        clip.copy(uri = uri, name = name, span = span, loudnessLufs = knownLoudness[uri], aiVoice = null, nested = null)
                     },
                 )
             }
@@ -1380,7 +1405,8 @@ class ConversionViewModel(
                         val span = overlay.span
                         // A subject cut out of the old picture does not fit the new one.
                         val key = overlay.key?.takeIf { it.mode != KeyMode.SUBJECT }
-                        val renamed = overlay.copy(uri = uri, fileName = name, key = key, shape = null)
+                        // Another file: not what an editor of the stack made any more.
+                        val renamed = overlay.copy(uri = uri, fileName = name, key = key, shape = null, nested = null)
                         if (info.isVideo && !info.isStill && info.durationMs > 0L) {
                             renamed.copy(aspect = info.frameAspect(), hasAudio = info.hasAudio)
                                 .withVideo(SoundSpan.wholeFile(span.startMs, info.durationMs).withFileRange(0L, span.lengthMs))
@@ -1859,7 +1885,8 @@ class ConversionViewModel(
     fun replacePicture(sourceId: String, uri: Uri) {
         mutate { settings ->
             // The first file is kept: compare still shows the picture as it was opened.
-            settings.copy(sources = settings.sources.map { if (it.id == sourceId) it.copy(uri = uri, originalUri = it.originalUri ?: it.uri) else it })
+            // Changed by hand here: opened in its editor again, it starts from this picture.
+            settings.copy(sources = settings.sources.map { if (it.id == sourceId) it.copy(uri = uri, originalUri = it.originalUri ?: it.uri, nested = null) else it })
         }
         // The new picture is looked at anew: one cut through (a see-through hole) has transparency
         // the first did not, which decides whether a PNG keeps it.
@@ -2064,11 +2091,6 @@ class ConversionViewModel(
     /** A stem track's name on the timeline: the stem, then its file. */
     private fun stemTrackName(stem: String, fileName: String): String =
         if (fileName.isBlank()) stem else "$stem (${fileName.substringBeforeLast('.')})"
-
-    /** Puts away the note of the tracks just placed. */
-    fun dismissStemTracksNote() {
-        if (_voice.value is VoiceStatus.Placed) _voice.value = VoiceStatus.Idle
-    }
 
     /** Stops setting voices apart; the files already done keep theirs. */
     fun stopVoiceSeparation() {
@@ -2667,25 +2689,14 @@ class ConversionViewModel(
 
     // Supported by the backend, not yet exposed by the editor UI
 
+    /** Steadies the whole video in the export (vid.stab, two passes), or no longer. */
     fun setStabilize(v: Boolean) = mutate { it.copy(stabilize = v) }
+
+    /** How shaky the footage is (vidstabdetect's shakiness, 1..10); a slider's drag is one step. */
     fun setStabilizeShakiness(v: Int) = mutate(stepKey = "shakiness") { it.copy(stabilizeShakiness = v.coerceIn(1, 10)) }
-    fun setStabilizeSmoothing(v: Int) = mutate(stepKey = "smoothing") { it.copy(stabilizeSmoothing = v.coerceIn(1, 100)) }
 
-    fun setDenoiseVideo(clipId: String?, v: Float) =
-        updateEffects(clipId) { it.copy(color = it.color.copy(denoise = v.coerceIn(0f, 10f))) }
-    fun setDenoiseAudio(clipId: String?, v: Float) = updateEffects(clipId) { it.copy(audioDenoise = v.coerceIn(0f, 1f)) }
-
-    fun setSharpness(clipId: String?, v: Float) =
-        updateEffects(clipId) { it.copy(color = it.color.copy(sharpness = v.coerceIn(-1f, 1f))) }
-    fun setGaussianBlur(clipId: String?, v: Float) =
-        updateEffects(clipId) { it.copy(color = it.color.copy(gaussianBlur = v.coerceIn(0f, 20f))) }
-    fun setVignette(clipId: String?, v: Boolean) = updateEffects(clipId) { it.copy(color = it.color.copy(vignette = v)) }
-    fun setFilmGrain(clipId: String?, v: Float) =
-        updateEffects(clipId) { it.copy(color = it.color.copy(filmGrain = v.coerceIn(0f, 60f))) }
-
-    fun setSplitMode(v: SplitMode) = mutate { it.copy(splitMode = v) }
-    fun setSplitValue(v: Int) = mutate(stepKey = "splitValue") { it.copy(splitValue = v.coerceAtLeast(1)) }
-
+    /** Over how many frames the camera's move is smoothed (0..100; 0 holds it still, as on a tripod). */
+    fun setStabilizeSmoothing(v: Int) = mutate(stepKey = "smoothing") { it.copy(stabilizeSmoothing = v.coerceIn(0, 100)) }
 
     // ---------------------------------------------------------------------
     // Conversion lifecycle
@@ -2863,20 +2874,33 @@ class ConversionViewModel(
      * export then stops, saying why (nothing unmarked goes out).
      */
     private suspend fun withAiMarks(settings: ConversionSettings, logs: LogBuffer): ConversionSettings? {
+        val (marked, failure) = aiMarked(settings) { publishLog(logs, messages.aiMarksAdded(), progress = null) }
+        if (marked != null) return marked
+        _conversionState.value = ConversionState.Error(failure.orEmpty(), logs.snapshot())
+        exportNotifier.finished(ExportResult.Failed)
+        return null
+    }
+
+    /**
+     * [settings] with the invisible AI marks on what models made in it (see
+     * withAiMarks), [onAdded] told when some were added now; or, when they
+     * cannot be, null and why, in words.
+     */
+    private suspend fun aiMarked(settings: ConversionSettings, onAdded: () -> Unit): Pair<ConversionSettings?, String?> {
         val voices = settings.audioClips.filter { !it.muted && !it.aiVoice.isNullOrBlank() }.map { it.uri }.distinct()
         val pictures = (settings.sources.map { it.uri } + settings.imageOverlays.mapNotNull { it.uri }).distinct().filter { AiEditLookup.of(it) }
-        if (voices.isEmpty() && pictures.isEmpty()) return settings
+        if (voices.isEmpty() && pictures.isEmpty()) return settings to null
         val failure = try {
             val guard = smart?.markGuard ?: throw com.cuscus.ffmpeggui.marking.MarkEngine.Missing()
             val swap = HashMap<Uri, Uri>()
             for (uri in voices) swap[uri] = guard.speech(uri)
             for (uri in pictures) swap[uri] = guard.picture(uri)
-            if (swap.any { (from, to) -> from != to }) publishLog(logs, messages.aiMarksAdded(), progress = null)
+            if (swap.any { (from, to) -> from != to }) onAdded()
             return settings.copy(
                 audioClips = settings.audioClips.map { clip -> swap[clip.uri]?.let { clip.copy(uri = it) } ?: clip },
                 sources = settings.sources.map { source -> swap[source.uri]?.let { source.copy(uri = it, originalUri = source.originalUri ?: source.uri) } ?: source },
                 imageOverlays = settings.imageOverlays.map { overlay -> overlay.uri?.let(swap::get)?.let { overlay.copy(uri = it) } ?: overlay },
-            )
+            ) to null
         } catch (e: CancellationException) {
             throw e
         } catch (e: com.cuscus.ffmpeggui.marking.MarkEngine.Missing) {
@@ -2885,9 +2909,7 @@ class ConversionViewModel(
             android.util.Log.w("ConversionViewModel", "Could not add the AI marks", e)
             messages.aiMarksFailed()
         }
-        _conversionState.value = ConversionState.Error(failure, logs.snapshot())
-        exportNotifier.finished(ExportResult.Failed)
-        return null
+        return null to failure
     }
 
     /** One export of [initial] as [format], reporting to the processing screen and to [exportNotifier]. */
@@ -2983,9 +3005,748 @@ class ConversionViewModel(
         )
     }
 
+    // ---------------------------------------------------------------------
+    // Editors in a stack (see core.stack and docs/ARCHITECTURE.md)
+    // ---------------------------------------------------------------------
+
+    /**
+     * An editor of the stack put aside while one opened on top of it: all it
+     * edits and knows, as it was, and [link], what was opened from it and how.
+     */
+    private class EditorFrame(
+        val inputUri: Uri?,
+        val inputFileName: String,
+        val mediaInfo: MediaInfo?,
+        val settings: ConversionSettings,
+        val format: OutputFormat?,
+        val undo: List<ConversionSettings>,
+        val redo: List<ConversionSettings>,
+        val knownSourceInfo: Map<String, MediaInfo?>,
+        val knownLoudness: Map<Uri, Double?>,
+        val sourceLoudness: Double?,
+        val subtitleCues: List<SubtitleCue>,
+        val subtitleFileStyled: Boolean,
+        val projectId: String?,
+        val projectTouched: Boolean,
+        val step: StackStep,
+        val link: NestedLink,
+    )
+
+    /**
+     * What an editor of the stack was opened on: [kind] of part [partId] (a
+     * clip cut from source [sourceId], a picture laid over, a sound), which
+     * began at [offsetMs] of its file. With [swap], what the editor makes is
+     * the part's sound again, laid back under its own picture. [resumed]: it
+     * opened as it was left when the project was saved, its edits there but
+     * not its history.
+     */
+    private class NestedLink(
+        val kind: NestedKind,
+        val partId: String,
+        val sourceId: String,
+        val offsetMs: Long,
+        val swap: Boolean,
+        val resumed: Boolean = false,
+    )
+
+    /**
+     * A part of a project as an editor of the stack opens it: its file [uri]
+     * (named [name], [info] when known), the range of it the part plays
+     * ([fromMs] to [toMs], null: to its end), how it was made if it was
+     * ([nested]), whether it is a picture ([still]) and whether its file has a
+     * picture to lay a sound back under ([video]); [sourceId] for a clip.
+     */
+    private class PartView(
+        val uri: Uri,
+        val name: String,
+        val info: MediaInfo?,
+        val fromMs: Long,
+        val toMs: Long?,
+        val nested: NestedEdit?,
+        val still: Boolean,
+        val video: Boolean,
+        val sourceId: String = "",
+    )
+
+    /** Part [partId] of [settings] as [kind] opens it; null when it is not there. */
+    private fun partOf(settings: ConversionSettings, partId: String, kind: NestedKind): PartView? = when (kind.part) {
+        NestedPart.CLIP -> {
+            val clip = settings.timeline.clips.firstOrNull { it.id == partId }
+            val source = clip?.let { settings.source(it.sourceId) }
+            if (clip == null || source == null) {
+                null
+            } else {
+                PartView(
+                    uri = source.uri,
+                    name = source.fileName,
+                    info = source.info,
+                    fromMs = clip.startMs,
+                    toMs = clip.endMs,
+                    nested = source.nested,
+                    still = source.isStill,
+                    video = source.info?.isVideo != false && !source.isStill,
+                    sourceId = source.id,
+                )
+            }
+        }
+        NestedPart.OVERLAY -> settings.imageOverlays.firstOrNull { it.id == partId && it.opensNested }?.let { overlay ->
+            val uri = overlay.uri ?: return@let null
+            val media = overlay.video
+            PartView(
+                uri = uri,
+                name = overlay.fileName,
+                info = null,
+                fromMs = media?.trimStartMs ?: 0L,
+                toMs = media?.trimEndMs,
+                nested = overlay.nested,
+                still = media == null,
+                video = media != null,
+            )
+        }
+        NestedPart.SOUND -> settings.audioClips.firstOrNull { it.id == partId }?.let { sound ->
+            PartView(
+                uri = sound.uri,
+                name = sound.name,
+                info = null,
+                fromMs = sound.span.trimStartMs,
+                toMs = sound.span.trimEndMs,
+                nested = sound.nested,
+                still = false,
+                video = false,
+            )
+        }
+    }
+
+    /** A picture laid over that an editor of its own can open: not a shape, an effect of the app's, nor a photo editor's own picture. */
+    private val ImageOverlay.opensNested: Boolean get() = uri != null && shape == null && effect == null && !isPhoto
+
+    /** The editors under the one open now, the bottom one (the project) first. */
+    private val frames = ArrayList<EditorFrame>()
+
+    /** The editor open now, as the map shows it; null while only the project's is open. */
+    private var currentStep: StackStep? = null
+
+    /**
+     * The editors that were open on top of the project when they had to be
+     * left without being applied (another project opening, another window
+     * taking this one, the app going): saved with the project, they open
+     * again with it (see OpenEditor).
+     */
+    private var keptStack: OpenEditor? = null
+
+    /** The last save of the project held editors open on top of it: once they are left, it is saved without them. */
+    private var stackSaved = false
+
+    private val _editorStack = MutableStateFlow<List<StackStep>>(emptyList())
+
+    /**
+     * Every editor of the stack, the project's first and the one open now
+     * last; empty while only the project's own is open.
+     */
+    val editorStack: StateFlow<List<StackStep>> = _editorStack.asStateFlow()
+
+    private val _nestedApply = MutableStateFlow<NestedApply>(NestedApply.Idle)
+
+    /** Where applying the editor open now to the one under it is. */
+    val nestedApply: StateFlow<NestedApply> = _nestedApply.asStateFlow()
+
+    private var applyJob: Job? = null
+
+    /**
+     * Whether [kind] can open for part [partId] now: the part is there, of
+     * the kind [kind] opens (a picture for the photo editor, a video for the
+     * video editor, something heard for the audio editor), with its end
+     * known; the stack has room, and nothing is being exported or applied.
+     */
+    fun canOpenNested(partId: String, kind: NestedKind): Boolean {
+        if (nestedRenderer == null || frames.size >= MAX_STACK_DEPTH) return false
+        if (conversion?.isActive == true || applyJob?.isActive == true) return false
+        val settings = _settings.value
+        val part = partOf(settings, partId, kind) ?: return false
+        return when (kind) {
+            NestedKind.CLIP_PHOTO -> part.still
+            NestedKind.CLIP_SOUND -> !part.still && part.toMs != null && part.info?.hasAudio != false
+            NestedKind.CLIP_VIDEO -> !part.still && part.toMs != null && part.info?.isVideo != false && _selectedFormat.value?.hasVideo != false
+            NestedKind.OVERLAY_PICTURE -> part.still
+            NestedKind.OVERLAY_VIDEO, NestedKind.OVERLAY_GIF, NestedKind.OVERLAY_SOUND -> {
+                val overlay = settings.imageOverlays.first { it.id == partId }
+                val media = overlay.video
+                val gif = overlay.isGif
+                media != null && media.fileDurationMs > 0L && when (kind) {
+                    NestedKind.OVERLAY_GIF -> gif
+                    NestedKind.OVERLAY_SOUND -> !gif && overlay.hasAudio
+                    else -> !gif
+                }
+            }
+            NestedKind.SOUND -> settings.audioClips.first { it.id == partId }.span.fileDurationMs > 0L
+        }
+    }
+
+    /**
+     * Opens [kind] of part [partId] in the editor made for it, on top of the
+     * one open now (see core.stack): the part's range of its file, or, edited
+     * that way before, its nested project as it was left; [resume], an editor
+     * left open when the project was saved, opens as it was then. The editor
+     * below is saved and put aside, its background work stopped. False when
+     * it cannot open (see [canOpenNested]).
+     */
+    fun openNested(partId: String, kind: NestedKind): Boolean = openNested(partId, kind, resume = null)
+
+    private fun openNested(partId: String, kind: NestedKind, resume: OpenEditor?): Boolean {
+        if (!canOpenNested(partId, kind)) return false
+        val settings = _settings.value
+        val part = partOf(settings, partId, kind) ?: return false
+        quietForStack()
+        saveNow()
+        val here = currentStep ?: StackStep(_inputFileName.value, null, _selectedFormat.value)
+        // Edited this way before: as it was left, from what it was made of.
+        val again = part.nested?.takeIf { it.kind == kind && resume == null }
+        val offset = resume?.offsetMs ?: again?.offsetMs ?: part.fromMs
+        frames += EditorFrame(
+            inputUri = _inputUri.value,
+            inputFileName = _inputFileName.value,
+            mediaInfo = _mediaInfo.value,
+            settings = settings,
+            format = _selectedFormat.value,
+            undo = undoStack.toList(),
+            redo = redoStack.toList(),
+            knownSourceInfo = HashMap(knownSourceInfo),
+            knownLoudness = HashMap(knownLoudness),
+            sourceLoudness = _sourceLoudnessLufs.value,
+            subtitleCues = _subtitleCues.value,
+            subtitleFileStyled = _subtitleFileStyled.value,
+            projectId = projectId,
+            projectTouched = projectTouched,
+            step = here,
+            // A sound with no picture to lay it back under (an audio file's clip) is the part itself.
+            link = NestedLink(kind, partId, part.sourceId, offset, swap = kind.swapsSound && part.video, resumed = resume != null),
+        )
+        val child = resume?.settings?.copy(openAbove = null) ?: again?.settings ?: ConversionSettings(
+            // The part's file, with how it was made in turn: the graph goes on from there.
+            sources = listOf(EditorSource(EditorSource.MAIN_ID, part.uri, part.name, part.info, nested = part.nested)),
+            timeline = Timeline(
+                listOf(
+                    if (part.still) {
+                        // A picture, shown as long as a picture is.
+                        Clip(id = newId(), sourceId = EditorSource.MAIN_ID, startMs = 0L, endMs = STILL_LENGTH_MS)
+                    } else {
+                        Clip(id = newId(), sourceId = EditorSource.MAIN_ID, startMs = part.fromMs, endMs = part.toMs)
+                    },
+                ),
+            ),
+        )
+        val main = child.source(EditorSource.MAIN_ID) ?: child.sources.firstOrNull()
+        val name = resume?.fromName?.ifBlank { null } ?: again?.fromName?.ifBlank { null } ?: part.name
+        currentStep = StackStep(resume?.title?.ifBlank { null } ?: name, kind, kind.format)
+        enterFrame(resume?.fromUri ?: again?.fromUri ?: main?.uri ?: part.uri, name, main?.info ?: part.info, child, resume?.format ?: kind.format)
+        publishStack()
+        return true
+    }
+
+    /**
+     * Applies the editor open now to the one under it: its project rendered
+     * into a file of the app's (a sound then laid back under its picture),
+     * which takes the part's place there, in its preview and its command, as
+     * one step of its history; the part keeps how it was made, to be edited
+     * again. Nothing changed here (not one step, and not opened again from a
+     * save): nothing is rendered, the editor below simply comes back. While it renders [nestedApply] says how far it is;
+     * if it fails, this editor stays open and says so.
+     */
+    fun applyNested() {
+        val parent = frames.lastOrNull() ?: return
+        val renderer = nestedRenderer ?: return
+        if (applyJob?.isActive == true || conversion?.isActive == true) return
+        // Not one change since it opened: the part is as it was, no render needed.
+        if (undoStack.isEmpty() && !parent.link.resumed) {
+            stopApplying()
+            leaveFrame(discardChild = true)
+            return
+        }
+        val link = parent.link
+        val child = _settings.value
+        val format = _selectedFormat.value ?: link.kind.format
+        val childUri = _inputUri.value ?: return
+        val childName = _inputFileName.value
+        val depth = frames.size
+        // A sound under its picture: laid back there once rendered.
+        val sound = link.swap
+        // How long the part's file is: the sound is laid back under all of it.
+        val fileLength = child.source(EditorSource.MAIN_ID)?.info?.durationMs?.takeIf { it > 0L }
+        _nestedApply.value = NestedApply.Rendering(0f)
+        applyJob = viewModelScope.launch(ioDispatcher) {
+            val (marked, problem) = aiMarked(child) {}
+            if (marked == null) {
+                _nestedApply.value = NestedApply.Failed(problem)
+                return@launch
+            }
+            val result = try {
+                val footage = marked.footage()
+                val job = ConversionJob(
+                    request = marked.toRequest(format, childName, footage).withEncoders(hardwareEncoder(), cpuSpeed()),
+                    sources = marked.toSources(footage, format, null),
+                    mode = marked.commandMode(format),
+                )
+                // The sound's own render, then laying it back: most of the time is the first.
+                val share = if (sound) RENDER_SHARE else 1f
+                val made = renderer.render(job) { p -> _nestedApply.value = NestedApply.Rendering(p.coerceIn(0f, 1f) * share) }
+                if (made == null || !sound) {
+                    made
+                } else {
+                    renderer.swapSound(childUri.toString(), made, link.offsetMs, fileLength) { p ->
+                        _nestedApply.value = NestedApply.Rendering(share + (1f - share) * p.coerceIn(0f, 1f))
+                    }.also { scratch.discard(made) }
+                }
+            } catch (e: CancellationException) {
+                _nestedApply.value = NestedApply.Idle
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("ConversionViewModel", "Could not apply the nested editor", e)
+                null
+            }
+            // What was made, looked at: how long it is and its shape decide how it is laid.
+            val info = result?.let { mediaProbe.describe(it) }
+            withContext(Dispatchers.Main) {
+                // The stack changed meanwhile (the project closed): nothing to apply to.
+                if (frames.size != depth) {
+                    result?.let(scratch::discard)
+                    _nestedApply.value = NestedApply.Idle
+                    return@withContext
+                }
+                if (result == null) {
+                    _nestedApply.value = NestedApply.Failed(null)
+                    return@withContext
+                }
+                _nestedApply.value = NestedApply.Idle
+                val nested = NestedEdit(kind = link.kind, fromUri = childUri, fromName = childName, settings = child, offsetMs = link.offsetMs)
+                leaveFrame(discardChild = false)
+                swapIn(link, Uri.parse(result), childName, nested, info)
+            }
+        }
+    }
+
+    /** Stops applying: the editor stays open as it is. */
+    fun stopApplying() {
+        applyJob?.cancel()
+        applyJob = null
+        _nestedApply.value = NestedApply.Idle
+    }
+
+    /** The failure of the last apply was seen. */
+    fun dismissApplyProblem() {
+        if (_nestedApply.value is NestedApply.Failed) _nestedApply.value = NestedApply.Idle
+    }
+
+    /**
+     * True when the editors above the [level]-th of the stack (0: the
+     * project's) have changes that leaving them without applying would lose.
+     */
+    fun stackChangedAbove(level: Int): Boolean {
+        if (level >= frames.size) return false
+        // The editor at stack level j (1: the first on top of the project) was opened by frames[j - 1].
+        return ((level.coerceAtLeast(0) + 1)..frames.size).any { j ->
+            val history = if (j == frames.size) undoStack else frames[j].undo
+            history.isNotEmpty() || frames[j - 1].link.resumed
+        }
+    }
+
+    /** Back to the [level]-th editor of the stack (0: the project's), those above it left without applying. */
+    fun jumpToStackLevel(level: Int) {
+        if (level >= frames.size) return
+        stopApplying()
+        while (frames.size > level.coerceAtLeast(0)) leaveFrame(discardChild = true)
+    }
+
+    /**
+     * Every editor of the stack left without applying, back to the project's
+     * (it is closing or let go). Their edits are not lost: kept as they are
+     * ([keptStack]), they are saved with the project and open again with it.
+     */
+    private fun abandonStack() {
+        if (frames.isEmpty()) return
+        applyJob?.cancel()
+        applyJob = null
+        _nestedApply.value = NestedApply.Idle
+        val kept = openChain(1)
+        val touched = frames.first().projectTouched || stackChangedAbove(0)
+        // Their files stay: the save keeps them with the project.
+        while (frames.isNotEmpty()) leaveFrame(discardChild = false)
+        keptStack = kept
+        if (kept != null && touched) projectTouched = true
+    }
+
+    /**
+     * The editor at [level] of the stack (1: the first on top of the
+     * project) and every editor on top of it, as a project saves them (see
+     * OpenEditor); null above the one open now.
+     */
+    private fun openChain(level: Int): OpenEditor? {
+        if (level < 1 || level > frames.size) return null
+        val link = frames[level - 1].link
+        val top = level == frames.size
+        val live = if (top) _settings.value else frames[level].settings
+        val uri = (if (top) _inputUri.value else frames[level].inputUri) ?: return null
+        val name = if (top) _inputFileName.value else frames[level].inputFileName
+        val format = (if (top) _selectedFormat.value else frames[level].format) ?: link.kind.format
+        val title = if (top) currentStep?.title else frames[level].step.title
+        return OpenEditor(
+            partId = link.partId,
+            kind = link.kind,
+            title = title ?: name,
+            fromUri = uri,
+            fromName = name,
+            offsetMs = link.offsetMs,
+            format = format,
+            settings = live.copy(openAbove = openChain(level + 1)),
+        )
+    }
+
+    /**
+     * Opens again the editors [chain] left open on top of the project just
+     * restored, each on the part it was opened on, with its edits; it stops
+     * at one that can no longer open (its part is gone).
+     */
+    private fun reopenStack(chain: OpenEditor?) {
+        if (chain == null) return
+        // Saved as it is while it opens again, then with the editors open.
+        keptStack = chain
+        var next: OpenEditor? = chain
+        while (next != null) {
+            val level = next
+            if (!openNested(level.partId, level.kind, resume = level)) break
+            next = level.settings.openAbove
+        }
+        keptStack = null
+        saveNow()
+    }
+
+    /**
+     * The applied file of [link]'s editor in place of the part's: for a clip,
+     * a source of its own (other clips of the same file are not touched), the
+     * clip cut from it as before (its sound), whole (the clip itself,
+     * rendered from its start to its end) or as long as it was (a picture);
+     * for a picture or video laid over, or a sound of the timeline, the file
+     * it plays, the whole of what was made. Each keeps how it was made
+     * ([nested]). One step of the history; [info] is what was made, looked at.
+     */
+    private fun swapIn(link: NestedLink, uri: Uri, name: String, nested: NestedEdit, info: MediaInfo?) {
+        when (link.kind.part) {
+            NestedPart.CLIP -> swapClip(link, uri, name, nested, info)
+            NestedPart.OVERLAY -> mutate { settings ->
+                settings.copy(
+                    imageOverlays = settings.imageOverlays.map { overlay ->
+                        if (overlay.id != link.partId) return@map overlay
+                        val media = overlay.video
+                        when {
+                            // The same video, its sound in place of its own: it plays as before.
+                            link.swap -> overlay.copy(uri = uri, nested = nested)
+                            media != null -> {
+                                val length = info?.durationMs?.takeIf { it > 0L } ?: media.rangeMs
+                                overlay.copy(
+                                    uri = uri,
+                                    nested = nested,
+                                    aspect = info?.frameAspect()?.takeIf { it > 0f } ?: overlay.aspect,
+                                    hasAudio = info?.hasAudio ?: overlay.hasAudio,
+                                ).withVideo(media.copy(trimStartMs = 0L, trimEndMs = length, fileDurationMs = length))
+                            }
+                            // A picture: its shape may have changed (a crop); a subject cut out of the old one does not fit.
+                            else -> overlay.copy(
+                                uri = uri,
+                                nested = nested,
+                                aspect = info?.frameAspect()?.takeIf { it > 0f } ?: overlay.aspect,
+                                key = overlay.key?.takeIf { it.mode != KeyMode.SUBJECT },
+                            )
+                        }
+                    },
+                )
+            }
+            NestedPart.SOUND -> {
+                mutate { settings ->
+                    settings.copy(
+                        audioClips = settings.audioClips.map { sound ->
+                            if (sound.id != link.partId) return@map sound
+                            val length = info?.durationMs?.takeIf { it > 0L } ?: sound.span.rangeMs
+                            sound.copy(
+                                uri = uri,
+                                nested = nested,
+                                span = sound.span.copy(trimStartMs = 0L, trimEndMs = length, fileDurationMs = length),
+                                loudnessLufs = null,
+                            )
+                        },
+                    )
+                }
+                // Levelled: the new sound is measured for the preview.
+                if (_settings.value.audioClips.any { it.id == link.partId && it.normalize }) measureSoundLoudness(uri)
+            }
+        }
+    }
+
+    private fun swapClip(link: NestedLink, uri: Uri, name: String, nested: NestedEdit, info: MediaInfo?) {
+        val id = newId()
+        // The sound laid back under the same picture: the clip keeps its times in the file.
+        val keepsTimes = link.swap || link.kind == NestedKind.CLIP_PHOTO
+        mutate { settings ->
+            if (settings.timeline.clips.none { it.id == link.partId }) return@mutate settings
+            val old = settings.source(link.sourceId)
+            val source = EditorSource(id, uri, old?.fileName ?: name, info = info ?: if (keepsTimes) old?.info else null, nested = nested)
+            settings.copy(
+                sources = settings.sources + source,
+                timeline = settings.timeline.copy(
+                    clips = settings.timeline.clips.map { clip ->
+                        when {
+                            clip.id != link.partId -> clip
+                            keepsTimes -> clip.copy(sourceId = id)
+                            else -> clip.copy(sourceId = id, startMs = 0L, endMs = info?.durationMs?.takeIf { it > 0L })
+                        }
+                    },
+                ),
+                // A photo editor's own picture on its canvas is the same picture.
+                imageOverlays = settings.imageOverlays.map { if (it.isPhoto && old != null && it.uri == old.uri) it.copy(uri = uri) else it },
+            )
+        }
+        if (info != null) {
+            describeSource(id, info)
+        } else {
+            viewModelScope.launch {
+                val probed = withContext(ioDispatcher) { mediaProbe.describe(uri.toString()) }
+                if (_settings.value.source(id) != null) describeSource(id, probed)
+            }
+        }
+    }
+
+    /** Opens [settings] as the editor of the stack now; the one put aside comes back in [leaveFrame]. */
+    private fun enterFrame(uri: Uri, name: String, info: MediaInfo?, settings: ConversionSettings, format: OutputFormat) {
+        // An editor of the stack is not a project of its own: what it edits is saved with the project below.
+        projectId = null
+        projectTouched = false
+        saveJob?.cancel()
+        saveJob = null
+        _inputUri.value = uri
+        _inputFileName.value = name
+        _mediaInfo.value = info
+        _sourceLoudnessLufs.value = null
+        loudnessMeasurement?.cancel()
+        loudnessMeasurement = null
+        _selectedFormat.value = format
+        _conversionState.value = ConversionState.Idle
+        undoStack.clear()
+        redoStack.clear()
+        lastStepKey = null
+        lastRecordNanos = 0L
+        knownSourceInfo.clear()
+        knownLoudness.clear()
+        settings.sources.filter { it.info != null }.forEach { knownSourceInfo[it.id] = it.info }
+        settings.audioClips.forEach { clip -> clip.loudnessLufs?.let { knownLoudness[clip.uri] = it } }
+        refreshHistory()
+        _settings.value = settings
+        settings.imageOverlays.forEach { overlay ->
+            val shape = overlay.shape
+            val shapeUri = overlay.uri
+            if (shape != null && shapeUri != null) renderedShapes[shapeUri] = shape
+        }
+        loadSubtitleCues(settings.subtitleUri)
+        if (settings.normalizeAudio) measureSourceLoudness()
+        val depth = frames.size
+        settings.sources.filter { it.info == null }.forEach { source ->
+            viewModelScope.launch {
+                val probed = withContext(ioDispatcher) { mediaProbe.describe(source.uri.toString()) }
+                // Only into the editor it was asked for.
+                if (frames.size != depth || _settings.value.source(source.id)?.uri != source.uri) return@launch
+                if (source.id == EditorSource.MAIN_ID) _mediaInfo.value = probed
+                describeSource(source.id, probed)
+            }
+        }
+        updateCommandPreview()
+    }
+
+    /**
+     * Closes the editor open now and brings back the one under it as it was
+     * left; with [discardChild], what only the closed editor used (a
+     * recording made there, its own stills) is deleted.
+     */
+    private fun leaveFrame(discardChild: Boolean) {
+        val frame = frames.removeLastOrNull() ?: return
+        quietForStack()
+        if (discardChild) {
+            val kept = (frame.undo + frame.redo + frame.settings).flatMap { ProjectJson.uris(it) }.toSet()
+            (undoStack + redoStack + _settings.value).flatMap { ProjectJson.uris(it) }.distinct()
+                .filter { it !in kept }
+                .forEach { scratch.discard(it.toString()) }
+        }
+        _inputUri.value = frame.inputUri
+        _inputFileName.value = frame.inputFileName
+        _mediaInfo.value = frame.mediaInfo
+        _selectedFormat.value = frame.format
+        _conversionState.value = ConversionState.Idle
+        undoStack.clear()
+        undoStack.addAll(frame.undo)
+        redoStack.clear()
+        redoStack.addAll(frame.redo)
+        lastStepKey = null
+        lastRecordNanos = 0L
+        knownSourceInfo.clear()
+        knownSourceInfo.putAll(frame.knownSourceInfo)
+        knownLoudness.clear()
+        knownLoudness.putAll(frame.knownLoudness)
+        loudnessMeasurement?.cancel()
+        loudnessMeasurement = null
+        _sourceLoudnessLufs.value = frame.sourceLoudness
+        _subtitleCues.value = frame.subtitleCues
+        _subtitleFileStyled.value = frame.subtitleFileStyled
+        _settings.value = frame.settings
+        projectId = frame.projectId
+        projectTouched = frame.projectTouched
+        currentStep = if (frames.isEmpty()) null else frame.step
+        refreshHistory()
+        updateCommandPreview()
+        publishStack()
+        // Saved with editors open on it: saved again as it is now (they are gone, or fewer).
+        if (stackSaved) {
+            if (frames.isEmpty()) projectTouched = true
+            scheduleSave()
+        }
+    }
+
+    /** The hops from the project to the editor open now. */
+    fun stackHops(): List<StackHop> = frames.map { StackHop(it.link.partId, it.link.kind) }
+
+    /**
+     * A part of a project as the map lists it: [id], what it is ([part]),
+     * how it was made ([nested]), its name, and its place among the parts of
+     * its kind ([number], from 1).
+     */
+    private class MapPart(val id: String, val part: NestedPart, val nested: NestedEdit?, val name: String, val number: Int)
+
+    /** The parts of [settings] an editor of its own can open, as the map lists them: its clips, pictures laid over, sounds. */
+    private fun mapPartsOf(settings: ConversionSettings): List<MapPart> =
+        settings.timeline.clips.mapIndexed { i, clip ->
+            val source = settings.source(clip.sourceId)
+            MapPart(clip.id, NestedPart.CLIP, source?.nested, source?.fileName.orEmpty(), i + 1)
+        } +
+            settings.imageOverlays.filter { it.opensNested }.mapIndexed { i, o -> MapPart(o.id, NestedPart.OVERLAY, o.nested, o.fileName, i + 1) } +
+            settings.audioClips.mapIndexed { i, a -> MapPart(a.id, NestedPart.SOUND, a.nested, a.name, i + 1) }
+
+    /**
+     * The map of the editors (see core.stack.StackGraph): the project and
+     * the parts of it (clips, pictures and videos laid over, sounds) edited
+     * in editors of their own (applied: kept in their parts; open now: as
+     * they are now, applied or not), theirs in turn, as deep as they go (at
+     * most [MAX_GRAPH_NODES] nodes). The stack open now is marked on it, the
+     * editor open now as the current one; the editors on it are read as they
+     * are now, the others as they were last applied.
+     */
+    fun stackGraph(): StackGraph {
+        val hops = stackHops()
+        val live = frames.map { it.settings } + _settings.value
+        val titles = frames.map { it.step.title } + (currentStep?.title ?: _inputFileName.value)
+        val nodes = ArrayList<GraphNode>()
+        fun add(node: GraphNode): Int {
+            nodes += node
+            return nodes.lastIndex
+        }
+        val root = add(
+            GraphNode(
+                id = "p",
+                title = frames.firstOrNull()?.inputFileName ?: _inputFileName.value,
+                kind = GraphNodeKind.PROJECT,
+                nested = null,
+                parent = -1,
+                path = emptyList(),
+                level = 0,
+                current = frames.isEmpty(),
+            ),
+        )
+        fun expand(settings: ConversionSettings, at: Int, id: String, path: List<StackHop>, level: Int?) {
+            mapPartsOf(settings).forEach { part ->
+                if (nodes.size >= MAX_GRAPH_NODES) return
+                // The part open on the stack now, if any.
+                val open = level?.let { hops.getOrNull(it) }?.takeIf { it.partId == part.id && it.kind.part == part.part }
+                val nested = part.nested
+                if (nested != null && nested.kind.part == part.part) {
+                    val hop = StackHop(part.id, nested.kind)
+                    val inner = if (open == hop && level != null) level + 1 else null
+                    val nodeId = "$id/${part.id}/${nested.kind.name}"
+                    val node = add(
+                        GraphNode(
+                            id = nodeId,
+                            title = nested.fromName.ifBlank { part.name },
+                            kind = GraphNodeKind.NESTED,
+                            nested = nested.kind,
+                            parent = at,
+                            path = path + hop,
+                            level = inner,
+                            current = inner == hops.size,
+                            number = part.number,
+                        ),
+                    )
+                    expand(if (inner != null) live[inner] else nested.settings, node, nodeId, path + hop, inner)
+                }
+                if (open != null && level != null && (nested == null || nested.kind != open.kind)) {
+                    // Open now and never applied this way.
+                    val inner = level + 1
+                    val nodeId = "$id/${part.id}/${open.kind.name}/open"
+                    val node = add(
+                        GraphNode(
+                            id = nodeId,
+                            title = titles.getOrNull(inner).orEmpty(),
+                            kind = GraphNodeKind.NESTED,
+                            nested = open.kind,
+                            parent = at,
+                            path = path + open,
+                            level = inner,
+                            current = inner == hops.size,
+                            applied = false,
+                            number = part.number,
+                        ),
+                    )
+                    expand(live[inner], node, nodeId, path + open, inner)
+                }
+            }
+        }
+        expand(live[0], root, "p", emptyList(), 0)
+        return StackGraph(nodes)
+    }
+
+    /** The level of the stack a way to [target] goes back down to first (see StackGraph.route). */
+    fun stackLevelTowards(target: List<StackHop>): Int = StackGraph.route(stackHops(), target).first
+
+    /**
+     * Goes to the editor at [target] (hops from the project): back down to
+     * what the stack open now shares with it, its editors above left without
+     * applying, then up again, opening each part on the way. False when a
+     * part on the way cannot open (it stops there).
+     */
+    fun navigateStack(target: List<StackHop>): Boolean {
+        val (level, toOpen) = StackGraph.route(stackHops(), target)
+        if (level < frames.size) jumpToStackLevel(level)
+        for (hop in toOpen) if (!openNested(hop.partId, hop.kind)) return false
+        return true
+    }
+
+    /** The background work of the editor open now, stopped: it would land in another editor's project. */
+    private fun quietForStack() {
+        stopSpeech()
+        // Not declined (as a stop by hand is): the editor asks again for what it plays.
+        reverseJob?.cancel()
+        reverseJob = null
+        reverseQueue = emptyList()
+        _reversing.value = null
+        stopDub()
+        stopAutoDub()
+        stopTranslation()
+        stopVoiceSeparation()
+        stopCutout()
+        stopErase()
+    }
+
+    private fun publishStack() {
+        val now = currentStep
+        _editorStack.value = if (frames.isEmpty() || now == null) emptyList() else frames.map { it.step } + now
+    }
+
     override fun onCleared() {
         // Leaving the app for good: the project is saved one last time, then its
-        // recordings in the cache are no longer needed.
+        // recordings in the cache are no longer needed. Editors stacked on it close first.
+        abandonStack()
         closeProject(keep = null)
         super.onCleared()
     }
@@ -2996,6 +3757,8 @@ class ConversionViewModel(
 
     /** A new open project: [id] in [projects], kept from its first change unless [touched] already. */
     private fun startProject(id: String?, createdAtMs: Long, touched: Boolean) {
+        keptStack = null
+        stackSaved = false
         projectId = id
         handedOver = null
         if (id != null) projects?.claim(id, holder)
@@ -3017,7 +3780,10 @@ class ConversionViewModel(
             .flatMap { settings ->
                 settings.sources.map { it.uri } + listOfNotNull(settings.coverUri) +
                     // The pictures of its shapes (only those the app drew are ever deleted).
-                    settings.imageOverlays.filter { it.shape != null }.mapNotNull { it.uri }
+                    settings.imageOverlays.filter { it.shape != null }.mapNotNull { it.uri } +
+                    // What editors of the stack made for its pictures, videos and sounds.
+                    settings.imageOverlays.filter { it.nested != null }.mapNotNull { it.uri } +
+                    settings.audioClips.filter { it.nested != null }.map { it.uri }
             }
             .plus(renderedShapes.keys)
             .distinct()
@@ -3047,7 +3813,8 @@ class ConversionViewModel(
 
     /** Saves the project a moment after the edits rest (a slider being dragged changes them on every frame). */
     private fun scheduleSave() {
-        if (projects == null || projectId == null || !projectTouched) return
+        // Stacked, the project is the editor at the bottom; what is edited above is saved with it.
+        if (projects == null || savedProjectId() == null || !savedTouched()) return
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
             delay(AUTOSAVE_DELAY_MS)
@@ -3060,23 +3827,34 @@ class ConversionViewModel(
         saveJob?.cancel()
         saveJob = null
         val store = projects ?: return
-        val id = projectId ?: return
-        val format = _selectedFormat.value ?: return
-        if (!projectTouched) return
-        val settings = _settings.value
-        // What an undo may bring back stays readable too.
-        store.inUse = (undoStack + redoStack + settings).flatMap { ProjectJson.uris(it) }.toSet()
+        val id = savedProjectId() ?: return
+        val bottom = frames.firstOrNull()
+        val format = (if (bottom != null) bottom.format else _selectedFormat.value) ?: return
+        if (!savedTouched()) return
+        // The project itself, with the editors open on top of it (or left open: see keptStack).
+        val above = if (bottom != null) openChain(1) else keptStack
+        val settings = (bottom?.settings ?: _settings.value).copy(openAbove = above)
+        // What an undo may bring back stays readable too, in every editor of the stack.
+        store.inUse = (frames.flatMap { it.undo + it.redo } + undoStack + redoStack + settings).flatMap { ProjectJson.uris(it) }.toSet()
         store.save(
             SavedProject(
                 id = id,
-                name = _inputFileName.value,
+                name = bottom?.inputFileName ?: _inputFileName.value,
                 format = format,
                 createdAtMs = projectCreatedAtMs,
                 editedAtMs = System.currentTimeMillis(),
                 settings = settings,
             ),
         )
+        stackSaved = above != null
     }
+
+    /** The id of the project saved: the one at the bottom of the stack. */
+    private fun savedProjectId(): String? = frames.firstOrNull()?.projectId ?: projectId
+
+    /** Whether the project is worth saving: it, or an editor on top of it, was changed. */
+    private fun savedTouched(): Boolean =
+        if (frames.isEmpty()) projectTouched else frames.any { it.projectTouched } || projectTouched || stackChangedAbove(0)
 
     /** Measures the input once per file; the preview uses it to audition loudness normalisation. */
     private fun measureSourceLoudness() {
@@ -3285,6 +4063,15 @@ class ConversionViewModel(
     companion object {
         private const val DEFAULT_INPUT_NAME = "input"
 
+        /** Editors stacked at most (the projects nested in a project file stay readable: see Json.MAX_DEPTH). */
+        const val MAX_STACK_DEPTH = 150
+
+        /** Most editors the map shows. */
+        const val MAX_GRAPH_NODES = 200
+
+        /** The share of applying a clip's sound taken by rendering it (the rest lays it back). */
+        private const val RENDER_SHARE = 0.85f
+
         /** How long the settings must rest before the shown command is rebuilt. */
         private const val COMMAND_PREVIEW_DELAY_MS = 120L
 
@@ -3351,6 +4138,7 @@ class ConversionViewModel(
                     work = container.workReports,
                     shapeRenderer = container.shapeRenderer::render,
                     soundReverser = container.soundReverser,
+                    nestedRenderer = container.nestedRenderer,
                 )
             }
         }

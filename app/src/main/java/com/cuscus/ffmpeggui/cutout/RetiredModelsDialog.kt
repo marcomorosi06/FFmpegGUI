@@ -328,6 +328,7 @@ private fun RetiredRow(item: RetiredModels.Removed, visible: Boolean, first: Boo
                         RetiredModels.Reason.SUPERSEDED -> R.string.retired_reason_superseded
                         RetiredModels.Reason.EXTENDED -> R.string.retired_reason_extended
                         RetiredModels.Reason.QUICKER -> R.string.retired_reason_quicker
+                        RetiredModels.Reason.WITHDRAWN -> R.string.retired_reason_withdrawn
                     },
                 ),
                 style = MaterialTheme.typography.bodySmall,

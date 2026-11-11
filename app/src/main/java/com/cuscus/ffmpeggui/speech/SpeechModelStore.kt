@@ -4,9 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
-import com.cuscus.ffmpeggui.core.archive.Bzip2InputStream
 import com.cuscus.ffmpeggui.core.archive.DownloadedName
-import com.cuscus.ffmpeggui.core.archive.TarReader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,23 +16,20 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
-import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.security.MessageDigest
 
 /**
- * One build of the speech model ([model]) on this phone: imported from what the user downloaded,
- * checked, kept in the app's private files, removed on request.
+ * A model ([model]) on this phone: imported from the files the user
+ * downloaded, checked, kept in the app's private files, removed on request.
  *
- * An import reads the archive (or the loose files) once, as a stream: the
- * archive is decompressed and unpacked on the fly, every file hashed as it is
- * written, and the whole lands in a temporary folder that only takes the
- * model's place once every file matches its pinned SHA-256. A failed or
- * stopped import leaves what was there before untouched.
+ * An import reads each file once, as a stream, hashing it as it is written,
+ * and the whole lands in a temporary folder that only takes the model's place
+ * once every file matches its pinned SHA-256. A failed or stopped import
+ * leaves what was there before untouched.
  */
 class SpeechModelStore(context: Context, val model: SpeechModel) {
 
@@ -50,10 +45,13 @@ class SpeechModelStore(context: Context, val model: SpeechModel) {
     sealed interface State {
         data object Missing : State
 
-        /** [fraction] of the archive read (null while its size is unknown); [file] is the one being written. */
+        /** [fraction] of the file read (null while its size is unknown); [file] is the one being written. */
         data class Importing(val phase: Phase, val fraction: Float?, val file: String?) : State
 
-        /** Installed and checked; [checks] are the files with their hashes, [archiveMatches] when an archive was read. */
+        /**
+         * Installed and checked; [checks] are the files with their hashes,
+         * [archiveMatches] when the model came as an archive (the dub's does).
+         */
         data class Ready(val bytes: Long, val checks: List<FileCheck>, val archiveMatches: Boolean?, val verifiedAt: Long) : State
 
         /** The last import or check failed for [problem]; [checks] tells which files, when known. */
@@ -61,7 +59,7 @@ class SpeechModelStore(context: Context, val model: SpeechModel) {
     }
 
     enum class Problem {
-        /** The file chosen is not the model's archive nor one of its files. */
+        /** The files chosen are not the model's. */
         NOT_THE_MODEL,
 
         /** Some file is missing from what was chosen. */
@@ -92,16 +90,13 @@ class SpeechModelStore(context: Context, val model: SpeechModel) {
     fun file(role: SpeechModel.Role): File? =
         model.files.firstOrNull { it.role == role }?.let { File(folder, it.name) }?.takeIf { it.isFile }
 
-    /** The recordings that came with the model, those that are on the phone. */
-    fun samples(): List<Pair<SpeechModel.Sample, File>> =
-        model.samples.mapNotNull { sample -> File(folder, sample.file.name).takeIf { it.isFile }?.let { sample to it } }
-
-    /** Imports what the user picked: the downloaded archive, or the model's files. */
+    /** Imports what the user picked: the model's files. */
     @Synchronized
     fun import(uris: List<Uri>) {
         if (job?.isActive == true || uris.isEmpty()) return
-        // The AI marks come first (MarkingGate): without them no other model is read.
-        if (model !== com.cuscus.ffmpeggui.marking.MarkerModel.FILES && !com.cuscus.ffmpeggui.marking.MarkingGate.allowsImport()) return
+        // A model that changes pictures (the eraser's) comes after the AI marks (MarkingGate);
+        // the others (speech, cut-out corrections, stems, the marks themselves) need none.
+        if (model.generative && !com.cuscus.ffmpeggui.marking.MarkingGate.allowsImport()) return
         job = scope.launch {
             val wasInstalled = filesPresent()
             _state.value = State.Importing(Phase.READING, 0f, null)
@@ -131,11 +126,11 @@ class SpeechModelStore(context: Context, val model: SpeechModel) {
         if (job?.isActive == true || !filesPresent()) return
         job = scope.launch {
             _state.value = State.Importing(Phase.CHECKING, 0f, null)
-            val total = model.allFiles.sumOf { File(folder, it.name).length() }.coerceAtLeast(1L)
+            val total = model.files.sumOf { File(folder, it.name).length() }.coerceAtLeast(1L)
             var done = 0L
-            val checks = model.allFiles.mapNotNull { expected ->
+            val checks = model.files.map { expected ->
                 val file = File(folder, expected.name)
-                if (!file.isFile) return@mapNotNull if (expected.role == SpeechModel.Role.SAMPLE) null else FileCheck(expected.name, expected.sha256, null)
+                if (!file.isFile) return@map FileCheck(expected.name, expected.sha256, null)
                 val hash = try {
                     sha256(FileInputStream(file)) { read ->
                         done += read
@@ -169,17 +164,17 @@ class SpeechModelStore(context: Context, val model: SpeechModel) {
     private fun initialState(): State {
         if (!filesPresent()) return State.Missing
         val prefs = appContext.getSharedPreferences(model.prefs, Context.MODE_PRIVATE)
-        val checks = model.allFiles.mapNotNull { expected ->
+        val checks = model.files.mapNotNull { expected ->
             val file = File(folder, expected.name)
             if (!file.isFile) null else FileCheck(expected.name, expected.sha256, prefs.getString(expected.name, null))
         }
         // The hashes found at import time, as long as the files have not changed size since.
-        val sizesHold = model.allFiles.all { expected ->
+        val sizesHold = model.files.all { expected ->
             val file = File(folder, expected.name)
             !file.isFile || expected.bytes == null || file.length() == expected.bytes
         }
         return if (sizesHold && checks.all { it.matches }) {
-            State.Ready(installedBytes(), checks, prefs.getString(KEY_ARCHIVE, null)?.let { it == "1" }, prefs.getLong(KEY_VERIFIED, 0L))
+            State.Ready(installedBytes(), checks, archiveMatches = null, verifiedAt = prefs.getLong(KEY_VERIFIED, 0L))
         } else {
             State.Failed(Problem.HASH_MISMATCH, checks, installed = true)
         }
@@ -187,50 +182,40 @@ class SpeechModelStore(context: Context, val model: SpeechModel) {
 
     private fun filesPresent(): Boolean = model.files.all { File(folder, it.name).isFile }
 
-    private fun installedBytes(): Long = model.allFiles.sumOf { File(folder, it.name).takeIf { f -> f.isFile }?.length() ?: 0L }
+    private fun installedBytes(): Long = model.files.sumOf { File(folder, it.name).takeIf { f -> f.isFile }?.length() ?: 0L }
 
     private suspend fun importNow(uris: List<Uri>): State {
         val temp = File(folder.parentFile, model.tempFolder).apply { deleteRecursively(); mkdirs() }
         try {
             val found = linkedMapOf<String, String>()
-            var archiveMatches: Boolean? = null
-            val single = uris.singleOrNull()
-            val archive = model.archive
-            if (single != null && archive != null && looksLikeArchive(single)) {
-                archiveMatches = readArchive(single, archive, temp, found)
-            } else {
-                for ((index, uri) in uris.withIndex()) {
-                    currentCoroutineContext().ensureActive()
-                    val shown = displayName(uri) ?: "#${index + 1}"
-                    // Browsers number a file downloaded twice ("tokens (1).txt"): the name is
-                    // only a guess, the content says which file it is.
-                    val guess = model.fileNamed(DownloadedName.of(shown))
-                    if (guess == null && DownloadedName.of(shown).substringAfterLast('.') !in modelExtensions) continue
-                    val part = File(temp, "picked-$index.part")
-                    val hash = copyHashing(open(uri), part, uriSize(uri), shown)
-                    val expected = model.allFiles.firstOrNull { it.sha256 == hash } ?: guess
-                    // Not the model's, or a damaged copy of a file already found whole.
-                    if (expected == null || (found[expected.name] == expected.sha256 && hash != expected.sha256)) {
-                        part.delete()
-                        continue
-                    }
-                    val target = File(temp, expected.name)
-                    target.delete()
-                    if (!part.renameTo(target)) throw IOException("Could not name ${expected.name}")
-                    found[expected.name] = hash
+            for ((index, uri) in uris.withIndex()) {
+                currentCoroutineContext().ensureActive()
+                val shown = displayName(uri) ?: "#${index + 1}"
+                // Browsers number a file downloaded twice ("tokens (1).txt"): the name is
+                // only a guess, the content says which file it is.
+                val guess = model.fileNamed(DownloadedName.of(shown))
+                if (guess == null && DownloadedName.of(shown).substringAfterLast('.') !in modelExtensions) continue
+                val part = File(temp, "picked-$index.part")
+                val hash = copyHashing(open(uri), part, uriSize(uri), shown)
+                val expected = model.files.firstOrNull { it.sha256 == hash } ?: guess
+                // Not the model's, or a damaged copy of a file already found whole.
+                if (expected == null || (found[expected.name] == expected.sha256 && hash != expected.sha256)) {
+                    part.delete()
+                    continue
                 }
+                val target = File(temp, expected.name)
+                target.delete()
+                if (!part.renameTo(target)) throw IOException("Could not name ${expected.name}")
+                found[expected.name] = hash
             }
             if (found.isEmpty()) return State.Failed(Problem.NOT_THE_MODEL, installed = false)
-            // What the app carries itself, when it was not picked (or not in the archive).
+            // What the app carries itself, when it was not picked.
             for (expected in model.files) {
                 val asset = expected.asset ?: continue
                 if (found.containsKey(expected.name)) continue
                 found[expected.name] = copyHashing(appContext.assets.open(asset), File(temp, expected.name), expected.bytes, expected.name)
             }
-            val checks = model.allFiles.mapNotNull { expected ->
-                val hash = found[expected.name]
-                if (hash == null && expected.role == SpeechModel.Role.SAMPLE) null else FileCheck(expected.name, expected.sha256, hash)
-            }
+            val checks = model.files.map { expected -> FileCheck(expected.name, expected.sha256, found[expected.name]) }
             if (checks.any { it.actual == null }) return State.Failed(Problem.INCOMPLETE, checks, installed = false)
             if (checks.any { !it.matches }) return State.Failed(Problem.HASH_MISMATCH, checks, installed = false)
 
@@ -243,51 +228,12 @@ class SpeechModelStore(context: Context, val model: SpeechModel) {
             appContext.getSharedPreferences(model.prefs, Context.MODE_PRIVATE).edit().apply {
                 clear()
                 checks.forEach { putString(it.name, it.actual) }
-                archiveMatches?.let { putString(KEY_ARCHIVE, if (it) "1" else "0") }
                 putLong(KEY_VERIFIED, now)
             }.apply()
-            return State.Ready(installedBytes(), checks, archiveMatches, now)
+            return State.Ready(installedBytes(), checks, archiveMatches = null, verifiedAt = now)
         } finally {
             temp.deleteRecursively()
         }
-    }
-
-    /**
-     * Unpacks the files of the model out of the archive into [target], their
-     * hashes into [found]. Returns whether the archive itself hashed right.
-     */
-    private suspend fun readArchive(uri: Uri, archive: SpeechModel.Archive, target: File, found: MutableMap<String, String>): Boolean {
-        val size = uriSize(uri) ?: archive.bytes
-        val archiveDigest = MessageDigest.getInstance("SHA-256")
-        var shown = -1
-        val counted = CountingStream(BufferedInputStream(open(uri), BUFFER)) { read, bytes, offset, length ->
-            archiveDigest.update(bytes, offset, length)
-            // A step every thousandth of the archive is plenty for the progress bar.
-            val step = (read * PROGRESS_STEPS / size).toInt()
-            if (step != shown) {
-                shown = step
-                _state.value = State.Importing(Phase.READING, (read.toFloat() / size).coerceIn(0f, 1f), (_state.value as? State.Importing)?.file)
-            }
-        }
-        counted.use { raw ->
-            // Decompressed on every core; closing it stops its threads.
-            Bzip2InputStream(raw).use { decompressed ->
-            val tar = TarReader(decompressed)
-            while (true) {
-                currentCoroutineContext().ensureActive()
-                val entry = tar.next() ?: break
-                val expected = model.fileNamed(entry.name) ?: continue
-                if (expected.bytes != null && entry.size != expected.bytes) continue
-                _state.value = State.Importing(Phase.READING, (_state.value as? State.Importing)?.fraction, entry.name)
-                found[entry.name] = copyHashing(tar.content, File(target, entry.name), null, entry.name, close = false)
-            }
-            // The rest of the archive: its checks (bzip2 CRCs) and the archive's own hash.
-            val sink = ByteArray(BUFFER)
-            while (decompressed.read(sink) >= 0) currentCoroutineContext().ensureActive()
-            while (raw.read(sink) >= 0) currentCoroutineContext().ensureActive()
-            }
-        }
-        return hex(archiveDigest.digest()) == archive.sha256
     }
 
     /** Copies [input] to [target], hashing it; returns the SHA-256. */
@@ -332,14 +278,8 @@ class SpeechModelStore(context: Context, val model: SpeechModel) {
     private fun open(uri: Uri): InputStream =
         appContext.contentResolver.openInputStream(uri) ?: throw IOException("Cannot open $uri")
 
-    private fun looksLikeArchive(uri: Uri): Boolean {
-        val name = displayName(uri)?.lowercase() ?: return true
-        if (model.fileNamed(DownloadedName.of(name)) != null) return false
-        return name.endsWith(".bz2") || name.endsWith(".tbz2") || name.endsWith(".tbz") || !name.contains('.')
-    }
-
     /** The extensions of the model's files ("onnx", "txt", "wav"). */
-    private val modelExtensions: Set<String> by lazy { model.allFiles.map { it.name.substringAfterLast('.') }.toSet() }
+    private val modelExtensions: Set<String> by lazy { model.files.map { it.name.substringAfterLast('.') }.toSet() }
 
     private fun displayName(uri: Uri): String? = try {
         appContext.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
@@ -360,50 +300,10 @@ class SpeechModelStore(context: Context, val model: SpeechModel) {
     private fun isNoSpace(e: Throwable): Boolean =
         generateSequence(e) { it.cause }.any { (it.message ?: "").contains("ENOSPC") || (it.message ?: "").contains("No space left") }
 
-    /** Counts what is read through it, handing over the bytes as they pass. */
-    private class CountingStream(
-        input: InputStream,
-        private val onRead: (total: Long, bytes: ByteArray, offset: Int, length: Int) -> Unit,
-    ) : FilterInputStream(input) {
-        private var total = 0L
-
-        override fun read(): Int {
-            val b = super.read()
-            if (b >= 0) {
-                total++
-                onRead(total, byteArrayOf(b.toByte()), 0, 1)
-            }
-            return b
-        }
-
-        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-            val n = super.read(buffer, offset, length)
-            if (n > 0) {
-                total += n
-                onRead(total, buffer, offset, n)
-            }
-            return n
-        }
-
-        // Skipped bytes would be missing from the hash: read them instead.
-        override fun skip(n: Long): Long {
-            val buffer = ByteArray(minOf(n, 64L * 1024).toInt().coerceAtLeast(1))
-            var left = n
-            while (left > 0) {
-                val read = read(buffer, 0, minOf(left, buffer.size.toLong()).toInt())
-                if (read < 0) break
-                left -= read
-            }
-            return n - left
-        }
-    }
-
     companion object {
         private const val TAG = "SpeechModelStore"
-        private const val KEY_ARCHIVE = "archive_matches"
         private const val KEY_VERIFIED = "verified_at"
         private const val BUFFER = 256 * 1024
-        private const val PROGRESS_STEPS = 1000L
 
         fun hex(bytes: ByteArray): String = bytes.joinToString("") { String.format(java.util.Locale.ROOT, "%02x", it) }
     }

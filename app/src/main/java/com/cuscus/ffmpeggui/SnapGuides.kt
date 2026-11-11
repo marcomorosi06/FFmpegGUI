@@ -45,13 +45,16 @@ import com.cuscus.ffmpeggui.core.preview.Snap
 import com.cuscus.ffmpeggui.core.preview.SnapBox
 import com.cuscus.ffmpeggui.core.preview.snapAngle
 import com.cuscus.ffmpeggui.core.preview.snapMove
+import com.cuscus.ffmpeggui.core.preview.snapResize
 import kotlin.math.PI
 import kotlin.math.abs
 
 /*
  * Magnetic guides on the preview, as in a slide editor: what is moved by hand
- * (a caption, a picture, the video) sticks to the middle and the edges of its
- * frame and of the other things on it, and its turn to whole steps; the lines
+ * (a caption, a picture, a shape, the video, the styled subtitles) sticks to
+ * the middle and the edges of its frame and of the other things on it, and
+ * its turn to whole steps; resized or stretched (two fingers, the corner, the
+ * bars on its sides), its moving edges stick the same way; the lines
  * it sticks to show while it does, a tick of feedback each time it catches.
  * The math is core's (Snapping.kt).
  */
@@ -98,6 +101,22 @@ internal class SnapScene {
         if (key.isNotEmpty() && key != lastKey) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
         lastKey = key
         return snap
+    }
+
+    /**
+     * What [id] is resized or stretched to by hand: [value] (a size, a scale,
+     * how far a handle was pulled), changed so that a moving edge of its box
+     * ([boxAt] of the value) sticks to a line within [threshold] pixels; its
+     * guides show, and a new catch ticks (see snapResize).
+     */
+    fun resize(id: String, boxAt: (Float) -> SnapBox, value: Float, width: Float, height: Float, threshold: Float, haptic: HapticFeedback): Float {
+        if (width <= 0f || height <= 0f) return value
+        val snap = snapResize(boxAt, value, width, height, others(id), threshold)
+        guides = snap.guides
+        val key = snap.key
+        if (key.isNotEmpty() && key != lastKey) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+        lastKey = key
+        return snap.value
     }
 
     /** [degrees] stuck to a whole step (multiples of 45) when close; the badge shows it, a new catch ticks. */
@@ -199,6 +218,13 @@ internal suspend fun PointerInputScope.detectTotalTransform(
     onStart: () -> Unit,
     onMove: (pan: Offset, zoom: Float, rotation: Float) -> Unit,
     onEnd: () -> Unit,
+    /**
+     * For something whose touches arrive in its own coordinates, turned (and
+     * stretched) as it is drawn: each move of the finger as it goes on the
+     * canvas around it (see [turnedMove]), so that it follows the finger
+     * whatever its turn. Null: the touches are the canvas's own already.
+     */
+    toCanvas: ((Offset) -> Offset)? = null,
 ) {
     awaitEachGesture {
         var rotation = 0f
@@ -213,7 +239,8 @@ internal suspend fun PointerInputScope.detectTotalTransform(
             if (!canceled) {
                 zoom *= event.calculateZoom()
                 rotation += event.calculateRotation()
-                pan += event.calculatePan()
+                val step = event.calculatePan()
+                pan += toCanvas?.invoke(step) ?: step
                 if (!moving) {
                     val centroidSize = event.calculateCentroidSize(useCurrent = false)
                     val zoomMotion = abs(1 - zoom) * centroidSize
@@ -231,6 +258,23 @@ internal suspend fun PointerInputScope.detectTotalTransform(
         } while (!canceled && event.changes.any { it.pressed })
         if (moving) onEnd()
     }
+}
+
+/**
+ * A move of the finger, [delta], felt inside something drawn stretched
+ * across by [stretchX] and then turned by [degrees] (clockwise, about any
+ * point: a move has no place), as it goes on the canvas: the same move turned
+ * and stretched back. Its own coordinates turn with it, so a drag to the right
+ * on something turned a quarter round would otherwise move it down.
+ */
+internal fun turnedMove(delta: Offset, degrees: Float, stretchX: Float = 1f): Offset {
+    if (degrees == 0f && stretchX == 1f) return delta
+    val x = delta.x * stretchX
+    val y = delta.y
+    val radians = Math.toRadians(degrees.toDouble())
+    val cos = kotlin.math.cos(radians).toFloat()
+    val sin = kotlin.math.sin(radians).toFloat()
+    return Offset(x * cos - y * sin, x * sin + y * cos)
 }
 
 /** How close (in pixels, for [density]) something must come to a line to stick to it. */

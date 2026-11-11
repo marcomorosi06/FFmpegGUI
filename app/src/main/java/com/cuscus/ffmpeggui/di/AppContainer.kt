@@ -85,6 +85,11 @@ class AppContainer(
         com.cuscus.ffmpeggui.media.FfmpegDenoiseSampler(appContext, ffmpegExecutor)
     }
 
+    /** The sound's denoise heard before and after, written by FFmpeg with the export's own filter. */
+    val audioDenoiseSampler: com.cuscus.ffmpeggui.core.engine.AudioDenoiseSampler by lazy {
+        com.cuscus.ffmpeggui.media.FfmpegAudioDenoiseSampler(appContext, ffmpegExecutor)
+    }
+
     /** The sound of clips played backwards in the preview, reversed by FFmpeg. */
     val soundReverser: com.cuscus.ffmpeggui.core.engine.SoundReverser by lazy {
         com.cuscus.ffmpeggui.media.FfmpegSoundReverser(appContext, ffmpegExecutor)
@@ -171,7 +176,23 @@ class AppContainer(
     /** The system's monospaced font measured for text art, the same for the editor and the export. */
     val glyphAtlas: com.cuscus.ffmpeggui.core.engine.GlyphAtlasSource by lazy { com.cuscus.ffmpeggui.media.AndroidGlyphAtlas() }
 
-    val conversionEngine: ConversionEngine by lazy {
+    val conversionEngine: ConversionEngine by lazy { engineInto(AppOutputDirectory(appContext)) }
+
+    /**
+     * What editors stacked on one another apply (see core.stack): rendered by
+     * an engine of its own into the cache, never among the exports.
+     */
+    val nestedRenderer: com.cuscus.ffmpeggui.core.stack.NestedRenderer by lazy {
+        com.cuscus.ffmpeggui.media.FfmpegNestedRenderer(
+            appContext,
+            engineInto(com.cuscus.ffmpeggui.media.FfmpegNestedRenderer.workDirectoryOf(appContext)),
+            ffmpegExecutor,
+            cacheJanitor,
+        )
+    }
+
+    /** The conversion engine writing its results into [outputDirectory]. */
+    private fun engineInto(outputDirectory: com.cuscus.ffmpeggui.core.engine.OutputDirectoryProvider): ConversionEngine =
         ConversionEngine(
             commandBuilder = commandBuilder,
             manualResolver = ManualCommandResolver(),
@@ -179,7 +200,7 @@ class AppContainer(
             progressParser = ProgressParser(),
             executor = ffmpegExecutor,
             stager = CacheSourceStager(appContext),
-            outputDirectory = AppOutputDirectory(appContext),
+            outputDirectory = outputDirectory,
             imageRecoder = AndroidImageRecoder(),
             pictureTagger = AndroidPictureTagger(),
             fonts = fontProvider,
@@ -191,5 +212,4 @@ class AppContainer(
                     com.cuscus.ffmpeggui.marking.SoundSealer(smartFeatures.marker).seal(input, output, onProgress)
             },
         )
-    }
 }

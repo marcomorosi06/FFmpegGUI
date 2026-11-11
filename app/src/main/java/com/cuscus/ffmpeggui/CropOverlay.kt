@@ -52,6 +52,9 @@ import kotlin.math.min
  *    the opposite side.
  *  - The handles are kept out of the system's back gesture, so that one at
  *    the side of the screen can be dragged.
+ *  - It says when it is held and let go ([onHeldChange]): let go, the editor
+ *    zooms in on the frame and centres it (core.image.CropFocus), never while
+ *    a finger is on it.
  */
 
 /** A part of the frame a finger can hold. */
@@ -80,6 +83,8 @@ fun CropOverlay(
     freeform: Boolean,
     onCropRectChange: (Rect) -> Unit,
     modifier: Modifier = Modifier,
+    /** True as a finger takes the frame, false as the last one leaves it. */
+    onHeldChange: (Boolean) -> Unit = {},
 ) {
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var held by remember { mutableStateOf<CropHandle?>(null) }
@@ -90,6 +95,7 @@ fun CropOverlay(
     val currentRect by rememberUpdatedState(cropRect)
     val currentOnChange by rememberUpdatedState(onCropRectChange)
     val currentFreeform by rememberUpdatedState(freeform)
+    val currentOnHeld by rememberUpdatedState(onHeldChange)
     // While a handle is held: the rule of thirds fades in, the handle grows.
     val grip by animateFloatAsState(if (held != null) 1f else 0f, motion.fastSpatialSpec(), label = "cropGrip")
 
@@ -128,6 +134,7 @@ fun CropOverlay(
                         ?: if (start.contains(down.position)) CropHandle.MOVE else return@awaitEachGesture
                     down.consume()
                     held = handle
+                    currentOnHeld(true)
                     haptic.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
                     val ratio = if (start.height > 0f) start.width / start.height else 1f
                     val minSide = max(MIN_SIDE.toPx(), min(w, h) * MIN_SHARE)
@@ -135,6 +142,7 @@ fun CropOverlay(
                     var snapped = false
                     var pinchFrom: Rect? = null
                     var pinchZoom = 1f
+                    try {
                     while (true) {
                         val event = awaitPointerEvent()
                         val pressed = event.changes.filter { it.pressed }
@@ -164,7 +172,11 @@ fun CropOverlay(
                         event.changes.forEach { it.consume() }
                         currentOnChange(Rect(next.left / w, next.top / h, next.right / w, next.bottom / h))
                     }
-                    held = null
+                    } finally {
+                        // Let go, or the gesture taken away: either way it is no longer held.
+                        held = null
+                        currentOnHeld(false)
+                    }
                     haptic.performHapticFeedback(HapticFeedbackType.GestureEnd)
                 }
             },

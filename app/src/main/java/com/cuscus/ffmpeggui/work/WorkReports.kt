@@ -22,7 +22,7 @@ class WorkReports(context: Context, private val notifier: WorkNotifier) {
         val step = status.step
         val text = app.getString(
             when (step) {
-                is SpeechTranscriber.Step.Extracting -> R.string.work_speech_extracting
+                is SpeechTranscriber.Step.Extracting -> if (step.voice) R.string.work_speech_extracting_voice else R.string.work_speech_extracting
                 SpeechTranscriber.Step.Loading -> R.string.work_speech_loading
                 is SpeechTranscriber.Step.Listening -> R.string.work_speech_listening
             },

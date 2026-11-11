@@ -56,8 +56,7 @@ class CutoutModelStore(context: Context, val model: CutoutModel) {
     @Synchronized
     fun import(uri: Uri) {
         if (job?.isActive == true) return
-        // The AI marks come first (MarkingGate): without them nothing is read.
-        if (!com.cuscus.ffmpeggui.marking.MarkingGate.allowsImport()) return
+        // No AI marks needed (MarkingGate): what this model makes is not marked.
         job = scope.launch {
             val wasInstalled = file.isFile
             _state.value = State.Importing(Phase.READING, 0f, model.fileName)

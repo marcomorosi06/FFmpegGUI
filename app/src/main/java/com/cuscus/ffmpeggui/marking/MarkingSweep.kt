@@ -10,18 +10,21 @@ import com.cuscus.ffmpeggui.cutout.RefineModel
 import com.cuscus.ffmpeggui.erase.EraseModel
 import com.cuscus.ffmpeggui.erase.EraseVariant
 import com.cuscus.ffmpeggui.speech.SpeechModel
-import com.cuscus.ffmpeggui.speech.SpeechVariant
 import com.cuscus.ffmpeggui.voice.StemModels
 import java.io.File
 
 /**
- * At every start, before any model store reads its files: when there are AI
- * models on the phone and the marks are not installed before them, every
- * model goes, whatever the app's version (EU AI Act, Article 50(2): no model
- * may make anything that cannot be marked). "Before them" is kept as the
- * time the marks were first installed ([since]); a model file older than
- * that came in without them. The user is told once what went and why
+ * At every start, before any model store reads its files: when there are
+ * models that make voices or pictures (the dub's, the magic eraser's) on the
+ * phone and the marks are not installed before them, those models go,
+ * whatever the app's version (EU AI Act, Article 50(2): no model may make
+ * anything that cannot be marked). "Before them" is kept as the time the
+ * marks were first installed ([since]); a model file older than that came in
+ * without them. The user is told once what went and why
  * (ModelsClearedDialog), and what they made with the models stays.
+ *
+ * The other models (speech, translation, cut-out, stems) make nothing that
+ * passes for real and is marked: they need no marks, and they stay.
  *
  * The same deletion runs when the user removes the marks ([clearAll]).
  */
@@ -30,26 +33,32 @@ object MarkingSweep {
     /** A kind of model that went, and the space it took. */
     data class Removed(@StringRes val label: Int, val bytes: Long)
 
-    private class Kind(@StringRes val label: Int, val folders: List<String>, val prefs: List<String>)
+    /** [generative]: its models make what must carry a mark, so they need the marks. */
+    private class Kind(@StringRes val label: Int, val folders: List<String>, val prefs: List<String>, val generative: Boolean)
 
-    /** Every model the app keeps, by kind: their folders (in the app's files) and settings. */
+    /**
+     * Every model the app keeps, by kind: their folders (in the app's files)
+     * and settings. The kinds that need no marks are kept in the list, in
+     * their place, only so that what an older version deleted (KEY_PENDING
+     * keeps indices into it) is still named: they are never deleted here.
+     */
     private val KINDS: List<Kind> by lazy {
         fun of(vararg models: SpeechModel) = models.flatMap { listOf(it.folder, File(File(it.folder).parent ?: "", it.tempFolder).path) }
         listOf(
-            Kind(R.string.smart_section_speech, of(SpeechModel.of(SpeechVariant.INT8), SpeechModel.of(SpeechVariant.SMOOTHQUANT)) + "speech",
-                listOf(SpeechModel.of(SpeechVariant.INT8).prefs, SpeechModel.of(SpeechVariant.SMOOTHQUANT).prefs)),
+            Kind(R.string.smart_section_speech, of(SpeechModel.PARAKEET) + "speech", listOf(SpeechModel.PARAKEET.prefs), generative = false),
             // TranslationModelStore.ROOT: every pair, its temporary import included.
-            Kind(R.string.translate_section, listOf("translate"), emptyList()),
+            Kind(R.string.translate_section, listOf("translate"), emptyList(), generative = false),
             Kind(R.string.smart_section_cutout,
                 CutoutVariant.entries.map { CutoutModel.of(it).folder } + of(RefineModel.FILES) + "refine",
-                CutoutVariant.entries.map { CutoutModel.of(it).prefs } + RefineModel.FILES.prefs),
-            Kind(R.string.erase_section, EraseVariant.entries.flatMap { of(EraseModel.of(it)) } + "erase", EraseVariant.entries.map { EraseModel.of(it).prefs }),
+                CutoutVariant.entries.map { CutoutModel.of(it).prefs } + RefineModel.FILES.prefs, generative = false),
+            Kind(R.string.erase_section, EraseVariant.entries.flatMap { of(EraseModel.of(it)) } + "erase",
+                EraseVariant.entries.map { EraseModel.of(it).prefs }, generative = true),
             // Bandit and Spleeter's five stems under "stems"; "voice" held Spleeter's two stems (retired).
             Kind(R.string.voice_section, of(StemModels.SCENE, StemModels.INSTRUMENTS) + "stems" + "voice",
-                listOf(StemModels.SCENE.prefs, StemModels.INSTRUMENTS.prefs, "voice_model")),
+                listOf(StemModels.SCENE.prefs, StemModels.INSTRUMENTS.prefs, "voice_model"), generative = false),
             // DubModelStore and PiperVoiceStore: Kokoro, the Piper voices, eSpeak NG's data, under "dub"
             // (the dubs made are in "dubs": they stay). DubModelStore.PREFS.
-            Kind(R.string.dub_section, listOf("dub"), listOf("dub_model")),
+            Kind(R.string.dub_section, listOf("dub"), listOf("dub_model"), generative = true),
         )
     }
 
@@ -58,8 +67,10 @@ object MarkingSweep {
     private const val KEY_PENDING = "pending"
 
     /**
-     * Deletes every model when [markersReady] is false or a model predates
-     * the marks; returns what went now. Cheap when there is nothing to do.
+     * Deletes the models that need the marks (the dub's, the eraser's) when
+     * [markersReady] is false or one of them predates the marks; returns what
+     * went now. The other models are left alone. Cheap when there is nothing
+     * to do.
      */
     fun sweep(context: Context, markersReady: Boolean): List<Removed> {
         val app = context.applicationContext
@@ -75,7 +86,7 @@ object MarkingSweep {
         if (models.isEmpty()) return emptyList()
         val before = models.any { (_, files) -> files.any { it.lastModified() < since - GRACE_MS } }
         if (markersReady && !before) return emptyList()
-        Log.w(TAG, if (markersReady) "Models older than the AI marks: all of them deleted" else "AI models without the AI marks: all of them deleted")
+        Log.w(TAG, if (markersReady) "Dub or eraser models older than the AI marks: deleted" else "Dub or eraser models without the AI marks: deleted")
         return delete(app)
     }
 
@@ -90,7 +101,7 @@ object MarkingSweep {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_SINCE).apply()
     }
 
-    /** Every model goes (the user removes the marks); returns what went. */
+    /** The dub's and the eraser's models go (the user removes the marks); returns what went. */
     fun clearAll(context: Context): List<Removed> = delete(context.applicationContext)
 
     /** What went and was not yet shown to the user. */
@@ -108,7 +119,7 @@ object MarkingSweep {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_PENDING).apply()
     }
 
-    private fun present(app: Context): List<Pair<Kind, List<File>>> = KINDS.mapNotNull { kind ->
+    private fun present(app: Context): List<Pair<Kind, List<File>>> = KINDS.filter { it.generative }.mapNotNull { kind ->
         val files = kind.folders.map { File(app.filesDir, it) }.filter { it.exists() }
             .flatMap { folder -> folder.walkBottomUp().filter { it.isFile }.toList() }
         if (files.isEmpty()) null else kind to files
@@ -117,6 +128,7 @@ object MarkingSweep {
     private fun delete(app: Context): List<Removed> {
         val removed = ArrayList<Pair<Int, Long>>()
         for ((index, kind) in KINDS.withIndex()) {
+            if (!kind.generative) continue
             var bytes = 0L
             for (name in kind.folders) {
                 val folder = File(app.filesDir, name)
