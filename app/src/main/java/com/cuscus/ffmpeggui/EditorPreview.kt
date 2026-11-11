@@ -478,9 +478,10 @@ fun PreviewContainer(
     if (format.isAudioOnly && audioCard != null) {
         val clock = remember(shownClips, whole, trimStartMs) { outputClock(shownClips, whole, trimStartMs) }
         val currentWaveformOf by rememberUpdatedState(waveformOf)
-        val envelope by remember(shownClips, sources, clock, whole, sourceGain, sounds, soundGain) {
+        val envelope by remember(shownClips, sources, clock, whole, sourceGain, sounds, soundGain, stemClips) {
             derivedStateOf {
-                outputEnvelope(shownClips, sources, clock, trimStartMs, whole, sourceGain, sounds, soundGain, currentWaveformOf)
+                // The clips heard from their stems count once, as the preview plays them.
+                outputEnvelope(shownClips, sources, clock, trimStartMs, whole, sourceGain, sounds, soundGain, currentWaveformOf, silenced = stemClips)
             }
         }
         AudioPreview(

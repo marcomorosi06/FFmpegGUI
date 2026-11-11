@@ -21,7 +21,14 @@ import kotlin.math.sqrt
  * [sourceGain] (the whole video's volume or levelling, 0 without its sound),
  * and the placed [sounds] on top, everything under the whole video's fades
  * ([whole]). [waveformOf] gives a file's measured outline, or null while it is
- * being read.
+ * being read. The clips in [silenced] are heard from their separated stems
+ * (among [sounds]), not from their file: they count once, as the preview
+ * plays them.
+ *
+ * Sounds heard together are added as their powers, not their peaks: the peaks
+ * of different sounds rarely line up, and stems laid as tracks are parts of
+ * one mix, whose sum never peaks higher than the mix did. Added peak by peak,
+ * a song's five instruments showed nearly all of it as clipping.
  */
 fun outputEnvelope(
     clips: List<Clip>,
@@ -34,6 +41,7 @@ fun outputEnvelope(
     soundGain: Float,
     waveformOf: (Uri) -> Waveform?,
     points: Int = ENVELOPE_POINTS,
+    silenced: Set<String> = emptySet(),
 ): FloatArray {
     val duration = clock.outputDurationMs
     val envelope = FloatArray(points)
@@ -75,7 +83,7 @@ fun outputEnvelope(
             fun peakIn(index: Int, fromMedia: Double, toMedia: Double): Float {
                 val clip = clips[index]
                 val wave = waveforms[index] ?: return 0f
-                if (clip.effects.muted) return 0f
+                if (clip.effects.muted || clip.id in silenced) return 0f
                 val a = clip.startMs + (min(fromMedia, toMedia) - starts[index]).toLong().coerceAtLeast(0L)
                 val b = clip.startMs + (max(fromMedia, toMedia) - starts[index]).toLong().coerceAtMost(clip.lengthMs)
                 val lengthOut = kotlin.math.abs(outEnd[index] - outStart[index])
@@ -91,9 +99,10 @@ fun outputEnvelope(
             source *= sourceGain
         }
 
-        // The placed sounds, added together.
+        // The placed sounds, added together as their powers.
         var placed = 0f
         if (soundGain > 0f) {
+            var power = 0f
             sounds.forEachIndexed { index, sound ->
                 val wave = soundWaves[index] ?: return@forEachIndexed
                 val end = sound.startMs + sound.lengthMs
@@ -102,9 +111,10 @@ fun outputEnvelope(
                 val local1 = (min(t1, end) - sound.startMs)
                 val peak = wave.peakBetween(soundFileMs(sound, local0), soundFileMs(sound, local1))
                 val fade = fadeLevel((local0 + local1) / 2, sound.lengthMs, sound.fadeInSeconds, sound.fadeOutSeconds)
-                placed += peak * sound.volume * fade
+                val level = peak * sound.volume * fade
+                power += level * level
             }
-            placed *= soundGain
+            placed = sqrt(power) * soundGain
         }
         // Peaks of different sounds rarely line up: add them as their powers.
         envelope[p] = sqrt(source * source + placed * placed) * wholeFade

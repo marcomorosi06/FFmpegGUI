@@ -194,8 +194,9 @@ OPUS, FLAC, WAV) the editor works on the sound alone:
 - the preview pane shows `AudioPreview.kt` instead of the picture: the
   exported sound as rounded bars (`preview/AudioEnvelope.kt` builds the outline
   of the output from the clips' and placed sounds' waveforms, through the
-  output clock, with volumes, fades and levelling; values above 1 would clip
-  and are drawn in the error tone), the playhead, dashed lines where the file
+  output clock, with volumes, fades and levelling, sounds heard together
+  added as their powers, a clip heard from its stems counted once; values
+  above 1 would clip and are drawn in the error tone), the playhead, dashed lines where the file
   will be cut into parts, the tags and format on top and the effects in use
   below. The bars at the playhead and a morphing badge follow the level that is
   playing (`LevelMeter`, fed by the players). Touching or dragging the waveform
