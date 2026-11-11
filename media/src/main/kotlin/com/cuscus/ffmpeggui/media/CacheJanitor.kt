@@ -106,6 +106,11 @@ class CacheJanitor(
                 ?.filter { now - it.lastModified() > FfmpegSoundReverser.KEPT_MS || it.name.endsWith(FfmpegSoundReverser.WORK_SUFFIX) }
                 ?.forEach { it.deleteRecursively() }
 
+            // Premixes of stems not heard for days, and the work of a run cut short.
+            File(appContext.cacheDir, FfmpegStemPremixer.DIRECTORY).listFiles()
+                ?.filter { now - it.lastModified() > FfmpegStemPremixer.KEPT_MS || it.name.endsWith(FfmpegStemPremixer.WORK_SUFFIX) }
+                ?.forEach { it.deleteRecursively() }
+
             // The About page's hidden game, left by a run cut short.
             File(appContext.cacheDir, FfmpegLife.DIRECTORY).listFiles()?.forEach { it.deleteRecursively() }
 

@@ -1460,6 +1460,11 @@
     <string name="settings_clip_waveforms">Sound of the clips</string>
     <string name="settings_clip_waveforms_on">Each video clip shows its own sound along the bottom of its frames: find a cut, a clap or a beat by eye.</string>
     <string name="settings_clip_waveforms_off">The clips show their frames only.</string>
+    <string name="settings_editor_audio">Audio editor</string>
+    <string name="settings_audio_spectrum">Spectrum</string>
+    <string name="settings_audio_spectrum_on">Under the waveform, what plays from the lows to the highs, as you hear it. It gives way to the waveform when the window is short.</string>
+    <string name="settings_audio_spectrum_off">The waveform alone.</string>
+    <string name="audio_spectrum_description">Spectrum of the sound playing, from the lows on the left to the highs on the right</string>
     <string name="settings_haptics">Touch feedback</string>
     <string name="settings_haptics_summary">Light taps on buttons, sliders and the timeline.</string>
     <string name="settings_haptics_try">Try them</string>
@@ -1918,6 +1923,8 @@
     <string name="about_licence_effects_summary">Part of FFmpeg GUI, under its licence</string>
     <string name="about_licence_splash">The splash screen, from WiFi Audio Streaming for Android</string>
     <string name="about_licence_splash_summary">By the same author, under the same licence (EUPL 1.2, github.com/marcomorosi06/WiFiAudioStreaming-Android)</string>
+    <string name="about_licence_spectrum">The audio editor\'s spectrum, from WiFi Audio Streaming for desktop</string>
+    <string name="about_licence_spectrum_summary">By the same author, under the same licence (EUPL 1.2, github.com/marcomorosi06/WiFiAudioStreaming-Desktop)</string>
     <string name="about_licence_anti_vocale">anti-vocale, by RisorseArtificiali</string>
     <string name="about_licence_anti_vocale_summary">The smart subtitles take their idea from it (Apache License 2.0)</string>
     <string name="tool_framing">Zoom</string>
@@ -2881,6 +2888,20 @@
         <item quantity="one">%1$d clip kept its own sound: played backwards or on a speed curve, it cannot be followed by a track.</item>
         <item quantity="other">%1$d clips kept their own sound: played backwards or on a speed curve, they cannot be followed by a track.</item>
     </plurals>
+    <string name="stems_rejoin_title">Put back together</string>
+    <string name="stems_rejoin_text">Tracks laid before go back into one. What was done to them goes with them; Undo brings it back.</string>
+    <string name="stems_rejoin_all_hint">All of them: the tracks go and the clip is heard again as it was.</string>
+    <string name="stems_rejoin_some_hint">Two or more: they become one track holding their parts, and the clip stays silent while the others play. All of them bring the clip back.</string>
+    <string name="stems_rejoin_all">Put all back into the clip</string>
+    <plurals name="stems_rejoin_some">
+        <item quantity="one">Make %1$d track one</item>
+        <item quantity="other">Make %1$d tracks one</item>
+    </plurals>
+    <plurals name="stems_rejoin_every">
+        <item quantity="one">Put the tracks back into %1$d clip</item>
+        <item quantity="other">Put the tracks back into all %1$d clips</item>
+    </plurals>
+    <string name="timeline_split_slot">Split into stems</string>
     <string name="stems_needs_instruments">Splitting the music into its instruments needs Spleeter\'s five stems, set up once in Smart features.</string>
     <string name="stems_step_loading_instruments">Loading the instruments\' model</string>
     <string name="stems_step_instruments">Listening for each instrument, %1$d%%</string>

@@ -262,6 +262,12 @@ fun EditorTimeline(
      */
     quietClips: Set<String> = emptySet(),
     /**
+     * Clips (ids) heard from their stem tracks (see AudioClip.stemOf): with
+     * [soundClips], each is drawn as an empty slot (it still sets where the
+     * rest of the sound is), and the row is made thin when every clip is one.
+     */
+    splitClips: Set<String> = emptySet(),
+    /**
      * The most it may grow to, to show more rows of lanes before they scroll (the
      * tools beside the player have the whole height); it is never lower than
      * [TIMELINE_HEIGHT], nor taller than its rows need.
@@ -290,7 +296,10 @@ fun EditorTimeline(
     // Sizes in pixels.
     val rulerHeight = with(density) { RULER_HEIGHT.toPx() }
     val trackTop = rulerHeight + with(density) { ROW_GAP.toPx() }
-    val trackHeight = with(density) { TRACK_HEIGHT.toPx() }
+    // An audio file whose every clip is heard from its stems: the clips' row is only their slots, thin.
+    val allSplit = soundClips && timeline.clips.isNotEmpty() && timeline.clips.all { it.id in splitClips }
+    val trackDp by animateDpAsState(if (allSplit) SPLIT_TRACK_HEIGHT else TRACK_HEIGHT, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "trackHeight")
+    val trackHeight = with(density) { trackDp.toPx() }
     val lanesTop = trackTop + trackHeight + with(density) { ROW_GAP.toPx() }
     val minPxPerMs = with(density) { MIN_DP_PER_SECOND.toPx() } / 1000f
     val maxPxPerMs = with(density) { MAX_DP_PER_SECOND.toPx() } / 1000f
@@ -298,6 +307,7 @@ fun EditorTimeline(
     val snapPx = with(density) { SNAP_DISTANCE.toPx() }
 
     val untitledText = stringResource(R.string.tool_text)
+    val splitSlotText = stringResource(R.string.timeline_split_slot)
     val untitledImage = stringResource(R.string.tool_image)
 
     // Everything placed on the video, each kind on as many rows as its overlaps need.
@@ -320,7 +330,7 @@ fun EditorTimeline(
     val neededHeight = with(density) { (lanesTop + lanes.contentHeight).toDp() }
     val targetHeight = neededHeight.coerceIn(TIMELINE_HEIGHT, maxOf(TIMELINE_HEIGHT, maxHeight))
     val timelineHeight by animateDpAsState(targetHeight, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "timelineHeight")
-    val lanesViewport = with(density) { (timelineHeight - RULER_HEIGHT - ROW_GAP - TRACK_HEIGHT - ROW_GAP).toPx() }
+    val lanesViewport = with(density) { (timelineHeight - RULER_HEIGHT - ROW_GAP - trackDp - ROW_GAP).toPx() }
 
     // Zoom (pixels per millisecond); 0 until the width is known.
     var pxPerMs by viewState.zoom
@@ -1261,7 +1271,23 @@ fun EditorTimeline(
                 // The picture reaches into the slanted tips too.
                 val stripLeft = rect.left - (before?.bottom ?: 0f)
                 val stripRight = rect.right + (after?.top ?: 0f)
-                clipPath(clipShape) {
+                // Heard from its stem tracks: an empty slot, its outline dashed.
+                val slot = soundClips && clip.id in splitClips
+                if (slot) {
+                    drawPath(clipShape, surfaceColor.copy(alpha = SPLIT_SLOT_ALPHA))
+                    val dash = 5.dp.toPx()
+                    drawPath(clipShape, muted, style = Stroke(width = 1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(dash, dash))))
+                    if (rect.width > SPLIT_LABEL_MIN_WIDTH.toPx() && rect.height > 18.dp.toPx()) {
+                        drawLabel(
+                            textMeasurer,
+                            splitSlotText,
+                            Offset(rect.left + 8.dp.toPx(), rect.top + (rect.height - 14.dp.toPx()) / 2f),
+                            maxWidth = rect.width - 16.dp.toPx(),
+                            background = null,
+                            style = mutedStyle,
+                        )
+                    }
+                } else clipPath(clipShape) {
                     drawRect(surfaceColor, topLeft = Offset(stripLeft, rect.top), size = Size(stripRight - stripLeft, rect.height))
                     if (source != null && soundClips) {
                         drawClipWaveform(bars, viewState.waveform(source.uri), clip, rect.left, rect.right, trackTop, trackHeight, pxPerMs, primary, faint = clip.id in quietClips)
@@ -1596,7 +1622,7 @@ fun EditorTimeline(
                 .offset { IntOffset(0, trackTop.toInt()) }
                 .padding(end = 8.dp)
                 .springPress(addInteraction, pressedScale = 0.85f)
-                .size(TRACK_HEIGHT)
+                .size(trackDp)
                 .clip(addShape)
                 .background(colors.primaryContainer)
                 .clickable(interactionSource = addInteraction, indication = LocalIndication.current, role = Role.Button) {
@@ -1608,7 +1634,7 @@ fun EditorTimeline(
                 Icons.Rounded.Add,
                 contentDescription = stringResource(R.string.editor_add_clip),
                 tint = colors.onPrimaryContainer,
-                modifier = Modifier.size(28.dp),
+                modifier = Modifier.size(trackDp / 2),
             )
         }
     }
@@ -2764,6 +2790,13 @@ private const val WAVEFORM_WORKERS = 2
 
 private val RULER_HEIGHT = 20.dp
 private val TRACK_HEIGHT = 56.dp
+
+/** The clips' row of an audio file whose every clip is heard from its stems: only their slots. */
+private val SPLIT_TRACK_HEIGHT = 28.dp
+
+/** A clip heard from its stems: its slot's fill, faint, and the width from which it is named. */
+private const val SPLIT_SLOT_ALPHA = 0.35f
+private val SPLIT_LABEL_MIN_WIDTH = 72.dp
 
 /** Share of a clip's height its own sound takes, along its bottom. */
 private const val SOUND_BAND_SHARE = 0.42f

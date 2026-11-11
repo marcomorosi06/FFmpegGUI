@@ -1418,6 +1418,8 @@ fun ConfigScreen(
                 voiceStems = voice.stems,
                 reversedSounds = reversedSounds.files,
                 onReversedSoundsNeeded = reversedSounds.onNeeded,
+                stemPremixes = voice.premixes,
+                onStemPremixesNeeded = voice.onPremixesNeeded,
                 subtitleStyle = subtitles.style,
                 subtitleFileStyled = subtitles.fileStyled,
                 subtitleFonts = subtitles.fonts,
@@ -1566,6 +1568,8 @@ fun ConfigScreen(
                     // A GIF has no sound; an audio file's clips are drawn as their sound already.
                     clipWaveforms = !audioMode && !gifMode && LocalAppSettings.current.clipWaveforms,
                     quietClips = backwardsSilent,
+                    // A clip heard from its stem tracks is an empty slot of the audio file's row.
+                    splitClips = remember(audioClips) { audioClips.mapNotNull { it.stemOf }.toSet() },
                     selectedItemId = selectedSound?.id ?: selectedText?.id ?: selectedImage?.id,
                     onSelectClip = selectClip,
                     onTrimClip = onTrimClip,

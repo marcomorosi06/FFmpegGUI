@@ -26,9 +26,13 @@ import kotlin.math.sqrt
  * plays them.
  *
  * Sounds heard together are added as their powers, not their peaks: the peaks
- * of different sounds rarely line up, and stems laid as tracks are parts of
- * one mix, whose sum never peaks higher than the mix did. Added peak by peak,
- * a song's five instruments showed nearly all of it as clipping.
+ * of different sounds rarely line up. Stems laid as tracks are another matter:
+ * they are parts of one sound, so loud a song's five instruments showed
+ * nearly all of it as clipping even added as their powers (five stems peaking
+ * at 0.6 make 1.34). [stemOrigin] gives the file a stem was split from (null
+ * for any other sound): the stems of one file laid at one place count as
+ * their sum, but never louder than that file is there at the loudest of their
+ * levels; until the file's outline is read, as their powers.
  */
 fun outputEnvelope(
     clips: List<Clip>,
@@ -42,6 +46,7 @@ fun outputEnvelope(
     waveformOf: (Uri) -> Waveform?,
     points: Int = ENVELOPE_POINTS,
     silenced: Set<String> = emptySet(),
+    stemOrigin: (Uri) -> Uri? = { null },
 ): FloatArray {
     val duration = clock.outputDurationMs
     val envelope = FloatArray(points)
@@ -57,6 +62,11 @@ fun outputEnvelope(
     val outEnd = LongArray(clips.size) { clock.outputMs((trimStartMs + starts[it] + clips[it].lengthMs).toDouble()) }
     val waveforms = clips.map { clip -> sources.firstOrNull { it.id == clip.sourceId }?.takeIf { !it.isStill }?.uri?.let(waveformOf) }
     val soundWaves = sounds.map { waveformOf(it.uri) }
+    val origins = sounds.map { stemOrigin(it.uri) }
+    val originWaves = origins.map { it?.let(waveformOf) }
+    // Per bundle of stems (their file, their start): the sum of their levels, the loudest of
+    // their gains, the file's own peak there (-1: not read yet), the sum of their powers.
+    val bundles = HashMap<Pair<Uri, Long>, FloatArray>()
 
     fun clipAt(mediaMs: Double): Int {
         if (clips.isEmpty()) return -1
@@ -103,15 +113,33 @@ fun outputEnvelope(
         var placed = 0f
         if (soundGain > 0f) {
             var power = 0f
+            bundles.clear()
             sounds.forEachIndexed { index, sound ->
                 val wave = soundWaves[index] ?: return@forEachIndexed
                 val end = sound.startMs + sound.lengthMs
                 if (t1 <= sound.startMs || t0 >= end || sound.volume <= 0f) return@forEachIndexed
                 val local0 = (max(t0, sound.startMs) - sound.startMs)
                 val local1 = (min(t1, end) - sound.startMs)
-                val peak = wave.peakBetween(soundFileMs(sound, local0), soundFileMs(sound, local1))
+                val from = soundFileMs(sound, local0)
+                val to = soundFileMs(sound, local1)
+                val peak = wave.peakBetween(from, to)
                 val fade = fadeLevel((local0 + local1) / 2, sound.lengthMs, sound.fadeInSeconds, sound.fadeOutSeconds)
-                val level = peak * sound.volume * fade
+                val gain = sound.volume * fade
+                val level = peak * gain
+                val origin = origins[index]
+                if (origin == null) {
+                    power += level * level
+                    return@forEachIndexed
+                }
+                // A stem: on its file's own clock, as the file it was split from.
+                val bundle = bundles.getOrPut(origin to sound.startMs) { floatArrayOf(0f, 0f, -1f, 0f) }
+                bundle[0] += level
+                bundle[1] = max(bundle[1], gain)
+                originWaves[index]?.let { bundle[2] = max(bundle[2], it.peakBetween(from, to)) }
+                bundle[3] += level * level
+            }
+            for (bundle in bundles.values) {
+                val level = if (bundle[2] >= 0f) min(bundle[0], bundle[2] * bundle[1]) else sqrt(bundle[3])
                 power += level * level
             }
             placed = sqrt(power) * soundGain

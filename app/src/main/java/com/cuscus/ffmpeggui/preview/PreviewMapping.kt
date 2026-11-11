@@ -4,12 +4,16 @@ import android.net.Uri
 import com.cuscus.ffmpeggui.AudioClip
 import com.cuscus.ffmpeggui.EditorSource
 import com.cuscus.ffmpeggui.ImageOverlay
+import com.cuscus.ffmpeggui.conversion.toPlacedSound
 import com.cuscus.ffmpeggui.core.model.Effects
 import com.cuscus.ffmpeggui.core.model.Segment
 import com.cuscus.ffmpeggui.core.preview.OutputClock
 import com.cuscus.ffmpeggui.core.preview.PreviewTimeline
 import com.cuscus.ffmpeggui.core.preview.ReversedSound
+import com.cuscus.ffmpeggui.core.preview.PremixPart
 import com.cuscus.ffmpeggui.core.preview.ReversedSoundRequest
+import com.cuscus.ffmpeggui.core.preview.StemBundle
+import com.cuscus.ffmpeggui.core.preview.StemPremix
 import com.cuscus.ffmpeggui.core.preview.SubtitleCue
 import com.cuscus.ffmpeggui.core.preview.decibelsToVolume
 import com.cuscus.ffmpeggui.core.preview.normalizationGainDb
@@ -19,6 +23,7 @@ import com.cuscus.ffmpeggui.core.subtitles.SpokenWord
 import com.cuscus.ffmpeggui.core.subtitles.onTimeline as wordsOnTimeline
 import com.cuscus.ffmpeggui.core.subtitles.placedWords
 import com.cuscus.ffmpeggui.core.timeline.Clip
+import com.cuscus.ffmpeggui.voice.VoiceSeparator
 
 /**
  * The part of its file each clip of [previewClips] needs reversed, so that the
@@ -174,6 +179,44 @@ fun previewSounds(clips: List<AudioClip>, overlays: List<ImageOverlay>): List<Pr
         fadeInSeconds = overlay.fadeInSeconds,
         fadeOutSeconds = overlay.fadeOutSeconds,
     )
+}
+
+/**
+ * The stems laid as tracks that are heard from one premix each (see
+ * StemPremix): those of one file placed at the same point.
+ */
+fun premixBundles(clips: List<AudioClip>): List<StemBundle> = StemPremix.bundles(
+    clips.mapNotNull { clip ->
+        val origin = VoiceSeparator.stemOriginOf(clip.uri) ?: return@mapNotNull null
+        val path = clip.uri.path ?: return@mapNotNull null
+        PremixPart(clip.id, origin, path, clip.toPlacedSound(), clip.muted)
+    },
+)
+
+/**
+ * [sounds] with the stems of every bundle that has a premix (in [premixes],
+ * by the bundle it was made for: the current one, or the last one made for
+ * the same tracks while the current one is being made) heard from it instead.
+ * The premix holds the stems' own settings: only the whole video's level,
+ * fades and effects are put on it, as on any sound.
+ */
+fun withPremixes(sounds: List<PreviewSound>, bundles: List<StemBundle>, premixes: Map<StemBundle, String>): List<PreviewSound> {
+    if (bundles.isEmpty() || premixes.isEmpty()) return sounds
+    val replaced = HashSet<String>()
+    val mixed = bundles.mapNotNull { bundle ->
+        val (made, file) = premixes[bundle]?.let { bundle to it }
+            ?: premixes.entries.firstOrNull { it.key.ids == bundle.ids }?.toPair()
+            ?: return@mapNotNull null
+        replaced += bundle.ids
+        PreviewSound(
+            id = bundle.soundId,
+            uri = Uri.fromFile(java.io.File(file)),
+            startMs = bundle.startMs,
+            trimStartMs = 0L,
+            trimEndMs = made.lengthMs,
+        )
+    }
+    return sounds.filterNot { it.id in replaced } + mixed
 }
 
 /**

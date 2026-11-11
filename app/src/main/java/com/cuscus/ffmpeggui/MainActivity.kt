@@ -350,6 +350,8 @@ class MainActivity : ComponentActivity() {
                     }
                     val reversedSoundFiles by vm.reversedSounds.collectAsState()
                     val reversingProgress by vm.reversing.collectAsState()
+                    val stemPremixFiles by vm.stemPremixes.collectAsState()
+                    val stemRejoining by vm.stemRejoining.collectAsState()
                     val voiceEditing = VoiceEditing(
                         modelReady = voiceModel is SpeechModelStore.State.Ready,
                         status = voiceStatus,
@@ -364,6 +366,11 @@ class MainActivity : ComponentActivity() {
                         onDismissProblem = vm::dismissVoiceProblem,
                         onLevels = vm::setVoiceLevels,
                         onOpenSmartFeatures = { com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.VOICE; navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
+                        premixes = stemPremixFiles,
+                        onPremixesNeeded = vm::wantStemPremixes,
+                        laid = remember(s.audioClips, s.timeline) { laidStems(s.audioClips, s.timeline.clips.map { it.id }.toSet()) },
+                        rejoining = stemRejoining,
+                        onRejoin = vm::rejoinStems,
                     )
 
                     LaunchedEffect(Unit) {

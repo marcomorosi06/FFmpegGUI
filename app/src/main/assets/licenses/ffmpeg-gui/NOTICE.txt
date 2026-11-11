@@ -47,6 +47,15 @@ CODE BASED ON OTHER PROJECTS
   licence: EUPL-1.2, its text as that repository has it in
   ../wifi-audio-streaming/LICENSE.txt. The glyph in it, its scale and the
   colours are FFmpeg GUI's own.
+- The audio editor's spectrum (core/audio/Spectrum.kt: the window, the FFT,
+  the bands, the tilt, the decibel range, the rise and fall of the bars and
+  their caps; AudioSpectrum.kt draws it in the same spirit) comes from WiFi
+  Audio Streaming's desktop app (SpectrumAnalyzer.kt and SpectrumView.kt),
+  https://github.com/marcomorosi06/WiFiAudioStreaming-Desktop , by the same
+  author (Copyright (c) 2026 Marco Morosi), under the same licence:
+  EUPL-1.2, the same text as ../wifi-audio-streaming/LICENSE.txt. Several
+  sounds added as their powers, the timing in seconds and the sound read as
+  it is heard (preview/SpectrumTap.kt) are FFmpeg GUI's own.
 - The stem separation (core/stems) computes the spectrograms and masks of
   Bandit v2 (torchaudio's transform as the authors' configuration sets it;
   code Apache-2.0, weights CC-BY-SA-4.0, ../bandit/) and of Spleeter's five

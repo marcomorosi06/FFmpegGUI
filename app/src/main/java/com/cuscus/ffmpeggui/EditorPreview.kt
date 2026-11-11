@@ -134,6 +134,7 @@ import com.cuscus.ffmpeggui.core.model.StackSlot
 import com.cuscus.ffmpeggui.core.model.stackOrder
 import com.cuscus.ffmpeggui.core.preview.SnapBox
 import com.cuscus.ffmpeggui.core.preview.ReversedSoundRequest
+import com.cuscus.ffmpeggui.core.preview.StemBundle
 import com.cuscus.ffmpeggui.core.preview.SubtitleCue
 import com.cuscus.ffmpeggui.core.subtitles.SpokenWord
 import com.cuscus.ffmpeggui.core.subtitles.SubtitleLayout
@@ -161,6 +162,7 @@ import com.cuscus.ffmpeggui.preview.previewClipLevels
 import com.cuscus.ffmpeggui.preview.previewClips
 import com.cuscus.ffmpeggui.preview.reversedSoundRequests
 import com.cuscus.ffmpeggui.preview.ofSounds
+import com.cuscus.ffmpeggui.preview.premixBundles
 import com.cuscus.ffmpeggui.preview.previewSounds
 import com.cuscus.ffmpeggui.preview.previewStemSounds
 import com.cuscus.ffmpeggui.preview.setColorMatrix
@@ -171,6 +173,7 @@ import com.cuscus.ffmpeggui.preview.keyedBitmap
 import com.cuscus.ffmpeggui.preview.overVideo
 import com.cuscus.ffmpeggui.core.model.ColorKey
 import com.cuscus.ffmpeggui.preview.smallPicture
+import com.cuscus.ffmpeggui.preview.withPremixes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
@@ -287,6 +290,10 @@ fun PreviewContainer(
     reversedSounds: Map<ReversedSoundRequest, String> = emptyMap(),
     /** Asked with the parts the clips played backwards need reversed, whenever they change. */
     onReversedSoundsNeeded: (List<ReversedSoundRequest>) -> Unit = {},
+    /** The premixes of stems laid as tracks made so far (see StemPremix), by the bundle each was made for. */
+    stemPremixes: Map<StemBundle, String> = emptyMap(),
+    /** Asked with the bundles of stems the preview hears, whenever they change. */
+    onStemPremixesNeeded: (List<StemBundle>) -> Unit = {},
     /** How spoken subtitles and SubRip files look. */
     subtitleStyle: SubtitleStyle = SubtitleStyle(),
     /** False for a SubStation Alpha file: it keeps its own look, drawn plainly here. */
@@ -386,7 +393,14 @@ fun PreviewContainer(
     // What the layers list hides (its eye) is kept in the project only: neither seen nor heard.
     val shownTexts = remember(textOverlays) { textOverlays.filterNot { it.hidden } }
     val shownImages = remember(imageOverlays) { imageOverlays.filterNot { it.hidden } }
-    val sounds = remember(audioClips, shownImages, cutEffects, stemSounds) { previewSounds(audioClips, shownImages + cutEffects) + stemSounds }
+    // The stems of one file laid as tracks are heard from one premix: on players of their own
+    // they drift a few milliseconds apart, and parts of one sound that far apart sound distorted.
+    val stemBundles = remember(audioClips, soundsHeard) { if (soundsHeard) premixBundles(audioClips) else emptyList() }
+    val currentPremixesNeeded by rememberUpdatedState(onStemPremixesNeeded)
+    LaunchedEffect(stemBundles) { currentPremixesNeeded(stemBundles) }
+    val sounds = remember(audioClips, shownImages, cutEffects, stemSounds, stemBundles, stemPremixes) {
+        withPremixes(previewSounds(audioClips, shownImages + cutEffects), stemBundles, stemPremixes) + stemSounds
+    }
 
     // -- Player -----------------------------------------------------------------------
     // Made again only when the preview itself is (the editors move it instead, see ConfigScreen):
@@ -478,10 +492,20 @@ fun PreviewContainer(
     if (format.isAudioOnly && audioCard != null) {
         val clock = remember(shownClips, whole, trimStartMs) { outputClock(shownClips, whole, trimStartMs) }
         val currentWaveformOf by rememberUpdatedState(waveformOf)
-        val envelope by remember(shownClips, sources, clock, whole, sourceGain, sounds, soundGain, stemClips) {
+        // The file each stem laid as a track was split from: its stems are parts of it.
+        val stemOrigin = remember(sources) {
+            val byName = sources.filter { !it.isStill }.associateBy({ com.cuscus.ffmpeggui.voice.VoiceSeparator.stemNameOf(it.uri) }, { it.uri })
+            val origin: (Uri) -> Uri? = { sound -> com.cuscus.ffmpeggui.voice.VoiceSeparator.stemOriginOf(sound)?.let(byName::get) }
+            origin
+        }
+        val envelope by remember(shownClips, sources, clock, whole, sourceGain, sounds, soundGain, stemClips, stemOrigin) {
             derivedStateOf {
                 // The clips heard from their stems count once, as the preview plays them.
-                outputEnvelope(shownClips, sources, clock, trimStartMs, whole, sourceGain, sounds, soundGain, currentWaveformOf, silenced = stemClips)
+                outputEnvelope(
+                    shownClips, sources, clock, trimStartMs, whole, sourceGain, sounds, soundGain, currentWaveformOf,
+                    silenced = stemClips,
+                    stemOrigin = stemOrigin,
+                )
             }
         }
         AudioPreview(
@@ -498,6 +522,8 @@ fun PreviewContainer(
             onSeek = { outputMs -> player.seekToOutput(outputMs) },
             modifier = modifier,
             cover = rememberCoverPicture(audioCard.cover, AUDIO_BADGE_PX),
+            spectrum = player.liveAudio.spectrum,
+            showSpectrum = com.cuscus.ffmpeggui.ui.theme.LocalAppSettings.current.audioSpectrum,
         )
         return
     }

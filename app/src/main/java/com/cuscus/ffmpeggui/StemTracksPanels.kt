@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CallMerge
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -392,6 +393,101 @@ private fun StemPill(kind: StemKind, label: String, selected: Boolean, kept: Boo
                     modifier = Modifier.size(12.dp),
                 )
             }
+        }
+    }
+}
+
+/**
+ * The stem tracks laid for the clip (or for every clip), to put back
+ * together (see StemRejoin): for one clip its tracks as pills, all picked at
+ * first; all of them bring the clip back, two or more become one track. For
+ * the whole video, one button puts every clip back. Nothing shows while no
+ * clip in question has stem tracks.
+ */
+@Composable
+internal fun StemRejoinCard(voice: VoiceEditing, clipId: String?) {
+    val scheme = MaterialTheme.colorScheme
+    val haptics = LocalHapticFeedback.current
+    val laid = if (clipId != null) voice.laid[clipId].orEmpty() else voice.laid.values.flatten()
+    if (laid.isEmpty()) return
+    val working = voice.rejoining || voice.status is VoiceStatus.Working
+    // What is picked, by track id: every track at first, and every one laid since.
+    var unpicked by rememberSaveable(clipId) { mutableStateOf(emptySet<String>()) }
+    val picked = laid.map { it.id }.filter { it !in unpicked }.toSet()
+    val names = StemKind.entries.associateWith { stemLabel(it) }
+    val all = picked.size == laid.size
+    val count = picked.size
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(scheme.surfaceContainerHigh)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            MorphingContainer(
+                from = MaterialShapes.Clover8Leaf,
+                to = MaterialShapes.Cookie12Sided,
+                morphed = clipId != null && all,
+                color = scheme.tertiaryContainer,
+                modifier = Modifier.size(56.dp),
+            ) {
+                Icon(Icons.Rounded.CallMerge, contentDescription = null, tint = scheme.onTertiaryContainer, modifier = Modifier.size(28.dp))
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.stems_rejoin_title), style = MaterialTheme.typography.titleMediumEmphasized, color = scheme.onSurface)
+                Text(stringResource(R.string.stems_rejoin_text), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+            }
+        }
+
+        if (clipId != null) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                laid.forEach { track ->
+                    val kinds = track.kinds.sortedBy { it.ordinal }
+                    StemPill(
+                        kind = kinds.firstOrNull() ?: StemKind.OTHER,
+                        label = kinds.joinToString(" + ") { names.getValue(it) }.ifEmpty { track.name },
+                        selected = track.id in picked,
+                        kept = false,
+                        enabled = !working,
+                        onToggle = {
+                            haptics.performHapticFeedback(if (track.id in picked) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
+                            unpicked = if (track.id in unpicked) unpicked - track.id else unpicked + track.id
+                        },
+                    )
+                }
+            }
+            PanelHint(stringResource(if (all) R.string.stems_rejoin_all_hint else R.string.stems_rejoin_some_hint))
+        }
+
+        val clips = if (clipId != null) 1 else voice.laid.size
+        Button(
+            onClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                voice.onRejoin(clipId, if (clipId == null || all) null else picked, names)
+            },
+            enabled = !working && (clipId == null || all || count >= 2),
+            shapes = ButtonDefaults.shapes(),
+            colors = ButtonDefaults.filledTonalButtonColors(),
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+        ) {
+            Icon(Icons.Rounded.CallMerge, contentDescription = null, modifier = Modifier.size(22.dp))
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                when {
+                    clipId == null -> pluralStringResource(R.plurals.stems_rejoin_every, clips, clips)
+                    all -> stringResource(R.string.stems_rejoin_all)
+                    else -> pluralStringResource(R.plurals.stems_rejoin_some, count.coerceAtLeast(2), count)
+                },
+                style = MaterialTheme.typography.titleMediumEmphasized,
+            )
         }
     }
 }

@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.LocalCafe
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.OpenInNew
@@ -357,6 +358,13 @@ fun AboutScreen(versionName: String, onBack: () -> Unit, life: FfmpegLife? = nul
                         // its own copy of the EUPL comes with the app.
                         val name = stringResource(R.string.about_licence_splash)
                         LicenceRow(shape, name, stringResource(R.string.about_licence_splash_summary), icon = Icons.Rounded.AutoAwesome, local = true) {
+                            licenceFile = LicenceFile(name, "wifi-audio-streaming/LICENSE.txt")
+                        }
+                    },
+                    { shape ->
+                        // So does the audio editor's spectrum, from its desktop app: the same licence text.
+                        val name = stringResource(R.string.about_licence_spectrum)
+                        LicenceRow(shape, name, stringResource(R.string.about_licence_spectrum_summary), icon = Icons.Rounded.Equalizer, local = true) {
                             licenceFile = LicenceFile(name, "wifi-audio-streaming/LICENSE.txt")
                         }
                     },

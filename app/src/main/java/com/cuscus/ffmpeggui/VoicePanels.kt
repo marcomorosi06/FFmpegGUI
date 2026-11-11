@@ -129,7 +129,28 @@ class VoiceEditing(
     /** The levels of the voice and of the rest of clip (its id; null: of every clip), and an undo key. */
     val onLevels: (String?, Float, Float, String?) -> Unit = { _, _, _, _ -> },
     val onOpenSmartFeatures: () -> Unit = {},
+    /** The premixes of stems laid as tracks made so far, for the preview (see StemPremix). */
+    val premixes: Map<com.cuscus.ffmpeggui.core.preview.StemBundle, String> = emptyMap(),
+    /** Asked with the bundles of stems the preview hears. */
+    val onPremixesNeeded: (List<com.cuscus.ffmpeggui.core.preview.StemBundle>) -> Unit = {},
+    /** The stem tracks laid for each clip (by its id) that has some: it is silent while they play. */
+    val laid: Map<String, List<LaidStem>> = emptyMap(),
+    /** Stems are being put back together (FFmpeg summing some of them). */
+    val rejoining: Boolean = false,
+    /**
+     * Puts these stem tracks (null: all) of clip (its id; null: of every clip)
+     * back together (see StemRejoin), naming a track of several stems with these names.
+     */
+    val onRejoin: (String?, Set<String>?, Map<StemKind, String>) -> Unit = { _, _, _ -> },
 )
+
+/** A stem track laid for a clip: its [id], the stems it holds and its [name] on the timeline. */
+data class LaidStem(val id: String, val kinds: Set<StemKind>, val name: String)
+
+/** The stem tracks among [sounds] by the clip they were laid for, among [clipIds] (the clips there are). */
+fun laidStems(sounds: List<AudioClip>, clipIds: Set<String>): Map<String, List<LaidStem>> =
+    sounds.filter { it.stemOf != null && it.stemOf in clipIds }
+        .groupBy({ it.stemOf!! }) { LaidStem(it.id, VoiceSeparator.stemKindsOf(it.uri).orEmpty(), it.name) }
 
 /** A mix the user often wants: the voice's level and the rest's. */
 internal enum class VoiceMixPreset(val voice: Float, val rest: Float) {
@@ -225,7 +246,11 @@ internal fun VoiceSectionContent(
                     )
                     PanelHint(stringResource(if (clipId == null) R.string.voice_scope_all_hint else R.string.voice_scope_clip_hint))
                 }
-                StemsMode.TRACKS -> StemTracksCard(voice = voice, clipId = clipId, sourceIds = sourceIds)
+                StemsMode.TRACKS -> Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    StemTracksCard(voice = voice, clipId = clipId, sourceIds = sourceIds)
+                    // Stems laid before, to put back together.
+                    StemRejoinCard(voice = voice, clipId = clipId)
+                }
             }
         }
     }

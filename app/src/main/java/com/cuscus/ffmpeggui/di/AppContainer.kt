@@ -95,6 +95,11 @@ class AppContainer(
         com.cuscus.ffmpeggui.media.FfmpegSoundReverser(appContext, ffmpegExecutor)
     }
 
+    /** The stems of one file laid as tracks, mixed by FFmpeg for the preview (see StemPremix). */
+    val stemPremixer: com.cuscus.ffmpeggui.core.engine.StemPremixer by lazy {
+        com.cuscus.ffmpeggui.media.FfmpegStemPremixer(appContext, ffmpegExecutor)
+    }
+
     val conversionMessages: ConversionMessages by lazy { ConversionMessages(appContext.resources) }
 
     private val cacheJanitor: CacheJanitor by lazy { CacheJanitor(appContext) }

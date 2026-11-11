@@ -62,6 +62,8 @@ data class AppSettings(
     val projectsLimit: Int = DEFAULT_PROJECTS_LIMIT,
     /** The video editor's timeline draws each clip's own sound along the bottom of its frames. */
     val clipWaveforms: Boolean = true,
+    /** The audio editor shows the spectrum of what plays under its waveform (when there is room). */
+    val audioSpectrum: Boolean = true,
     /** Where the player goes when the screen is wider than it is tall. */
     val landscapeLayout: LandscapeLayout = LandscapeLayout.AUTO,
     /** The welcome has been gone through (or skipped to its end): it shows on the first launch only. */

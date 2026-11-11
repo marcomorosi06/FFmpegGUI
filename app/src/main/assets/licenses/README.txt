@@ -24,6 +24,10 @@ FFmpeg GUI
   by the same author and under the same licence (EUPL-1.2):
   wifi-audio-streaming/LICENSE.txt (its own copy, as that repository has
   it); see ffmpeg-gui/NOTICE.txt, "CODE BASED ON OTHER PROJECTS".
+  The audio editor's spectrum comes from WiFi Audio Streaming's desktop app
+  (https://github.com/marcomorosi06/WiFiAudioStreaming-Desktop), by the
+  same author and under the same licence (EUPL-1.2, the same text as
+  wifi-audio-streaming/LICENSE.txt); see the same section of the NOTICE.
 
 Each component below keeps its own licence. Paths are relative to this
 folder.

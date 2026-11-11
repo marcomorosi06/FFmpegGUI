@@ -53,6 +53,8 @@ class LevelMeter {
 internal class AudioEffectsProcessor(
     private val stages: () -> List<AudioStage>,
     private val meter: LevelMeter?,
+    /** Keeps what comes out, for the audio editor's spectrum (see SpectrumTap); null: nothing kept. */
+    private val tap: SpectrumTap? = null,
 ) : BaseAudioProcessor() {
 
     private var chain: EffectsChain? = null
@@ -75,6 +77,7 @@ internal class AudioEffectsProcessor(
     override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
         chain = EffectsChain(outputAudioFormat.sampleRate, outputAudioFormat.channelCount)
         lastStages = null
+        tap?.flush()
     }
 
     override fun onReset() {
@@ -131,6 +134,10 @@ internal class AudioEffectsProcessor(
             output.position(outSamples * bytesPerSample)
             output.flip()
             meter?.report(peak)
+            if (tap != null && tap.wanted) {
+                val rate = outputAudioFormat.sampleRate
+                if (float) tap.writeFloats(floats, frames, outChannels, rate) else tap.writeShorts(shorts, frames, outChannels, rate)
+            }
             return
         }
 
@@ -166,6 +173,7 @@ internal class AudioEffectsProcessor(
         output.position(outSamples * bytesPerSample)
         output.flip()
         meter?.report(peak)
+        if (tap != null && tap.wanted) tap.writeFloats(samples, frames, outChannels, outputAudioFormat.sampleRate)
     }
 }
 
@@ -222,7 +230,7 @@ internal class StemMixProcessor(private val levels: () -> Pair<Float, Float>) : 
  * from the key frame before the clip's start) on the same decoder.
  */
 @OptIn(UnstableApi::class)
-internal fun processingPlayer(context: Context, vararg processors: AudioProcessor, prewarm: Boolean = false): ExoPlayer {
+internal fun processingPlayer(context: Context, vararg processors: AudioProcessor, prewarm: Boolean = false, tap: SpectrumTap? = null): ExoPlayer {
     // A debug build may take Media3's own speed change instead, to compare (see DebugBench).
     val trial = DebugBench.trialFor(context)
     val renderers = object : DefaultRenderersFactory(context) {
@@ -230,7 +238,7 @@ internal fun processingPlayer(context: Context, vararg processors: AudioProcesso
             context: Context,
             enableFloatOutput: Boolean,
             enableAudioOutputPlaybackParams: Boolean,
-        ): AudioSink = DefaultAudioSink.Builder(context)
+        ): AudioSink = timed(DefaultAudioSink.Builder(context)
             // Processors only run on 16-bit output; float output would skip them.
             .setEnableFloatOutput(false)
             // Speed and pitch are changed by Android (AudioTrack), not by Media3's Sonic on the
@@ -241,7 +249,10 @@ internal fun processingPlayer(context: Context, vararg processors: AudioProcesso
             // sound effects is heard that much later instead.
             .setEnableAudioOutputPlaybackParameters(trial != SoundTrial.SONIC)
             .setAudioProcessors(arrayOf(*processors))
-            .build()
+            .build())
+
+        /** With a [tap], the sink tells it when each sample is heard (see SpectrumTap). */
+        private fun timed(sink: AudioSink): AudioSink = if (tap == null) sink else TimedSink(sink, tap)
     }
     renderers.experimentalSetEnableMediaCodecVideoRendererPrewarming(prewarm)
     return ExoPlayer.Builder(context, renderers).build()
@@ -271,6 +282,9 @@ class LiveAudio {
     var pitch: Float = 1f
 
     val meter = LevelMeter()
+
+    /** What every player hands to the speaker, timed as it is heard: the audio editor's spectrum. */
+    val spectrum = SpectrumHub()
 }
 
 

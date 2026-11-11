@@ -280,6 +280,7 @@ object ProjectJson {
         put("effects", ModelJson.write(a.effects))
         with(ModelJson) { putKeyframes(a.keyframes) }
         put("nested", a.nested, ::writeNested)
+        put("stemOf", a.stemOf)
     }
 
     fun audioClip(o: Json.Obj): AudioClip? {
@@ -304,6 +305,7 @@ object ProjectJson {
             effects = o.obj("effects")?.let(ModelJson::audioEffects) ?: AudioEffects.NONE,
             keyframes = ModelJson.keyframes(o),
             nested = o.obj("nested")?.let(::nested),
+            stemOf = o.stringOrNull("stemOf"),
         )
     }
 

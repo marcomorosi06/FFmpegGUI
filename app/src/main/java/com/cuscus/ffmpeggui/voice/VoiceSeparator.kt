@@ -13,6 +13,7 @@ import com.cuscus.ffmpeggui.core.engine.ExecutionResult
 import com.cuscus.ffmpeggui.core.stems.BanditMasks
 import com.cuscus.ffmpeggui.core.stems.SpleeterMasks
 import com.cuscus.ffmpeggui.core.stems.StemKind
+import com.cuscus.ffmpeggui.core.stems.StemRejoin
 import com.cuscus.ffmpeggui.core.stems.StemSeparation
 import com.cuscus.ffmpeggui.core.voice.PcmStereoFile
 import com.cuscus.ffmpeggui.core.voice.VoiceStem
@@ -135,6 +136,31 @@ class VoiceSeparator(
     fun tracks(uri: Uri): Map<StemKind, File> = StemKind.entries.mapNotNull { kind ->
         stemFile(uri, kind).takeIf { it.isFile && it.length() > 0 }?.let { kind to it }
     }.toMap()
+
+    /**
+     * One file holding the stems [kinds] of the file at [uri] summed (see
+     * StemRejoin), made from its kept stems the first time (and again when
+     * they were split again since); a single stem is its own file. Null when
+     * a stem is not kept or FFmpeg fails.
+     */
+    suspend fun together(uri: Uri, kinds: Set<StemKind>): File? {
+        val kept = tracks(uri)
+        val inputs = kinds.sortedBy { it.ordinal }.map { kept[it] ?: return null }
+        if (inputs.size == 1) return inputs.single()
+        val target = File(folder, name(uri) + "." + StemRejoin.kindsPart(kinds) + EXTENSION)
+        val newest = inputs.maxOf { it.lastModified() }
+        if (target.isFile && target.length() > 0 && target.lastModified() >= newest) return target
+        // Written beside, then renamed: a run cut short never leaves a file that looks done (sweep takes it).
+        val part = File(folder, target.name + PART)
+        val result = extractor.mixStems(inputs, part)
+        if (result != ExecutionResult.Success || !part.isFile || part.length() == 0L) {
+            Log.w(TAG, "Putting stems together failed: $result")
+            part.delete()
+            return null
+        }
+        target.delete()
+        return target.takeIf { part.renameTo(it) }
+    }
 
     /** True when [sound] (a placed sound's address) is a stem of [kind] this separator keeps. */
     fun isStemTrack(sound: Uri, kind: StemKind): Boolean {
@@ -456,10 +482,7 @@ class VoiceSeparator(
     private fun songMark(uri: Uri) = File(folder, name(uri) + SONG_MARK)
 
     /** The stems' file name, without its extension: made of the media file's address. */
-    private fun name(uri: Uri): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(uri.toString().toByteArray(Charsets.UTF_8))
-        return digest.take(16).joinToString("") { String.format(java.util.Locale.ROOT, "%02x", it) }
-    }
+    private fun name(uri: Uri): String = stemNameOf(uri)
 
     companion object {
         /**
@@ -467,21 +490,46 @@ class VoiceSeparator(
          * tracks a separator keeps (in its folder, named after its kind); null
          * for any other sound.
          */
-        fun stemKindOf(sound: Uri): StemKind? {
+        /**
+         * The name the stems of the media file at [uri] are kept under (what
+         * stemOriginOf gives back for each of them): made of its address.
+         */
+        fun stemNameOf(uri: Uri): String {
+            val digest = MessageDigest.getInstance("SHA-256").digest(uri.toString().toByteArray(Charsets.UTF_8))
+            return digest.take(16).joinToString("") { String.format(java.util.Locale.ROOT, "%02x", it) }
+        }
+
+        fun stemKindOf(sound: Uri): StemKind? = trackName(sound)?.let { StemKind.of(it.groupValues[2]) }
+
+        /**
+         * The stems [sound] holds, when it is one of the tracks a separator
+         * keeps: one, or several put back together (see StemRejoin); null for
+         * any other sound.
+         */
+        fun stemKindsOf(sound: Uri): Set<StemKind>? = trackName(sound)?.let { StemRejoin.kindsOf(it.groupValues[2]) }
+
+        /**
+         * The media file [sound]'s stems were split from (the stems' common name),
+         * when it is one of the tracks a separator keeps; null for any other
+         * sound. The stems of one file are parts of one sound (see StemPremix).
+         */
+        fun stemOriginOf(sound: Uri): String? = trackName(sound)?.takeIf { StemRejoin.kindsOf(it.groupValues[2]) != null }?.groupValues?.get(1)
+
+        private fun trackName(sound: Uri): MatchResult? {
             if (sound.scheme != "file") return null
             val file = sound.path?.let(::File) ?: return null
             if (file.parentFile?.name != FOLDER) return null
-            val match = TRACK.matchEntire(file.name) ?: return null
-            return StemKind.of(match.groupValues[1])
+            return TRACK.matchEntire(file.name)
         }
 
-        /** A stem kept as a track: the media file's name, then the stem's. */
-        private val TRACK = Regex("[0-9a-f]{32}\\.([a-z]+)\\.flac")
+        /** A stem kept as a track: the media file's name, then the stem's (or the stems', see StemRejoin.kindsPart). */
+        private val TRACK = Regex("([0-9a-f]{32})\\.([a-z]+(?:-[a-z]+)*)\\.flac")
 
         private const val TAG = "VoiceSeparator"
         private const val FOLDER = "voice-stems"
         private const val EXTENSION = ".flac"
         private const val SONG_MARK = ".song"
+        private const val PART = ".part"
 
         /** A media file's four-channel stems: its name alone (its tracks add the stem's). */
         private val MASTER = Regex("[0-9a-f]{32}\\.flac")

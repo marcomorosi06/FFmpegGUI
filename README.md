@@ -187,7 +187,7 @@ FFmpeg GUI is made by one person, in spare time, and will stay free and open sou
 - The [Obtainium](https://github.com/ImranR98/Obtainium) logo by ImranR98 (GPL 3.0), in this page's Obtainium buttons only ([its licence](docs/badges/LICENSE-obtainium-logo.txt))
 - The photos and the video inside the store screenshots, from [Pexels](https://www.pexels.com/license/) (free to use, no attribution required): [winter forest](https://www.pexels.com/video/aerial-winter-landscape-over-forest-and-snow-29513356/), [gerbera](https://www.pexels.com/photo/elegant-woman-with-pink-gerbera-flower-39296598/), [Victoria Street](https://www.pexels.com/it-it/foto/la-pittoresca-victoria-street-di-edimburgo-in-scozia-39767336/), [puppy](https://www.pexels.com/photo/adorable-puppy-running-through-autumn-leaves-34928384/); not part of the app ([credits](fastlane/metadata/android/en-US/images/CREDITS.txt))
 
-The splash screen comes from [WiFi Audio Streaming for Android](https://github.com/marcomorosi06/WiFiAudioStreaming-Android), by the same author and under the same licence (EUPL 1.2).
+The splash screen comes from [WiFi Audio Streaming for Android](https://github.com/marcomorosi06/WiFiAudioStreaming-Android), and the audio editor's spectrum from [WiFi Audio Streaming for desktop](https://github.com/marcomorosi06/WiFiAudioStreaming-Desktop), both by the same author and under the same licence (EUPL 1.2).
 
 The video effects are made by the project's own `scripts/generate-effects.py` (the punches' 3D fist and the sound of its blow by `scripts/punch3d.py`, the math formulas by `scripts/math_effect.py` with its own stroke font, the TV break's test card and tune by `scripts/tv_break.py`) and are part of FFmpeg GUI, under its licence.
 

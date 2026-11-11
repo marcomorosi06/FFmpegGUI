@@ -3,15 +3,22 @@
 package com.cuscus.ffmpeggui
 
 import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -61,6 +68,7 @@ import androidx.graphics.shapes.toPath
 import androidx.compose.ui.graphics.asComposePath
 import com.cuscus.ffmpeggui.core.model.Split
 import com.cuscus.ffmpeggui.preview.LevelMeter
+import com.cuscus.ffmpeggui.preview.SpectrumHub
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -96,6 +104,10 @@ internal fun AudioPreview(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
     cover: ImageBitmap? = null,
+    /** What the players hand to the speaker, for the spectrum under the waveform (see AudioSpectrum). */
+    spectrum: SpectrumHub? = null,
+    /** The spectrum is wanted (Settings > Editor); it still gives way to the waveform when there is no room. */
+    showSpectrum: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     // The level that is playing: quick to rise, slow to fall, read while drawing.
@@ -148,15 +160,36 @@ internal fun AudioPreview(
             Pill(text = formatLabel, container = colors.secondaryContainer, content = colors.onSecondaryContainer)
         }
         Spacer(modifier = Modifier.height(12.dp))
-        WaveformView(
-            envelope = envelope,
-            durationMs = outputDurationMs,
-            positionMs = positionMs,
-            level = { level },
-            partsMs = partsMs,
-            onSeek = onSeek,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-        )
+        // The waveform, and under it the spectrum when there is room for both: the waveform
+        // keeps at least its own height, the spectrum goes first.
+        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            val room = maxHeight >= MIN_WAVEFORM_HEIGHT + MIN_SPECTRUM_HEIGHT + SPECTRUM_GAP
+            val spectrumHeight = (maxHeight * SPECTRUM_SHARE).coerceIn(MIN_SPECTRUM_HEIGHT, MAX_SPECTRUM_HEIGHT)
+            Column(modifier = Modifier.fillMaxSize()) {
+                WaveformView(
+                    envelope = envelope,
+                    durationMs = outputDurationMs,
+                    positionMs = positionMs,
+                    level = { level },
+                    partsMs = partsMs,
+                    onSeek = onSeek,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
+                if (spectrum != null) {
+                    val motion = MaterialTheme.motionScheme
+                    AnimatedVisibility(
+                        visible = showSpectrum && room,
+                        enter = expandVertically(motion.defaultSpatialSpec(), expandFrom = Alignment.Top) + fadeIn(motion.defaultEffectsSpec()),
+                        exit = shrinkVertically(motion.fastSpatialSpec(), shrinkTowards = Alignment.Top) + fadeOut(motion.fastEffectsSpec()),
+                    ) {
+                        Column {
+                            Spacer(modifier = Modifier.height(SPECTRUM_GAP))
+                            AudioSpectrum(hub = spectrum, playing = isPlaying, modifier = Modifier.fillMaxWidth().height(spectrumHeight))
+                        }
+                    }
+                }
+            }
+        }
         if (activeEffects.isNotEmpty()) {
             Spacer(modifier = Modifier.height(10.dp))
             Row(
@@ -428,6 +461,13 @@ private const val MAX_PARTS = 200
 
 private fun msAt(x: Float, width: Float, durationMs: Long): Long =
     if (width <= 0f) 0L else ((x / width).coerceIn(0f, 1f) * durationMs).toLong()
+
+/** The waveform's least height beside the spectrum, the spectrum's, the share of the room it takes, and the gap. */
+private val MIN_WAVEFORM_HEIGHT = 96.dp
+private val MIN_SPECTRUM_HEIGHT = 64.dp
+private val MAX_SPECTRUM_HEIGHT = 128.dp
+private const val SPECTRUM_SHARE = 0.38f
+private val SPECTRUM_GAP = 12.dp
 
 private const val BAR_WIDTH_DP = 4
 private const val BAR_GAP_DP = 3

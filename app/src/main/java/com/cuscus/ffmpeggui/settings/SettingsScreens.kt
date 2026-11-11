@@ -53,6 +53,7 @@ import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.VideoSettings
 import androidx.compose.material.icons.rounded.Balance
@@ -720,6 +721,25 @@ private fun EditorSettings(
                     onCheckedChange = { on -> onChange { it.copy(clipWaveforms = on) } },
                     badge = MaterialShapes.Sunny,
                     colors = ToneColors(scheme.tertiaryContainer, scheme.onTertiaryContainer),
+                )
+            },
+        ),
+    )
+    SettingsGroup(
+        title = stringResource(R.string.settings_editor_audio),
+        rows = listOf<@Composable (Shape) -> Unit>(
+            { shape ->
+                SettingsSwitchRow(
+                    shape = shape,
+                    icon = Icons.Rounded.Equalizer,
+                    title = stringResource(R.string.settings_audio_spectrum),
+                    summary = stringResource(
+                        if (settings.audioSpectrum) R.string.settings_audio_spectrum_on else R.string.settings_audio_spectrum_off,
+                    ),
+                    checked = settings.audioSpectrum,
+                    onCheckedChange = { on -> onChange { it.copy(audioSpectrum = on) } },
+                    badge = MaterialShapes.Burst,
+                    colors = ToneColors(scheme.primaryContainer, scheme.onPrimaryContainer),
                 )
             },
         ),

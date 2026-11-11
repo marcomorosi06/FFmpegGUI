@@ -34,6 +34,7 @@ import com.cuscus.ffmpeggui.dub.DubEngine
 import com.cuscus.ffmpeggui.dub.DubSpeaker
 import com.cuscus.ffmpeggui.voice.VoiceSeparator
 import com.cuscus.ffmpeggui.core.stems.StemKind
+import com.cuscus.ffmpeggui.core.stems.StemRejoin
 import com.cuscus.ffmpeggui.core.stems.StemTracks
 import com.cuscus.ffmpeggui.LayerMove
 import com.cuscus.ffmpeggui.FfmpegGuiApp
@@ -51,6 +52,7 @@ import com.cuscus.ffmpeggui.core.engine.CoverArtist
 import com.cuscus.ffmpeggui.export.ExportNotifier
 import com.cuscus.ffmpeggui.export.ExportResult
 import com.cuscus.ffmpeggui.core.preview.ReversedSoundRequest
+import com.cuscus.ffmpeggui.core.preview.StemBundle
 import com.cuscus.ffmpeggui.core.project.IntoProject
 import com.cuscus.ffmpeggui.projects.ProjectJson
 import com.cuscus.ffmpeggui.projects.ProjectStore
@@ -142,6 +144,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -199,6 +202,8 @@ class ConversionViewModel(
     private val subtitleParser: SubtitleParser = SubtitleParser(),
     /** Writes the sound of clips played backwards reversed, for the preview; null leaves them silent. */
     private val soundReverser: com.cuscus.ffmpeggui.core.engine.SoundReverser? = null,
+    /** Mixes the stems of one file laid as tracks into one sound, for the preview; null plays them one by one. */
+    private val stemPremixer: com.cuscus.ffmpeggui.core.engine.StemPremixer? = null,
     /** Renders what an editor stacked on another applies (see core.stack); null: no stack. */
     private val nestedRenderer: com.cuscus.ffmpeggui.core.stack.NestedRenderer? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -269,6 +274,59 @@ class ConversionViewModel(
         reverseDeclined += reverseQueue.filter { it !in _reversedSounds.value }
         reverseQueue = emptyList()
         _reversing.value = null
+    }
+
+    // ---------------------------------------------------------------------
+    // The stems laid as tracks, mixed into one sound for the preview
+    // ---------------------------------------------------------------------
+
+    /**
+     * The premixes made, one per bundle of tracks (see StemPremix): the
+     * newest made for those tracks, which may be of settings since changed
+     * (heard until the new one is ready).
+     */
+    private val _stemPremixes = MutableStateFlow<Map<StemBundle, String>>(emptyMap())
+    val stemPremixes: StateFlow<Map<StemBundle, String>> = _stemPremixes.asStateFlow()
+
+    private var premixJob: Job? = null
+
+    /** What the running job makes, in order. */
+    private var premixQueue: List<StemBundle> = emptyList()
+
+    /** Bundles that could not be mixed: not asked again while they stay as they are. */
+    private val premixFailed = HashSet<StemBundle>()
+
+    /**
+     * The preview hears [wanted] (see StemPremix.bundles): those not mixed
+     * yet are mixed, one after the other, after a short wait (a slider being
+     * dragged asks again and again). Premixes of tracks no longer bundled are
+     * let go.
+     */
+    fun wantStemPremixes(wanted: List<StemBundle>) {
+        val premixer = stemPremixer ?: return
+        val unique = wanted.distinct()
+        val tracks = unique.map { it.ids }.toSet()
+        _stemPremixes.update { made -> made.filterKeys { it.ids in tracks } }
+        premixFailed.retainAll(unique.toSet())
+        val missing = unique.filter { it !in _stemPremixes.value && it !in premixFailed }
+        if (missing == premixQueue && premixJob?.isActive == true) return
+        premixJob?.cancel()
+        premixQueue = missing
+        if (missing.isEmpty()) return
+        premixJob = viewModelScope.launch {
+            delay(PREMIX_WAIT_MS)
+            for (bundle in missing) {
+                val file = premixer.premix(bundle)
+                if (file != null) {
+                    // The newest for these tracks: the one before is no longer heard.
+                    _stemPremixes.update { made -> made.filterKeys { it.ids != bundle.ids } + (bundle to file) }
+                } else if (isActive) {
+                    // Not when it was stopped for newer settings: those are not a failure.
+                    premixFailed += bundle
+                }
+            }
+            premixQueue = emptyList()
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -1046,7 +1104,7 @@ class ConversionViewModel(
                         if (clip.id != id) return@map clip
                         val span = clip.span.copy(fileDurationMs = info.durationMs)
                             .withFileRange(0L, clip.span.rangeMs.coerceAtMost(info.durationMs))
-                        clip.copy(uri = uri, name = name, span = span, loudnessLufs = knownLoudness[uri], aiVoice = null, nested = null)
+                        clip.copy(uri = uri, name = name, span = span, loudnessLufs = knownLoudness[uri], aiVoice = null, nested = null, stemOf = null)
                     },
                 )
             }
@@ -1102,7 +1160,8 @@ class ConversionViewModel(
     /** Puts a copy of a sound right after it; returns the copy's id. */
     fun duplicateAudioClip(id: String): String? {
         val original = _settings.value.audioClips.firstOrNull { it.id == id } ?: return null
-        val copy = original.copy(id = newId(), span = original.span.movedTo(original.span.endMs))
+        // A copy laid elsewhere is not a part of the clip any more: it is not put back with it.
+        val copy = original.copy(id = newId(), span = original.span.movedTo(original.span.endMs), stemOf = null)
         mutate { settings -> settings.copy(audioClips = settings.audioClips + copy) }
         return copy.id
     }
@@ -1256,6 +1315,50 @@ class ConversionViewModel(
         val original = timeline.clips[timeline.locate(timelineMs)?.index ?: return@mutate settings].id
         val newClipId = newId()
         settings.copy(timeline = timeline.splitAt(timelineMs, newClipId)).withOverlaysCopied(original, newClipId)
+            .withStemTracksCut(original, newClipId)
+    }
+
+    /**
+     * After clip [first] was cut in two (its other half [second]): its stem
+     * tracks are cut where the halves meet, each part following the half it
+     * plays with, so that each half is put back on its own (see StemRejoin).
+     * Left as they are when the halves cannot be placed (see StemTracks).
+     */
+    private fun ConversionSettings.withStemTracksCut(first: String, second: String): ConversionSettings {
+        if (audioClips.none { it.stemOf == first }) return this
+        val placed = StemTracks.place(
+            clips = playingClips,
+            whole = wholeEffects,
+            trimStartMs = trimStartMs,
+            wanted = { it.id == first || it.id == second },
+            fileDurationMs = { clip -> source(clip.sourceId)?.durationMs ?: 0L },
+        ).placed
+        if (placed.size != 2) return this
+        // The half that plays later starts where the cut is heard.
+        val later = placed.maxBy { it.span.startMs }
+        val cutMs = later.span.startMs
+        return copy(
+            audioClips = audioClips.flatMap { track ->
+                if (track.stemOf != first) return@flatMap listOf(track)
+                when {
+                    track.span.endMs <= cutMs -> listOf(track.copy(stemOf = placed.first { it !== later }.clipId))
+                    track.span.startMs >= cutMs -> listOf(track.copy(stemOf = later.clipId))
+                    else -> {
+                        val (head, tail) = track.span.splitAt(cutMs) ?: return@flatMap listOf(track)
+                        listOf(
+                            track.copy(span = head, fadeOutSeconds = 0f, stemOf = placed.first { it !== later }.clipId),
+                            track.copy(
+                                id = newId(),
+                                span = tail,
+                                fadeInSeconds = 0f,
+                                keyframes = track.keyframes.shifted(track.span.startMs - tail.startMs),
+                                stemOf = later.clipId,
+                            ),
+                        )
+                    }
+                }
+            },
+        )
     }
 
     /** Removes a clip with its own captions and pictures. The last clip cannot be removed. */
@@ -2068,6 +2171,7 @@ class ConversionViewModel(
                                 name = stemTrackName(names[kind] ?: kind.id, sourceName),
                                 span = p.span,
                                 volume = (p.volume * level).coerceIn(0f, VoiceStem.MAX_LEVEL),
+                                stemOf = p.clipId,
                             )
                             any = true
                         }
@@ -2096,6 +2200,105 @@ class ConversionViewModel(
                 _voice.value = VoiceStatus.Failed(VoiceProblem.FAILED)
             }
         }
+    }
+
+    /** Stems being put back together (FFmpeg summing some of them into one track). */
+    private val _stemRejoining = MutableStateFlow(false)
+    val stemRejoining: StateFlow<Boolean> = _stemRejoining.asStateFlow()
+
+    private var rejoinJob: Job? = null
+
+    /**
+     * Puts the stem tracks [trackIds] (null: all) of clip [clipId] (null: of
+     * every clip) back together (see StemRejoin): all of a clip's tracks bring
+     * the clip back; some of them become one track holding their stems, named
+     * from [names], laid where the clip places its stems. One step of undo.
+     */
+    fun rejoinStems(clipId: String?, trackIds: Set<String>?, names: Map<StemKind, String>) {
+        if (rejoinJob?.isActive == true || voiceJob?.isActive == true) return
+        val settings = _settings.value
+        val clipIds = settings.timeline.clips.map { it.id }.toSet()
+        val groups = settings.audioClips
+            .filter { it.stemOf != null && it.stemOf in clipIds && (clipId == null || it.stemOf == clipId) }
+            .groupBy { it.stemOf!! }
+        val plans = groups.mapValues { (_, tracks) ->
+            StemRejoin.plan(tracks.map { StemRejoin.Track(it.id, VoiceSeparator.stemKindsOf(it.uri).orEmpty()) }, trackIds)
+        }.filterValues { it != StemRejoin.Plan.Nothing }
+        if (plans.isEmpty()) return
+        val project = _inputUri.value
+        rejoinJob = viewModelScope.launch {
+            // The tracks some stems become, made first: FFmpeg sums them.
+            val together = HashMap<String, java.io.File>()
+            val merges = plans.filterValues { it is StemRejoin.Plan.Merge }
+            if (merges.isNotEmpty()) {
+                val separator = smart?.voiceSeparator ?: return@launch
+                _stemRejoining.value = true
+                try {
+                    for ((id, plan) in merges) {
+                        val clip = settings.timeline.clips.firstOrNull { it.id == id } ?: continue
+                        val source = settings.source(clip.sourceId) ?: continue
+                        separator.together(source.uri, (plan as StemRejoin.Plan.Merge).kinds)?.let { together[id] = it }
+                    }
+                } finally {
+                    _stemRejoining.value = false
+                }
+            }
+            if (_inputUri.value != project) return@launch
+            mutate { current -> current.withStemsRejoined(plans, together, names) }
+        }
+    }
+
+    /** [plans] (by clip id) carried out, the tracks some stems become being the [together] files. */
+    private fun ConversionSettings.withStemsRejoined(
+        plans: Map<String, StemRejoin.Plan>,
+        together: Map<String, java.io.File>,
+        names: Map<StemKind, String>,
+    ): ConversionSettings {
+        val removed = HashSet<String>()
+        val brought = HashSet<String>()
+        val added = ArrayList<AudioClip>()
+        val placed = StemTracks.place(
+            clips = playingClips,
+            whole = wholeEffects,
+            trimStartMs = trimStartMs,
+            wanted = { it.id in plans },
+            fileDurationMs = { clip -> source(clip.sourceId)?.durationMs ?: 0L },
+        ).placed.associateBy { it.clipId }
+        for ((id, plan) in plans) {
+            when (plan) {
+                is StemRejoin.Plan.Whole -> {
+                    removed += plan.removed
+                    brought += id
+                }
+                is StemRejoin.Plan.Merge -> {
+                    val file = together[id] ?: continue
+                    val first = audioClips.firstOrNull { it.id in plan.removed } ?: continue
+                    removed += plan.removed
+                    // Where the clip lays its stems now; where the first track was when it cannot.
+                    val p = placed[id]
+                    val level = when {
+                        p == null -> 1f
+                        plan.kinds == setOf(StemKind.DIALOGUE) -> p.voiceLevel
+                        StemKind.DIALOGUE !in plan.kinds -> p.backgroundLevel
+                        else -> 1f
+                    }
+                    val sourceName = timeline.clips.firstOrNull { it.id == id }?.let { source(it.sourceId) }?.fileName.orEmpty()
+                    added += AudioClip(
+                        uri = Uri.fromFile(file),
+                        name = stemTrackName(plan.kinds.sortedBy { it.ordinal }.joinToString(" + ") { names[it] ?: it.id }, sourceName),
+                        span = p?.span ?: first.span,
+                        volume = if (p != null) (p.volume * level).coerceIn(0f, VoiceStem.MAX_LEVEL) else first.volume,
+                        stemOf = id,
+                    )
+                }
+                StemRejoin.Plan.Nothing -> Unit
+            }
+        }
+        if (removed.isEmpty()) return this
+        var heard = timeline
+        // The clip heard again, as it was before its stems were laid.
+        for (id in brought) heard = heard.updateEffects(id) { it.copy(muted = false) }
+        return copy(timeline = heard, audioClips = audioClips.filter { it.id !in removed } + added)
     }
 
     /** A stem track's name on the timeline: the stem, then its file. */
@@ -4151,6 +4354,9 @@ class ConversionViewModel(
         /** How long the settings must rest before the shown command is rebuilt. */
         private const val COMMAND_PREVIEW_DELAY_MS = 120L
 
+        /** How long the stems' settings must stay still before they are mixed again. */
+        private const val PREMIX_WAIT_MS = 400L
+
         /** How long the edits must rest before the project is saved. */
         private const val AUTOSAVE_DELAY_MS = 800L
         private const val MAX_SUBTITLE_BYTES = 2 * 1024 * 1024
@@ -4214,6 +4420,7 @@ class ConversionViewModel(
                     work = container.workReports,
                     shapeRenderer = container.shapeRenderer::render,
                     soundReverser = container.soundReverser,
+                    stemPremixer = container.stemPremixer,
                     nestedRenderer = container.nestedRenderer,
                 )
             }

@@ -164,27 +164,7 @@ private fun ConversionSettings.toRequestOf(
     canvas = projectRatio,
     canvasFit = projectFit,
     normalizeAudio = normalizeAudio,
-    sounds = audibleSounds().map { clip ->
-        PlacedSound(
-            startMs = clip.span.startMs,
-            trimStartMs = clip.span.trimStartMs,
-            trimEndMs = clip.span.trimEndMs,
-            volume = clip.volume,
-            fadeInSeconds = clip.fadeInSeconds,
-            fadeOutSeconds = clip.fadeOutSeconds,
-            speed = clip.span.rate,
-            keepPitch = clip.keepPitch,
-            pitchSemitones = clip.pitchSemitones,
-            repeats = clip.span.loops,
-            bassDb = clip.bassDb,
-            midDb = clip.midDb,
-            trebleDb = clip.trebleDb,
-            normalize = clip.normalize,
-            effects = clip.effects,
-            keyframes = clip.keyframes,
-            aiVoice = clip.aiVoice,
-        )
-    } + overlaySounds(footage).map { overlay ->
+    sounds = audibleSounds().map { it.toPlacedSound() } + overlaySounds(footage).map { overlay ->
         // The sound of a video laid over the picture: it plays with the video and fades with it.
         val media = requireNotNull(overlay.video)
         PlacedSound(
@@ -279,6 +259,27 @@ private fun ConversionSettings.overlaySounds(footage: EditFootage): List<ImageOv
 private fun ConversionSettings.coverFor(format: OutputFormat?) = coverUri?.takeIf { format?.isAudioOnly == true }
 
 /** The sounds the export mixes in: a muted one is left out altogether. Request and sources both use this. */
+/** A sound laid on the video, as the export places it (the preview's premix of stems too, see StemPremix). */
+internal fun AudioClip.toPlacedSound(): PlacedSound = PlacedSound(
+    startMs = span.startMs,
+    trimStartMs = span.trimStartMs,
+    trimEndMs = span.trimEndMs,
+    volume = volume,
+    fadeInSeconds = fadeInSeconds,
+    fadeOutSeconds = fadeOutSeconds,
+    speed = span.rate,
+    keepPitch = keepPitch,
+    pitchSemitones = pitchSemitones,
+    repeats = span.loops,
+    bassDb = bassDb,
+    midDb = midDb,
+    trebleDb = trebleDb,
+    normalize = normalize,
+    effects = effects,
+    keyframes = keyframes,
+    aiVoice = aiVoice,
+)
+
 private fun ConversionSettings.audibleSounds(): List<AudioClip> = audioClips.filter { !it.muted }
 
 /** A hand-edited command wins over everything; the custom format is always hand-written. */

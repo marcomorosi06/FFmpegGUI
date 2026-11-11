@@ -195,12 +195,37 @@ OPUS, FLAC, WAV) the editor works on the sound alone:
   exported sound as rounded bars (`preview/AudioEnvelope.kt` builds the outline
   of the output from the clips' and placed sounds' waveforms, through the
   output clock, with volumes, fades and levelling, sounds heard together
-  added as their powers, a clip heard from its stems counted once; values
-  above 1 would clip and are drawn in the error tone), the playhead, dashed lines where the file
+  added as their powers, a clip heard from its stems counted once, and the
+  stems of one file laid at one place counted as their sum but never above
+  that file's own peak there at their loudest level (they are parts of it:
+  as powers, five stems peaking at 0.6 made 1.34; a premix is read as it
+  is); values above 1 would clip and are drawn in the error tone), the playhead, dashed lines where the file
   will be cut into parts, the tags and format on top and the effects in use
   below. The bars at the playhead and a morphing badge follow the level that is
   playing (`LevelMeter`, fed by the players). Touching or dragging the waveform
   seeks. The player does not decode the picture at all;
+- under the waveform, the spectrum of what plays (`AudioSpectrum.kt`, setting
+  `AppSettings.audioSpectrum`, on by default; it is left out when the pane is
+  too short for both, the waveform keeping at least 96 dp). The analysis is
+  core's `SpectrumBands` and `SpectrumBars` (tested), ported from WiFi Audio
+  Streaming's desktop spectrum (same author, same licence, EUPL-1.2): a Hann
+  window of 2048 samples, an FFT, 48 bands evenly spaced in pitch from 35 Hz
+  to 18 kHz (each its loudest bin), a tilt of 6 dB towards the highs, -66 to
+  -9 dB shown, quick rise, slow fall, caps that fall under gravity; timed in
+  seconds rather than frames, and the players of the preview added as their
+  powers band by band, each at its rate and volume. It must show what is
+  heard, not what goes through the effects: the speaker keeps up to two
+  seconds in hand. So each player's `AudioEffectsProcessor` keeps its last
+  five seconds of sound, mono, in a `SpectrumTap`, timed by the player's own
+  sink (`TimedSink`, a `ForwardingAudioSink`: the time of each buffer handed
+  to it, and the position it reports as heard, on the same clock), and the
+  spectrum reads the samples that end where each speaker is
+  (`SpectrumHub.read`). A seek flushes the sink and starts the run again;
+  nothing is kept while no spectrum is shown (`watch`). Drawn on every frame
+  without composing: pills from the primary to the tertiary colour with a
+  faint reflection, caps as dots, a glow that follows where the sound is;
+  the pills grow in one after the other, and while paused they breathe in a
+  slow wave;
 - the timeline draws each clip's waveform instead of frames and shows only the
   sound lanes; the trim panels trim on the waveform too;
 - the tools are those of `AudioPanels.kt`: silence (moves the whole-sequence
@@ -2259,7 +2284,28 @@ file's clock, so the same part of it, laid there as an `AudioClip`, plays in
 step with the picture. The clip goes silent; a track takes its clip's volume
 and the voice's or the rest's level. Clips played backwards or on a speed
 curve (or under a whole video so played) are left as they are and counted.
-One step of undo.
+One step of undo. Each track knows the clip it was laid for
+(`AudioClip.stemOf`, kept in the project; a copy laid elsewhere, or a track
+whose file is replaced, forgets it). Cut in two, the clip cuts its tracks
+where its halves meet, each part following its half
+(`withStemTracksCut`). On the audio file's row (`EditorTimeline`,
+`splitClips`) such a clip is an empty slot with a dashed outline: it still
+sets where the rest of the sound is, so it cannot simply go; when every clip
+is one, the row is made thin.
+
+**Put back together** (`core/stems/StemRejoin.kt`, tested;
+`ConversionViewModel.rejoinStems`; `StemRejoinCard`). All of a clip's tracks:
+they go and the clip is heard again. Two or more of them: they go, and one
+track holding their stems takes their place, where the clip lays its stems
+now, at the clip's volume (and the voice's or the rest's level when it holds
+only one of them). Its file is the stems summed by FFmpeg (`amix`,
+`normalize=0`: the stems add up to the sound they were split from), kept
+beside them in `voice-stems` and named after what it holds
+(`<file>.piano-drums.flac`, `StemRejoin.kindsPart`), so it is put back with
+the others later, is part of the same premix in the preview, goes with the
+stems when they are removed and is made again when they are split again.
+What was done to the tracks put back goes with them; one step of undo. For
+the whole video one button puts every clip back.
 
 **Export** (`CommandBuilder.footage`). A clip whose `Effects.voiceLevel` or
 `backgroundLevel` is not 1 takes its sound from its file's stems
@@ -2333,6 +2379,32 @@ subtitle does, without a click.
 In the preview a placed sound a little off its place (a long one, such as a
 dub, drifts) is brought back by playing it 4 % faster or slower until it is
 (`SoundVoices.nudge`), rather than by a seek, which is heard.
+
+**Stems heard together** (`core/preview/StemPremix`, tested;
+`media/FfmpegStemPremixer`; `preview/PreviewMapping.premixBundles`,
+`withPremixes`). Players drift a few milliseconds apart, and nudged back they
+keep moving round their place: nobody hears that between unrelated sounds,
+but the stems of one song are parts of one waveform, and the same notes a few
+milliseconds apart cancel and add (a comb filter), heard as distortion. So
+the stems of one file (`VoiceSeparator.stemOriginOf`) laid at the same point,
+at least two of them heard, each with a known end, form a bundle: FFmpeg
+mixes them into one FLAC of the cache with the export's own filters
+(`AudioFilters.soundShaping`: trim, repeats, speed and pitch, equaliser,
+effects, levelling, volume and keyframes, own fades; the part of
+`soundChain` that does not depend on where the sound lies) and the export's
+mixer, and one player plays it in their place, at the bundle's start, with
+only the whole video's level, fades and effects on it, as on any sound. What
+is heard is what the export writes, and the level drawn is the premix's
+own. A muted stem stays in its bundle, left out of the mix as the export
+leaves it out. The bundle's start is not in the premix (each stem on its own
+clock), so moving the stems does not mix them again; any other change does,
+after the settings stay still for 400 ms (`wantStemPremixes`, one at a time,
+stale runs cancelled), and until it is ready the last premix made for the
+same tracks is heard (the stems one by one the first time). The file is
+named after the command and each stem's size and time, so stems split again
+are mixed again; premixes not heard for three days go at start-up. When a
+premix fails, its command and FFmpeg's log go to Logcat (`StemPremixer`) and
+the stems play one by one.
 
 **Result** (`DubEngine`). Every line, at its place, in one mono WAV at 24 kHz
 in `files/dubs/`, laid on the video as a placed sound (`AudioClip`): it is

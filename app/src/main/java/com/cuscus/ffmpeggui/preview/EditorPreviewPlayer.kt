@@ -157,7 +157,16 @@ class EditorPreviewPlayer(context: Context) {
     val liveAudio = LiveAudio()
 
     /** Bind this to the surface that shows the picture. */
-    val videoPlayer: ExoPlayer = processingPlayer(context, AudioEffectsProcessor({ liveAudio.stages }, liveAudio.meter), prewarm = true).apply {
+    private val videoTap = liveAudio.spectrum.tap()
+    private val incomingTap = liveAudio.spectrum.tap()
+    private val reverseTap = liveAudio.spectrum.tap()
+
+    val videoPlayer: ExoPlayer = processingPlayer(
+        context,
+        AudioEffectsProcessor({ liveAudio.stages }, liveAudio.meter, videoTap),
+        prewarm = true,
+        tap = videoTap,
+    ).apply {
         // It does not repeat on its own: the output clock starts the video over (see drive).
         // On repeat, the prewarmed second decoder got the first clip ready as the "next" one
         // and the two decoders swapped on the surface at every loop; after a few loops the
@@ -166,7 +175,7 @@ class EditorPreviewPlayer(context: Context) {
     }
 
     /** Plays the clip coming in through a transition; bind it to a second surface. */
-    val incomingPlayer: ExoPlayer = processingPlayer(context, AudioEffectsProcessor({ liveAudio.stages }, liveAudio.meter))
+    val incomingPlayer: ExoPlayer = processingPlayer(context, AudioEffectsProcessor({ liveAudio.stages }, liveAudio.meter, incomingTap), tap = incomingTap)
 
     private val voices = SoundVoices(context, liveAudio)
 
@@ -176,8 +185,15 @@ class EditorPreviewPlayer(context: Context) {
      * clip's place. Bind it to a surface over the clip's own (shown while
      * [PreviewSnapshot.reversedPicture]). Still and silent when there is none.
      */
-    val reversePlayer: ExoPlayer = processingPlayer(context, AudioEffectsProcessor({ liveAudio.stages }, liveAudio.meter)).apply {
+    val reversePlayer: ExoPlayer = processingPlayer(context, AudioEffectsProcessor({ liveAudio.stages }, liveAudio.meter, reverseTap), tap = reverseTap).apply {
         repeatMode = Player.REPEAT_MODE_OFF
+    }
+
+    init {
+        // The audio editor's spectrum hears every player of the preview.
+        liveAudio.spectrum.attach(videoPlayer, videoTap)
+        liveAudio.spectrum.attach(incomingPlayer, incomingTap)
+        liveAudio.spectrum.attach(reversePlayer, reverseTap)
     }
     private val reverseBooster = GainBooster()
     private var reverseLoaded: Uri? = null
@@ -635,6 +651,9 @@ class EditorPreviewPlayer(context: Context) {
         incomingBooster.release()
         reverseBooster.release()
         voices.release()
+        liveAudio.spectrum.detach(videoPlayer)
+        liveAudio.spectrum.detach(incomingPlayer)
+        liveAudio.spectrum.detach(reversePlayer)
         videoPlayer.release()
         incomingPlayer.release()
         reversePlayer.release()

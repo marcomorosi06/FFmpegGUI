@@ -197,14 +197,17 @@ internal class SoundVoices(private val context: Context, private val live: LiveA
         voices.clear()
     }
 
-    private fun load(voice: Voice): ExoPlayer = processingPlayer(
-        context,
-        // Stems are mixed down to stereo first, at the levels set for the voice and the rest.
-        *listOfNotNull(
-            if (voice.sound.stemLevels != null) StemMixProcessor { voice.stemLevels } else null,
-            AudioEffectsProcessor({ voice.ownStages + live.stages }, live.meter),
-        ).toTypedArray(),
-    ).apply {
+    private fun load(voice: Voice): ExoPlayer = live.spectrum.tap().let { tap ->
+        processingPlayer(
+            context,
+            // Stems are mixed down to stereo first, at the levels set for the voice and the rest.
+            *listOfNotNull(
+                if (voice.sound.stemLevels != null) StemMixProcessor { voice.stemLevels } else null,
+                AudioEffectsProcessor({ voice.ownStages + live.stages }, live.meter, tap),
+            ).toTypedArray(),
+            tap = tap,
+        ).also { live.spectrum.attach(it, tap) }
+    }.apply {
         val sound = voice.sound
         repeatMode = Player.REPEAT_MODE_OFF
         // The sound of a video file: its picture is not needed.
@@ -259,6 +262,7 @@ internal class SoundVoices(private val context: Context, private val live: LiveA
 
     private fun release(voice: Voice) {
         voice.booster.release()
+        live.spectrum.detach(voice.player)
         voice.player.release()
     }
 

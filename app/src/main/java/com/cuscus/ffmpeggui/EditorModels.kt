@@ -263,6 +263,12 @@ data class AudioClip(
     val aiVoice: String? = null,
     /** How [uri] was made in the audio editor opened on top of this one (see core.stack, [NestedEdit]); null for a file as it came. */
     val nested: NestedEdit? = null,
+    /**
+     * The clip (its id) this is a stem of, laid as a track by the Stems tool:
+     * the clip is silent while its stems play, and they can be put back into
+     * it (see StemRejoin); null for any other sound.
+     */
+    val stemOf: String? = null,
 )
 
 /**

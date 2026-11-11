@@ -77,7 +77,16 @@ internal class AudioFilters {
         sound: PlacedSound,
         request: ConversionRequest,
         outputDurationSeconds: Double?,
-    ): List<String> {
+    ): List<String> = soundShaping(sound) + soundPlacement(sound, request, outputDurationSeconds)
+
+    /**
+     * What is done to a placed sound on its own clock (from its start): its
+     * part of the file, repeats, speed and pitch, equaliser, own effects,
+     * levelling, volume and own fades. Nothing in it depends on where the
+     * sound is placed, so the preview's premix of stems (see
+     * com.cuscus.ffmpeggui.core.preview.StemPremix) runs exactly these.
+     */
+    fun soundShaping(sound: PlacedSound): List<String> {
         val filters = mutableListOf("asetpts=N/SR/TB")
 
         val start = sound.trimStartMs.coerceAtLeast(0L)
@@ -130,6 +139,16 @@ internal class AudioFilters {
         // Its own fades, on its own clock: before it is moved into place.
         val ownEffects = Effects(fadeInSeconds = sound.fadeInSeconds, fadeOutSeconds = sound.fadeOutSeconds)
         filters += fades(ownEffects, sound.lengthMs?.let { it / 1000.0 })
+        return filters
+    }
+
+    /** A shaped sound moved to its place on the output clock, where the fades of the whole video reach it. */
+    private fun soundPlacement(
+        sound: PlacedSound,
+        request: ConversionRequest,
+        outputDurationSeconds: Double?,
+    ): List<String> {
+        val filters = mutableListOf<String>()
         val delayMs = sound.startMs.coerceAtLeast(0L)
         if (delayMs > 0) {
             filters += "adelay=delays=$delayMs:all=1"

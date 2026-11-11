@@ -6,6 +6,7 @@ import com.cuscus.ffmpeggui.core.command.FfmpegCommand
 import com.cuscus.ffmpeggui.core.engine.ExecutionResult
 import com.cuscus.ffmpeggui.core.engine.FfmpegExecutor
 import com.cuscus.ffmpeggui.core.engine.ProgressParser
+import com.cuscus.ffmpeggui.core.stems.StemRejoin
 import com.cuscus.ffmpeggui.core.subtitles.ListenedSound
 import java.io.File
 
@@ -91,6 +92,13 @@ class FfmpegAudioExtractor(context: Context, private val executor: FfmpegExecuto
         )
         val expected = durationMs.takeIf { it > 0 }
         return executor.execute(command) { line -> progress.fraction(line, expected)?.let(onProgress) }
+    }
+
+    /** Sums the stems of one file ([stems], which start together) into the FLAC file [target] (see StemRejoin). */
+    suspend fun mixStems(stems: List<File>, target: File): ExecutionResult {
+        target.parentFile?.mkdirs()
+        target.delete()
+        return executor.execute(StemRejoin.command(stems.map { it.absolutePath }, target.absolutePath)) {}
     }
 
     companion object {

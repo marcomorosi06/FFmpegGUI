@@ -78,6 +78,7 @@ class SettingsRepository(context: Context) {
             saveProjects = this[SAVE_PROJECTS] ?: defaults.saveProjects,
             projectsLimit = this[PROJECTS_LIMIT]?.takeIf { it in AppSettings.PROJECTS_LIMITS } ?: defaults.projectsLimit,
             clipWaveforms = this[CLIP_WAVEFORMS] ?: defaults.clipWaveforms,
+            audioSpectrum = this[AUDIO_SPECTRUM] ?: defaults.audioSpectrum,
             landscapeLayout = this[LANDSCAPE_LAYOUT]?.let { name -> LandscapeLayout.entries.firstOrNull { it.name == name } } ?: defaults.landscapeLayout,
             onboarded = this[ONBOARDED] ?: defaults.onboarded,
             keepAndroidOpenBanner = this[KEEP_ANDROID_OPEN] ?: defaults.keepAndroidOpenBanner,
@@ -102,6 +103,7 @@ class SettingsRepository(context: Context) {
         this[SAVE_PROJECTS] = settings.saveProjects
         this[PROJECTS_LIMIT] = settings.projectsLimit
         this[CLIP_WAVEFORMS] = settings.clipWaveforms
+        this[AUDIO_SPECTRUM] = settings.audioSpectrum
         this[LANDSCAPE_LAYOUT] = settings.landscapeLayout.name
         this[ONBOARDED] = settings.onboarded
         this[KEEP_ANDROID_OPEN] = settings.keepAndroidOpenBanner
@@ -125,6 +127,7 @@ class SettingsRepository(context: Context) {
         val SAVE_PROJECTS = booleanPreferencesKey("save_projects")
         val PROJECTS_LIMIT = intPreferencesKey("projects_limit")
         val CLIP_WAVEFORMS = booleanPreferencesKey("clip_waveforms")
+        val AUDIO_SPECTRUM = booleanPreferencesKey("audio_spectrum")
         val LANDSCAPE_LAYOUT = stringPreferencesKey("landscape_layout")
         val ONBOARDED = booleanPreferencesKey("onboarded")
         val KEEP_ANDROID_OPEN = booleanPreferencesKey("keep_android_open_banner")

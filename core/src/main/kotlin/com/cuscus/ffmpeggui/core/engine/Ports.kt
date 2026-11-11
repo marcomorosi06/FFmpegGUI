@@ -43,6 +43,16 @@ fun interface SoundReverser {
     suspend fun reverse(request: com.cuscus.ffmpeggui.core.preview.ReversedSoundRequest, onProgress: (Float) -> Unit): String?
 }
 
+/**
+ * Mixes the stems of one file placed together into a file of their own, for
+ * the preview (see com.cuscus.ffmpeggui.core.preview.StemPremix). Returns the
+ * file's path, or null when it cannot be made. Cancelling the calling
+ * coroutine stops FFmpeg.
+ */
+fun interface StemPremixer {
+    suspend fun premix(bundle: com.cuscus.ffmpeggui.core.preview.StemBundle): String?
+}
+
 /** Makes sources readable by FFmpeg as plain files. */
 fun interface SourceStager {
     /** Opens a private working area. Closing the session deletes everything in it. */
