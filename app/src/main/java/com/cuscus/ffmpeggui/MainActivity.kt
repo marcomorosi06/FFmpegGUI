@@ -338,6 +338,7 @@ class MainActivity : ComponentActivity() {
                     val voiceStatus by vm.voice.collectAsState()
                     val voiceStems by vm.voiceStems.collectAsState()
                     val stemTracks by vm.stemTracks.collectAsState()
+                    val songSplits by vm.songSplits.collectAsState()
                     val instrumentsModel by container.smartFeatures.instrumentsState.collectAsState()
                     // Dubbing in the subtitles' language: its model and the run.
                     val dubModel by container.smartFeatures.dubState.collectAsState()
@@ -356,6 +357,8 @@ class MainActivity : ComponentActivity() {
                         instrumentsReady = instrumentsModel is SpeechModelStore.State.Ready,
                         tracks = stemTracks,
                         onPlaceTracks = vm::placeStemTracks,
+                        soundOnly = remember(s.sources) { s.sources.filter { it.info?.isVideo == false }.map { it.id }.toSet() },
+                        songSplits = songSplits,
                         onSeparate = vm::separateVoice,
                         onStop = vm::stopVoiceSeparation,
                         onDismissProblem = vm::dismissVoiceProblem,
@@ -1085,6 +1088,7 @@ class MainActivity : ComponentActivity() {
                                         srt = vm::spokenSubtitlesSrt,
                                         onOpenSmartFeatures = { com.cuscus.ffmpeggui.settings.SmartPageRequest.next = com.cuscus.ffmpeggui.settings.SmartPage.SPEECH; navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
                                         onLyrics = vm::lyricsFromSpeech,
+                                        singingModelReady = instrumentsModel is SpeechModelStore.State.Ready,
                                         dub = DubEditing(
                                             speakers = dubSpeakers,
                                             voiceModelReady = voiceModel is SpeechModelStore.State.Ready,

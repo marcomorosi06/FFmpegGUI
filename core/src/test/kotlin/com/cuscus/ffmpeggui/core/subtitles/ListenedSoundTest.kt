@@ -18,6 +18,16 @@ class ListenedSoundTest {
     }
 
     @Test
+    fun `a song split straight into its instruments is heard in its singing alone`() {
+        assertEquals(listOf(StemKind.SINGING), ListenedSound.voiceOf(StemKind.INSTRUMENTS.toSet(), song = true))
+        // A dialogue made since only repeats part of the singing: it is left out.
+        assertEquals(listOf(StemKind.SINGING), ListenedSound.voiceOf(StemKind.entries.toSet(), song = true))
+        assertTrue(ListenedSound.voiceOf(setOf(StemKind.PIANO, StemKind.DRUMS), song = true).isEmpty())
+        // Instruments split from Bandit's music: the singing alone is not every voice.
+        assertTrue(ListenedSound.voiceOf(StemKind.INSTRUMENTS.toSet()).isEmpty())
+    }
+
+    @Test
     fun `one file is read as before`() {
         assertEquals(
             listOf(

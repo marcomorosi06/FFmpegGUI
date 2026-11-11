@@ -157,8 +157,13 @@ class SubtitleEditing(
     /** The spoken subtitles as a .srt file, timed like the export. */
     val srt: () -> String? = { null },
     val onOpenSmartFeatures: () -> Unit = {},
-    /** Fills the lyrics tag with what is sung: plain lines, or synced (LRC) with true. */
-    val onLyrics: (Boolean) -> Unit = {},
+    /**
+     * Fills the lyrics tag with what is sung: plain lines, or synced (LRC)
+     * with the first true; the second true sets the singing apart first.
+     */
+    val onLyrics: (Boolean, Boolean) -> Unit = { _, _ -> },
+    /** Spleeter's five stems are on the phone: the singing can be set apart before listening. */
+    val singingModelReady: Boolean = false,
     /** Translating them into another language. */
     val translation: SubtitleTranslationUi = SubtitleTranslationUi(),
     /** Dubbing the video in their language. */
@@ -310,6 +315,7 @@ private fun SpeechCard(subtitles: SubtitleEditing) {
                                 SpeechProblem.NO_MODEL -> R.string.speech_problem_model
                                 SpeechProblem.NO_MEMORY -> R.string.speech_problem_memory
                                 SpeechProblem.FAILED -> R.string.speech_problem_failed
+                                SpeechProblem.NO_SINGING_MODEL -> R.string.speech_problem_singing_model
                             },
                         )
                         !subtitles.modelReady -> stringResource(R.string.speech_needs_model)
@@ -472,6 +478,7 @@ private fun SpeechCard(subtitles: SubtitleEditing) {
 internal fun stepText(working: SpeechStatus.Working): String = when (val step = working.step) {
     is SpeechTranscriber.Step.Extracting -> stringResource(if (step.voice) R.string.speech_step_voice else R.string.speech_step_sound)
     SpeechTranscriber.Step.Loading -> stringResource(R.string.speech_step_loading)
+    is SpeechTranscriber.Step.Isolating -> stringResource(R.string.speech_step_isolating)
     is SpeechTranscriber.Step.Listening ->
         if (step.parts > 1) {
             stringResource(R.string.speech_step_listening_part, step.part, step.parts)

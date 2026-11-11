@@ -16,7 +16,10 @@ sealed interface SpeechStatus {
         /** How far the whole run is, 0..1; null while it cannot be told. */
         val fraction: Float?
             get() {
+                // Setting the singing apart comes before listening: its own bar, file by file.
+                if (step is SpeechTranscriber.Step.Isolating) return ((fileIndex + (step.fraction ?: return null)) / fileCount).coerceIn(0f, 1f)
                 val inFile = when (step) {
+                    is SpeechTranscriber.Step.Isolating -> 0f
                     // Taking the sound out is quick next to listening to it.
                     is SpeechTranscriber.Step.Extracting -> (step.fraction ?: return null) * EXTRACT_SHARE
                     SpeechTranscriber.Step.Loading -> EXTRACT_SHARE
@@ -42,4 +45,7 @@ enum class SpeechProblem {
 
     /** Something else went wrong. */
     FAILED,
+
+    /** The singing was to be set apart first, and Spleeter's five stems are not on the phone. */
+    NO_SINGING_MODEL,
 }

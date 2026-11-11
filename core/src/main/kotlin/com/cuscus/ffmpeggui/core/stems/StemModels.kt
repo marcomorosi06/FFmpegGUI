@@ -33,6 +33,31 @@ enum class StemKind(val id: String) {
 }
 
 /**
+ * How far a sound is split into tracks, and with which models:
+ *
+ *  - [SCENE]: Bandit v2 alone, dialogue, music and effects (a video's sound);
+ *  - [INSTRUMENTS]: Bandit, then Spleeter's five stems on the music Bandit
+ *    found, so that the dialogue and the effects stay apart from the
+ *    instruments (a video with music under it);
+ *  - [SONG]: Spleeter alone, on the whole sound: a song has no dialogue or
+ *    effects to set apart, and Spleeter is made for music. Bandit, by far
+ *    the slower of the two, is not run at all.
+ *
+ * [kinds] are the stems each offers, in the order they are shown and placed.
+ */
+enum class StemSplit(val kinds: List<StemKind>, val usesBandit: Boolean, val usesSpleeter: Boolean) {
+    SCENE(StemKind.SCENE, usesBandit = true, usesSpleeter = false),
+    INSTRUMENTS(listOf(StemKind.DIALOGUE, StemKind.EFFECTS) + StemKind.INSTRUMENTS, usesBandit = true, usesSpleeter = true),
+    SONG(StemKind.INSTRUMENTS, usesBandit = false, usesSpleeter = true),
+    ;
+
+    companion object {
+        /** Where a split starts: a song for a sound alone (no picture), the scene for a video. */
+        fun firstFor(soundOnly: Boolean): StemSplit = if (soundOnly) SONG else SCENE
+    }
+}
+
+/**
  * Bandit v2 (Watcharasupat, Wu, Orife; weights CC BY-SA 4.0) as a
  * [StemSeparation.Model]: the sound split into dialogue, music and effects at
  * 48 kHz. The network is mono: it reads the middle of the two channels and

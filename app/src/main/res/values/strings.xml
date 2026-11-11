@@ -922,6 +922,9 @@
     <string name="lyrics_needs_model">The lyrics can be written from what is sung, with the speech model of the smart subtitles.</string>
     <string name="lyrics_from_singing">Write them from what is sung</string>
     <string name="lyrics_from_singing_replace">Write them again from what is sung</string>
+    <string name="lyrics_isolate">Set the singing apart first</string>
+    <string name="lyrics_isolate_text">Slower: Spleeter takes the voice out of the music, then every word is heard without it. Better where the music is loud.</string>
+    <string name="lyrics_isolate_needs_model">Needs Spleeter\'s five stems, in Smart features.</string>
     <string name="lyrics_plain">Plain</string>
     <string name="lyrics_synced">Synced</string>
     <string name="lyrics_sync_open">Time the lines while it plays</string>
@@ -1813,6 +1816,7 @@
     <string name="speech_remove">Remove</string>
     <string name="speech_private">Made on this phone. Nothing leaves it.</string>
     <string name="speech_step_sound">Taking the sound out\u2026</string>
+    <string name="speech_step_isolating">Setting the singing apart from the music\u2026</string>
     <string name="speech_step_voice">Taking the voice set apart before: heard without the music\u2026</string>
     <string name="speech_step_loading">Loading the speech model\u2026</string>
     <string name="speech_step_listening">Listening and writing\u2026</string>
@@ -1829,6 +1833,7 @@
     <string name="speech_problem_model">The speech model is missing or did not pass its check. Set it up in Smart features.</string>
     <string name="speech_problem_memory">Not enough free memory for the speech model. Close other apps and try again.</string>
     <string name="speech_problem_failed">Something went wrong while listening. Try again.</string>
+    <string name="speech_problem_singing_model">To set the singing apart, Spleeter\'s five stems are needed: import them in Smart features, or turn the switch off.</string>
     <string name="subtitle_or_file">Or a subtitle file</string>
     <string name="subtitle_loaded_styled">Drawn with the style of this panel</string>
     <string name="subtitle_loaded_own_look">An .ass file: it keeps its own look</string>
@@ -1956,6 +1961,7 @@
     <string name="work_speech_title">Listening to %1$s</string>
     <string name="work_speech_extracting">Taking the sound out</string>
     <string name="work_speech_extracting_voice">Taking the voice set apart</string>
+    <string name="work_speech_isolating">Setting the singing apart</string>
     <string name="work_speech_loading">Loading the speech model</string>
     <string name="work_speech_listening">Writing down what is said</string>
     <string name="work_speech_done_title">The words are written down</string>
@@ -2856,6 +2862,10 @@
     <string name="stems_tracks_text">Lays the parts you pick on the video as sounds of their own, in step with the clips, and silences the clips. Each one can then be moved, cut, levelled or given effects like any sound.</string>
     <string name="stems_depth_scene">Dialogue, music, effects</string>
     <string name="stems_depth_instruments">Every instrument</string>
+    <string name="stems_depth_song">A song</string>
+    <string name="stems_depth_scene_hint">For a video: Bandit v2 sets the dialogue, the music and the effects apart. It takes a while: some minutes for every minute of sound.</string>
+    <string name="stems_depth_instruments_hint">For a video with music: Bandit v2 first, then Spleeter splits the music it found into its instruments, keeping the dialogue and the effects apart. The slowest way.</string>
+    <string name="stems_depth_song_hint">For music alone: Spleeter splits the whole song into its instruments, without Bandit, many times quicker. The singing holds every voice; there is no dialogue or effects track.</string>
     <string name="stems_picked">Picked</string>
     <string name="stems_not_picked">Not picked</string>
     <string name="stems_kept">Split already</string>

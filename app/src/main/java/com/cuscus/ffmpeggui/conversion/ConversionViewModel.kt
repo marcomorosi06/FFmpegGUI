@@ -373,6 +373,11 @@ class ConversionViewModel(
     /** Which stems of the project's files are kept as tracks of their own, by source id. */
     val stemTracks: StateFlow<Map<String, Set<StemKind>>> = _stemTracks.asStateFlow()
 
+    private val _songSplits = MutableStateFlow<Set<String>>(emptySet())
+
+    /** The project's files (source ids) whose instruments were split from the whole sound, as a song. */
+    val songSplits: StateFlow<Set<String>> = _songSplits.asStateFlow()
+
     /** The run was stopped by hand: its end has nothing to say. */
     private var speechStopped = false
     private var cutoutStopped = false
@@ -440,6 +445,9 @@ class ConversionViewModel(
                         }
                         _stemTracks.value = withContext(ioDispatcher) {
                             files.associate { (id, uri) -> id to separator.tracks(uri).keys }.filterValues { it.isNotEmpty() }
+                        }
+                        _songSplits.value = withContext(ioDispatcher) {
+                            files.filter { (_, uri) -> separator.isSongSplit(uri) }.map { it.first }.toSet()
                         }
                     }
             }
@@ -1993,17 +2001,19 @@ class ConversionViewModel(
      * Lays the stems [kinds] of clip [clipId] (null: of every clip that plays)
      * on the video as sounds of their own, each in step with its clip, and
      * silences the clips: one step of undo. The files are split first where
-     * they are not yet (into their instruments too, when [kinds] has any).
-     * A track takes its clip's volume, and the voice or the rest's level;
-     * it is named [names] of its stem (the words of the user's language),
-     * then its file.
+     * they are not yet (into their instruments too, when [kinds] has any; as a
+     * [song], straight from the whole sound with Spleeter alone, see
+     * StemSplit.SONG). A track takes its clip's volume, and the voice or the
+     * rest's level; it is named [names] of its stem (the words of the user's
+     * language), then its file.
      */
-    fun placeStemTracks(clipId: String?, kinds: Set<StemKind>, names: Map<StemKind, String>) {
+    fun placeStemTracks(clipId: String?, kinds: Set<StemKind>, names: Map<StemKind, String>, song: Boolean = false) {
         val features = smart ?: return
         if (voiceJob?.isActive == true || kinds.isEmpty()) return
         val separator = features.voiceSeparator
-        val instruments = kinds.any { it.isInstrument }
-        if (!separator.ready) {
+        val instruments = song || kinds.any { it.isInstrument }
+        // A song needs Spleeter only.
+        if (!song && !separator.ready) {
             _voice.value = VoiceStatus.Failed(VoiceProblem.NO_MODEL)
             return
         }
@@ -2028,7 +2038,7 @@ class ConversionViewModel(
                 val made = HashMap<String, Map<StemKind, java.io.File>>()
                 files.forEachIndexed { index, file ->
                     val report: (VoiceSeparator.Step) -> Unit = { step -> _voice.value = VoiceStatus.Working(step, index, files.size, file.fileName) }
-                    if (instruments) separator.separateInstruments(file.uri, file.durationMs, report) else separator.separate(file.uri, file.durationMs, report)
+                    if (instruments) separator.separateInstruments(file.uri, file.durationMs, song, report) else separator.separate(file.uri, file.durationMs, report)
                     made[file.id] = withContext(ioDispatcher) { separator.tracks(file.uri) }
                 }
                 if (_inputUri.value != project) return@launch
@@ -2623,9 +2633,16 @@ class ConversionViewModel(
      * lines timed like the exported file (its cuts and speed). Files not
      * listened to yet are listened to first (as for spoken subtitles: the
      * progress shows the same way); if listening stops or fails the lyrics stay
-     * as they were.
+     * as they were. With [isolate], the singing of every file is set apart
+     * first (Spleeter, as a song: StemSplit.SONG; the files already set apart
+     * are not split again), then every file is listened to again from it:
+     * slower, but the words are heard where the music covers them.
      */
-    fun lyricsFromSpeech(synced: Boolean) {
+    fun lyricsFromSpeech(synced: Boolean, isolate: Boolean = false) {
+        if (isolate) {
+            lyricsFromSinging(synced)
+            return
+        }
         val settings = _settings.value
         if (settings.listenedFiles().none { it.key !in settings.spokenWords }) {
             writeLyrics(synced)
@@ -2637,6 +2654,65 @@ class ConversionViewModel(
         val project = projectId
         viewModelScope.launch {
             job.join()
+            if (projectId == project && !speechStopped && _speech.value is SpeechStatus.Idle) writeLyrics(synced)
+        }
+    }
+
+    /** [lyricsFromSpeech] with the singing set apart first. */
+    private fun lyricsFromSinging(synced: Boolean) {
+        val features = smart ?: return
+        if (speechJob?.isActive == true) return
+        if (!features.ready) {
+            _speech.value = SpeechStatus.Failed(SpeechProblem.NO_MODEL)
+            return
+        }
+        val separator = features.voiceSeparator
+        if (!separator.instrumentsReady) {
+            _speech.value = SpeechStatus.Failed(SpeechProblem.NO_SINGING_MODEL)
+            return
+        }
+        val files = _settings.value.listenedFiles()
+        if (files.isEmpty()) return
+        val project = projectId
+        speechStopped = false
+        speechJob = viewModelScope.launch {
+            try {
+                files.forEachIndexed { index, file ->
+                    // A file whose voice is set apart already is heard from it as it is; a placed
+                    // sound that is itself a stem (the singing laid as a track, say) is not split again.
+                    if (VoiceSeparator.stemKindOf(file.uri) != null) return@forEachIndexed
+                    if (withContext(ioDispatcher) { separator.voiceTracks(file.uri).isNotEmpty() }) return@forEachIndexed
+                    _speech.value = SpeechStatus.Working(SpeechTranscriber.Step.Isolating(null), index, files.size, file.name)
+                    separator.separateInstruments(file.uri, file.durationMs, song = true) { step ->
+                        val fraction = when (step) {
+                            is VoiceSeparator.Step.Separating -> step.fraction
+                            is VoiceSeparator.Step.Saving -> 1f
+                            else -> null
+                        }
+                        _speech.value = SpeechStatus.Working(SpeechTranscriber.Step.Isolating(fraction), index, files.size, file.name)
+                    }
+                }
+            } catch (e: CancellationException) {
+                if (_speech.value is SpeechStatus.Working) _speech.value = SpeechStatus.Idle
+                throw e
+            } catch (e: VoiceSeparator.ModelMissing) {
+                _speech.value = SpeechStatus.Failed(SpeechProblem.NO_SINGING_MODEL)
+                return@launch
+            } catch (e: VoiceSeparator.NotEnoughMemory) {
+                _speech.value = SpeechStatus.Failed(SpeechProblem.NO_MEMORY)
+                return@launch
+            } catch (e: Exception) {
+                android.util.Log.w("ConversionViewModel", "Setting the singing apart failed", e)
+                _speech.value = SpeechStatus.Failed(SpeechProblem.FAILED)
+                return@launch
+            }
+            if (projectId != project || speechStopped) return@launch
+            // Every file again, now from its singing; then the lyrics, if listening ends well.
+            _speech.value = SpeechStatus.Idle
+            speechJob = null
+            generateSubtitles(again = true)
+            val listening = speechJob?.takeIf { it.isActive } ?: return@launch
+            listening.join()
             if (projectId == project && !speechStopped && _speech.value is SpeechStatus.Idle) writeLyrics(synced)
         }
     }

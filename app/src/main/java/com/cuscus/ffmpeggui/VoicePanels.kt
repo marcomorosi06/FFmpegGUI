@@ -113,8 +113,15 @@ class VoiceEditing(
     val instrumentsReady: Boolean = false,
     /** The stems kept as tracks of their own, by source id. */
     val tracks: Map<String, Set<StemKind>> = emptyMap(),
-    /** Lays these stems of clip (its id; null: of every clip) on the video as tracks, named so. */
-    val onPlaceTracks: (String?, Set<StemKind>, Map<StemKind, String>) -> Unit = { _, _, _ -> },
+    /**
+     * Lays these stems of clip (its id; null: of every clip) on the video as
+     * tracks, named so; the last argument: split as a song (Spleeter alone).
+     */
+    val onPlaceTracks: (String?, Set<StemKind>, Map<StemKind, String>, Boolean) -> Unit = { _, _, _, _ -> },
+    /** The source ids of sounds alone (no picture): their split starts as a song. */
+    val soundOnly: Set<String> = emptySet(),
+    /** The source ids whose instruments were split as a song: split again from the music for a video's instruments. */
+    val songSplits: Set<String> = emptySet(),
     /** Sets the voice of these files (source ids) apart; null: of every clip that plays. */
     val onSeparate: (Set<String>?) -> Unit = {},
     val onStop: () -> Unit = {},

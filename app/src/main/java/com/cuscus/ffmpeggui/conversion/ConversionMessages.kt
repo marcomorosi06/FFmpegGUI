@@ -46,6 +46,7 @@ class ConversionMessages(private val resources: Resources) {
             SpeechProblem.NO_MODEL -> R.string.speech_problem_model
             SpeechProblem.NO_MEMORY -> R.string.speech_problem_memory
             SpeechProblem.FAILED -> R.string.error_transcript_failed
+            SpeechProblem.NO_SINGING_MODEL -> R.string.speech_problem_singing_model
         },
     )
 

@@ -350,6 +350,7 @@ fun TranscriptScreen(
                                 SpeechProblem.NO_MODEL -> R.string.speech_problem_model
                                 SpeechProblem.NO_MEMORY -> R.string.speech_problem_memory
                                 SpeechProblem.FAILED -> R.string.speech_problem_failed
+                                SpeechProblem.NO_SINGING_MODEL -> R.string.speech_problem_singing_model
                                 null -> R.string.transcript_stopped
                             },
                         ),

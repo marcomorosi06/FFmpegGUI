@@ -2240,7 +2240,13 @@ and the dub read (the dialogue's left and right, then the music's and the
 effects' together: `VoiceStem`), FFmpeg packs each into FLAC in
 `files/voice-stems/`, by the media file's address: a file is split once, for
 every project. The instruments are split from the music stem (read again at
-44.1 kHz), only when asked. One model in memory at a time, through the
+44.1 kHz), only when asked; or, for a song (`core/stems/StemSplit.SONG`, the
+first choice for a sound without a picture), straight from the whole sound
+with Spleeter alone: Bandit, the far slower model, is not run, and a song
+has no dialogue or effects to keep apart. A `.song` mark next to those
+instruments says so: their singing is then the voice the subtitles listen to
+alone (`ListenedSound.voiceOf`), and asking for a video's instruments (the
+dialogue and the effects apart) splits them again from the music. One model in memory at a time, through the
 `ModelGate`. Four-channel files left by Spleeter's two stems keep playing;
 asking for tracks makes them again with Bandit. The settings say how many
 files are kept and remove them all.
@@ -2825,7 +2831,14 @@ and `LyricsText` (`core/subtitles`) makes short lines (a pause, a sentence, a
 comma once half full, 42 characters) and verses (3 s of silence), plain or
 synced the LRC way ("[mm:ss.xx]line", an empty timed line where a verse stops),
 which players that know LRC follow as the song plays. Read back from a file,
-FFmpeg's "lyrics-eng" (an USLT frame) counts as the lyrics.
+FFmpeg's "lyrics-eng" (an USLT frame) counts as the lyrics. A switch, off at
+first, sets the singing apart before listening: every file is split as a
+song by Spleeter alone (`VoiceSeparator.separateInstruments(song = true)`,
+those already set apart and the stems laid as tracks left as they are), its
+progress shown as the transcriber's `Step.Isolating`, then every file is
+listened to again, from its singing (`ListenedSound`). Slower, but the
+words are heard where the music covers them; off, the song is heard as it
+is, quicker.
 
 The lines are also timed by hand (issue #16, `LyricsSync.kt`): a page with
 two views, "Plain" (the words as text) and "Synced" (a line each: a stopwatch

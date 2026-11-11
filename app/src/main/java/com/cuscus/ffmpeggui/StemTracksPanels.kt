@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import com.cuscus.ffmpeggui.conversion.VoiceProblem
 import com.cuscus.ffmpeggui.conversion.VoiceStatus
 import com.cuscus.ffmpeggui.core.stems.StemKind
+import com.cuscus.ffmpeggui.core.stems.StemSplit
 import com.cuscus.ffmpeggui.ui.expressive.MorphingContainer
 import com.cuscus.ffmpeggui.ui.expressive.OptionTileRow
 import com.cuscus.ffmpeggui.ui.expressive.PanelHint
@@ -78,20 +79,13 @@ import com.cuscus.ffmpeggui.ui.expressive.TileOption
 
 /*
  * The stems of the clips as tracks of their own (see ConversionViewModel.placeStemTracks):
- * how far to split (dialogue, music and effects, or every instrument of the
- * music too), which stems to lay on the video, and the one button that does
- * it. Each stem is a pill with its own shape and colour that blooms when it is
- * picked; a stem already kept for every file in question carries a tick.
+ * how far to split (core's StemSplit: dialogue, music and effects; every
+ * instrument of the music too; or a song, split straight into its
+ * instruments, much quicker), which stems to lay on the video, and the one
+ * button that does it. Each stem is a pill with its own shape and colour that
+ * blooms when it is picked; a stem already kept for every file in question
+ * carries a tick. A sound alone starts as a song, a video as its scene.
  */
-
-/** How far the sound is split: the scene (Bandit) or the scene with its music's instruments (Spleeter too). */
-private enum class SplitDepth { SCENE, INSTRUMENTS }
-
-/** The stems a depth offers, in the order they are shown and placed. */
-private fun SplitDepth.kinds(): List<StemKind> = when (this) {
-    SplitDepth.SCENE -> StemKind.SCENE
-    SplitDepth.INSTRUMENTS -> listOf(StemKind.DIALOGUE, StemKind.EFFECTS) + StemKind.INSTRUMENTS
-}
 
 /** A stem's name, in words. */
 @Composable
@@ -153,18 +147,24 @@ internal fun StemTracksCard(voice: VoiceEditing, clipId: String?, sourceIds: Set
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
     val motion = MaterialTheme.motionScheme
-    var depth by rememberSaveable { mutableStateOf(SplitDepth.SCENE) }
+    // A song for sounds alone, the scene when a video is among them; the user changes it at will.
+    var depth by rememberSaveable { mutableStateOf(StemSplit.firstFor(soundOnly = sourceIds.isNotEmpty() && sourceIds.all { it in voice.soundOnly })) }
     // What is picked, by stem id, so it survives a turn of the phone; every stem at first.
     var picked by rememberSaveable { mutableStateOf(StemKind.entries.map { it.id }.toSet()) }
-    val offered = depth.kinds()
+    val offered = depth.kinds
     val chosen = offered.filter { it.id in picked }.toSet()
     val working = voice.status is VoiceStatus.Working
     val placed = voice.status as? VoiceStatus.Placed
     val problem = (voice.status as? VoiceStatus.Failed)?.problem
         ?.takeIf { it == VoiceProblem.NO_INSTRUMENTS_MODEL || it == VoiceProblem.NO_TRACKS }
-    val needsInstruments = depth == SplitDepth.INSTRUMENTS && !voice.instrumentsReady
-    // A stem is kept already when every file in question has it: placing it is then quick.
-    fun kept(kind: StemKind) = sourceIds.isNotEmpty() && sourceIds.all { kind in voice.tracks[it].orEmpty() }
+    val needsInstruments = depth.usesSpleeter && !voice.instrumentsReady
+    // Bandit is needed unless the sound is split as a song.
+    val needsBandit = depth.usesBandit && !voice.modelReady
+    // A stem is kept already when every file in question has it: placing it is then quick. A song's
+    // instruments are not the music's: asked for with the dialogue apart, they are split again.
+    fun kept(kind: StemKind) = sourceIds.isNotEmpty() && sourceIds.all { id ->
+        kind in voice.tracks[id].orEmpty() && !(depth == StemSplit.INSTRUMENTS && kind.isInstrument && id in voice.songSplits)
+    }
     val names = offered.associateWith { stemLabel(it) }
 
     Column(
@@ -179,7 +179,7 @@ internal fun StemTracksCard(voice: VoiceEditing, clipId: String?, sourceIds: Set
             MorphingContainer(
                 from = MaterialShapes.Cookie12Sided,
                 to = MaterialShapes.Clover8Leaf,
-                morphed = depth == SplitDepth.INSTRUMENTS,
+                morphed = depth != StemSplit.SCENE,
                 color = scheme.secondaryContainer,
                 modifier = Modifier.size(56.dp),
             ) {
@@ -198,8 +198,9 @@ internal fun StemTracksCard(voice: VoiceEditing, clipId: String?, sourceIds: Set
 
         OptionTileRow(
             options = listOf(
-                TileOption(SplitDepth.SCENE, stringResource(R.string.stems_depth_scene), Icons.Rounded.Theaters),
-                TileOption(SplitDepth.INSTRUMENTS, stringResource(R.string.stems_depth_instruments), Icons.Rounded.Piano),
+                TileOption(StemSplit.SCENE, stringResource(R.string.stems_depth_scene), Icons.Rounded.Theaters),
+                TileOption(StemSplit.INSTRUMENTS, stringResource(R.string.stems_depth_instruments), Icons.Rounded.Piano),
+                TileOption(StemSplit.SONG, stringResource(R.string.stems_depth_song), Icons.Rounded.MusicNote),
             ),
             selected = depth,
             enabled = !working,
@@ -207,6 +208,17 @@ internal fun StemTracksCard(voice: VoiceEditing, clipId: String?, sourceIds: Set
                 haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                 depth = it
             },
+        )
+
+        // What each way costs: a song skips Bandit, by far the slower model.
+        PanelHint(
+            stringResource(
+                when (depth) {
+                    StemSplit.SCENE -> R.string.stems_depth_scene_hint
+                    StemSplit.INSTRUMENTS -> R.string.stems_depth_instruments_hint
+                    StemSplit.SONG -> R.string.stems_depth_song_hint
+                },
+            ),
         )
 
         FlowRow(
@@ -262,9 +274,9 @@ internal fun StemTracksCard(voice: VoiceEditing, clipId: String?, sourceIds: Set
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                     voice.onDismissProblem()
-                    voice.onPlaceTracks(clipId, chosen, names)
+                    voice.onPlaceTracks(clipId, chosen, names, depth == StemSplit.SONG)
                 },
-                enabled = voice.modelReady && !working && count > 0 && sourceIds.isNotEmpty(),
+                enabled = !needsBandit && !working && count > 0 && sourceIds.isNotEmpty(),
                 shapes = ButtonDefaults.shapes(),
                 modifier = Modifier.fillMaxWidth().height(56.dp),
             ) {
@@ -277,7 +289,7 @@ internal fun StemTracksCard(voice: VoiceEditing, clipId: String?, sourceIds: Set
             }
         }
 
-        if (!voice.modelReady) PanelHint(stringResource(R.string.voice_needs_model))
+        if (needsBandit) PanelHint(stringResource(R.string.voice_needs_model))
 
         AnimatedVisibility(
             visible = placed != null || problem != null,

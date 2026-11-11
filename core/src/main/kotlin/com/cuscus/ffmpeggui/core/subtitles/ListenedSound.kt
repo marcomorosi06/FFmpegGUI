@@ -15,8 +15,10 @@ import java.util.Locale
  * voice of a file was already set apart (its stems kept as tracks), the model
  * listens to the voice alone: the dialogue Bandit v2 found and the singing
  * Spleeter found in the music, together (a song's singing goes to Bandit's
- * music, so the dialogue alone could be silent). Nothing is separated for
- * this: without both stems the whole sound is heard, as before.
+ * music, so the dialogue alone could be silent); or, for a song split
+ * straight into its instruments (StemSplit.SONG), the singing alone, which
+ * holds every voice of it. Nothing is separated for this: without those
+ * stems the whole sound is heard, as before.
  */
 object ListenedSound {
 
@@ -26,8 +28,17 @@ object ListenedSound {
     /** The stems listened to instead of the whole sound, when all of them are kept. */
     val VOICE: List<StemKind> = listOf(StemKind.DIALOGUE, StemKind.SINGING)
 
-    /** The stems of [kept] to listen to instead of the file, in [VOICE]'s order; empty to listen to the file itself. */
-    fun voiceOf(kept: Set<StemKind>): List<StemKind> = if (kept.containsAll(VOICE)) VOICE else emptyList()
+    /**
+     * The stems of [kept] to listen to instead of the file, in [VOICE]'s
+     * order; empty to listen to the file itself. [song]: its instruments were
+     * split from the whole sound (StemSplit.SONG), so their singing is every
+     * voice, and a dialogue made since would only repeat part of it.
+     */
+    fun voiceOf(kept: Set<StemKind>, song: Boolean = false): List<StemKind> = when {
+        song && StemKind.SINGING in kept -> listOf(StemKind.SINGING)
+        kept.containsAll(VOICE) -> VOICE
+        else -> emptyList()
+    }
 
     /**
      * Takes the first sound track of each of [inputs] (one file, or the voice

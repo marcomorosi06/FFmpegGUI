@@ -18,12 +18,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AvTimer
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.AvTimer
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.ButtonDefaults
@@ -35,6 +37,7 @@ import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -49,6 +52,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -178,12 +182,18 @@ internal fun LyricsCard(
     }
 }
 
-/** Fills the lyrics with what is sung: plain or synced, the listening's progress, or setting up the model. */
+/**
+ * Fills the lyrics with what is sung: plain or synced, the listening's
+ * progress, or setting up the model. A switch, off at first, sets the singing
+ * apart before listening (Spleeter, as a song): slower, but the words are
+ * heard where the music covers them; off, the song is heard as it is.
+ */
 @Composable
 private fun FromSinging(speech: SubtitleEditing, hasLyrics: Boolean) {
     val motion = MaterialTheme.motionScheme
     val haptic = LocalHapticFeedback.current
     val scheme = MaterialTheme.colorScheme
+    var isolate by rememberSaveable { mutableStateOf(false) }
     val working = speech.speech as? SpeechStatus.Working
     val failed = (speech.speech as? SpeechStatus.Failed)?.problem
     AnimatedContent(
@@ -248,13 +258,21 @@ private fun FromSinging(speech: SubtitleEditing, hasLyrics: Boolean) {
                             style = MaterialTheme.typography.labelLarge,
                         )
                     }
+                    IsolateSinging(
+                        checked = isolate && speech.singingModelReady,
+                        ready = speech.singingModelReady,
+                        onChange = {
+                            haptic.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+                            isolate = it
+                        },
+                    )
                     // Two halves of one connected pair: plain lines, or timed ones.
                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.fillMaxWidth()) {
                         listOf(false, true).forEach { timed ->
                             FilledTonalButton(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                                    speech.onLyrics(timed)
+                                    speech.onLyrics(timed, isolate && speech.singingModelReady)
                                 },
                                 shapes = ButtonDefaults.shapes(
                                     shape = if (timed) {
@@ -279,6 +297,7 @@ private fun FromSinging(speech: SubtitleEditing, hasLyrics: Boolean) {
                                     SpeechProblem.NO_MODEL -> R.string.speech_problem_model
                                     SpeechProblem.NO_MEMORY -> R.string.speech_problem_memory
                                     SpeechProblem.FAILED -> R.string.speech_problem_failed
+                                    SpeechProblem.NO_SINGING_MODEL -> R.string.speech_problem_singing_model
                                 },
                             ),
                             style = MaterialTheme.typography.bodySmall,
@@ -292,5 +311,50 @@ private fun FromSinging(speech: SubtitleEditing, hasLyrics: Boolean) {
                 }
             }
         }
+    }
+}
+
+/**
+ * The switch that sets the singing apart before listening: a badge that
+ * blooms when it is on, what it does and what it costs, or, without
+ * Spleeter's five stems, that they are needed (then it cannot be turned on).
+ */
+@Composable
+private fun IsolateSinging(checked: Boolean, ready: Boolean, onChange: (Boolean) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(if (checked) scheme.secondaryContainer else scheme.surfaceContainerHighest)
+            .toggleable(value = checked, enabled = ready, role = Role.Switch, onValueChange = onChange)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        MorphingContainer(
+            from = MaterialShapes.Circle,
+            to = MaterialShapes.Clover4Leaf,
+            morphed = checked,
+            color = if (checked) scheme.secondary else scheme.surfaceContainerHigh,
+            modifier = Modifier.size(40.dp),
+        ) {
+            Icon(Icons.Rounded.Mic, contentDescription = null, tint = if (checked) scheme.onSecondary else scheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                stringResource(R.string.lyrics_isolate),
+                style = MaterialTheme.typography.titleSmallEmphasized,
+                color = if (ready) scheme.onSurface else scheme.onSurfaceVariant,
+            )
+            Text(
+                stringResource(if (ready) R.string.lyrics_isolate_text else R.string.lyrics_isolate_needs_model),
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        // The row is the toggle: the switch only shows it.
+        Switch(checked = checked, onCheckedChange = null, enabled = ready)
     }
 }

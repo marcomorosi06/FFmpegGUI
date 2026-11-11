@@ -149,8 +149,15 @@ class VoiceSeparator(
      */
     fun voiceTracks(uri: Uri): List<File> {
         val kept = tracks(uri)
-        return ListenedSound.voiceOf(kept.keys).mapNotNull(kept::get)
+        return ListenedSound.voiceOf(kept.keys, song = isSongSplit(uri)).mapNotNull(kept::get)
     }
+
+    /**
+     * True when the instruments kept for [uri] were split from its whole sound
+     * (StemSplit.SONG), not from the music Bandit found: a mark kept next to
+     * them, gone with them.
+     */
+    fun isSongSplit(uri: Uri): Boolean = songMark(uri).isFile
 
     /** True when the dialogue, the music and the effects of [uri] are kept as tracks. */
     fun hasScene(uri: Uri): Boolean = tracks(uri).keys.containsAll(StemKind.SCENE)
@@ -168,26 +175,46 @@ class VoiceSeparator(
     }
 
     /**
-     * Splits the music of the file at [uri] into its instruments, splitting
-     * the file into dialogue, music and effects first when that is not done.
-     * Returns the instruments' tracks.
+     * Splits the file at [uri] into its instruments. As a [song], straight from
+     * its whole sound, with Spleeter alone (Bandit is not needed, nor run);
+     * else from the music Bandit finds, splitting the file into dialogue,
+     * music and effects first when that is not done. Instruments already kept
+     * are used as they are, except those of a song when the music's are asked
+     * for: they hold the dialogue and the effects too, so they are split again
+     * from the music. Returns the instruments' tracks.
      */
-    suspend fun separateInstruments(uri: Uri, durationMs: Long, onStep: (Step) -> Unit): Map<StemKind, File> = withContext(Dispatchers.Default) {
+    suspend fun separateInstruments(uri: Uri, durationMs: Long, song: Boolean = false, onStep: (Step) -> Unit): Map<StemKind, File> = withContext(Dispatchers.Default) {
         mutex.withLock {
-            if (!hasInstruments(uri)) {
+            val again = !song && isSongSplit(uri)
+            if (!hasInstruments(uri) || again) {
                 if (!instrumentsReady) throw ModelMissing(instruments = true)
-                if (!hasScene(uri)) scene(uri, durationMs, onStep)
-                val music = stemFile(uri, StemKind.MUSIC)
-                split(
-                    which = Which.INSTRUMENTS,
-                    layout = SpleeterMasks.LAYOUT,
-                    durationMs = durationMs,
-                    kinds = StemKind.INSTRUMENTS,
-                    extract = { pcm, progress -> extractor.extractStereo(music, pcm, durationMs, SpleeterMasks.SAMPLE_RATE, progress) },
-                    uri = uri,
-                    onStep = onStep,
-                    master = false,
-                )
+                if (song) {
+                    split(
+                        which = Which.INSTRUMENTS,
+                        layout = SpleeterMasks.LAYOUT,
+                        durationMs = durationMs,
+                        kinds = StemKind.INSTRUMENTS,
+                        extract = { pcm, progress -> extractor.extractStereo(uri.toString(), pcm, durationMs, SpleeterMasks.SAMPLE_RATE, progress) },
+                        uri = uri,
+                        onStep = onStep,
+                        master = false,
+                        song = true,
+                    )
+                } else {
+                    if (!hasScene(uri)) scene(uri, durationMs, onStep)
+                    val music = stemFile(uri, StemKind.MUSIC)
+                    split(
+                        which = Which.INSTRUMENTS,
+                        layout = SpleeterMasks.LAYOUT,
+                        durationMs = durationMs,
+                        kinds = StemKind.INSTRUMENTS,
+                        extract = { pcm, progress -> extractor.extractStereo(music, pcm, durationMs, SpleeterMasks.SAMPLE_RATE, progress) },
+                        uri = uri,
+                        onStep = onStep,
+                        master = false,
+                        song = false,
+                    )
+                }
             }
             tracks(uri).filterKeys { it.isInstrument }
         }
@@ -213,7 +240,10 @@ class VoiceSeparator(
     /**
      * Takes the sound out with [extract], splits it into [kinds] with the
      * model [which] and keeps each as a stereo FLAC; with [master], also the
-     * four-channel file (the first stem, then the others together).
+     * four-channel file (the first stem, then the others together). [song]:
+     * the instruments were split from the whole sound (true) or from the
+     * music (false), marked before the kept files are counted again, so that
+     * whoever watches them sees the mark too; null leaves the mark alone.
      */
     private suspend fun split(
         which: Which,
@@ -224,6 +254,7 @@ class VoiceSeparator(
         uri: Uri,
         onStep: (Step) -> Unit,
         master: Boolean,
+        song: Boolean? = null,
     ) {
         val instruments = which == Which.INSTRUMENTS
         val id = UUID.randomUUID().toString()
@@ -298,6 +329,11 @@ class VoiceSeparator(
                 wav.delete()
                 target.delete()
                 if (!part.renameTo(target)) throw IOException("Could not keep the stems")
+            }
+            when (song) {
+                true -> songMark(uri).writeText("")
+                false -> songMark(uri).delete()
+                null -> Unit
             }
             _kept.value = keptNow()
         } catch (e: OutOfMemoryError) {
@@ -416,6 +452,9 @@ class VoiceSeparator(
 
     private fun stemFile(uri: Uri, kind: StemKind) = File(folder, name(uri) + "." + kind.id + EXTENSION)
 
+    /** The mark of instruments split from the whole sound (see isSongSplit): named like the stems, so it goes with them. */
+    private fun songMark(uri: Uri) = File(folder, name(uri) + SONG_MARK)
+
     /** The stems' file name, without its extension: made of the media file's address. */
     private fun name(uri: Uri): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(uri.toString().toByteArray(Charsets.UTF_8))
@@ -442,6 +481,7 @@ class VoiceSeparator(
         private const val TAG = "VoiceSeparator"
         private const val FOLDER = "voice-stems"
         private const val EXTENSION = ".flac"
+        private const val SONG_MARK = ".song"
 
         /** A media file's four-channel stems: its name alone (its tracks add the stem's). */
         private val MASTER = Regex("[0-9a-f]{32}\\.flac")

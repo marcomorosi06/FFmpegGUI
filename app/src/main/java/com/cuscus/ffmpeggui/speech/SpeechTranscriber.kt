@@ -44,6 +44,13 @@ class SpeechTranscriber(
          */
         data class Extracting(val fraction: Float?, val voice: Boolean = false) : Step
 
+        /**
+         * Before listening, the singing of the file set apart (the lyrics, when
+         * asked: see ConversionViewModel.lyricsFromSpeech): [fraction] done,
+         * null while unknown. Not a step of [transcribe] itself.
+         */
+        data class Isolating(val fraction: Float?) : Step
+
         /** Loading the model into memory. */
         data object Loading : Step
 

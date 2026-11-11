@@ -24,6 +24,7 @@ class WorkReports(context: Context, private val notifier: WorkNotifier) {
             when (step) {
                 is SpeechTranscriber.Step.Extracting -> if (step.voice) R.string.work_speech_extracting_voice else R.string.work_speech_extracting
                 SpeechTranscriber.Step.Loading -> R.string.work_speech_loading
+                is SpeechTranscriber.Step.Isolating -> R.string.work_speech_isolating
                 is SpeechTranscriber.Step.Listening -> R.string.work_speech_listening
             },
         )
