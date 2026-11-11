@@ -1,17 +1,18 @@
 * Denoise, sharpen, blur, grain
 * Cut out with BiRefNet-lite
-* Long-press lifts a photo's subject
+* Long-press lifts a subject
 * EdgeTAM refines cut-outs
 * Stickers from cut-outs
 * Layers past the frame
 * One model in memory
 * ASCII/ANSI art
-* Stretch and magnetic resize
+* Stretch, magnetic resize
 * AI marks: dub, eraser only
 * Exports ask to notify
 * Stacked clip, layer, sound editors
 * Crop zooms to its frame
-* Lyrics timed line by line
+* Lyrics timed, voice alone
 * Stabilize; audio denoise
-* Speech model: own release
-* Lyrics: voice heard alone
+* Faster stems; songs split
+* Stems as tracks, rejoined
+* Audio editor spectrum
