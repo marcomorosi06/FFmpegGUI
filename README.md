@@ -48,11 +48,6 @@
   </tr>
 </table>
 
-## Development transparency
-AI tools were extensively used during development. System architecture, technical decisions, code review, and verification were handled by a human.
-
-Don't trust AI-generated code? Verify it yourself or don't install it at all.
-
 ## Why FFmpeg GUI
 
 - **Private by design.** No internet, storage, media, camera or microphone permission: files come only through the system's picker or a share. No ads, no trackers, no account.
@@ -102,6 +97,11 @@ The marks say only that ("AI-generated voice", "AI-generated inpainting"; the in
 ## Security
 
 FFmpeg GUI is in alpha, and its FFmpeg runtime is due for an update: some of the libraries it bundles are older than their fixed releases. What that means, what is already in place, and how to report a vulnerability privately: **[SECURITY.md](SECURITY.md)**.
+
+## Development transparency
+AI tools were extensively used during development. System architecture, technical decisions, code review, and verification were handled by a human.
+
+Don't trust AI-generated code? Verify it yourself or don't install it at all.
 
 ## Requirements
 
