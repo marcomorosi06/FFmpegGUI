@@ -132,8 +132,6 @@ Three Gradle modules, with dependencies pointing one way (`app -> media -> core`
 
 Details, data flow and a "where do I change X" table are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-> Video stabilisation is implemented in the backend but has no editor controls yet.
-
 ### Libraries
 
 | Library | Version | Purpose |
